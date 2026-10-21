@@ -105,15 +105,15 @@ export function computeStandings(games: BoardGame[], payments: Payment[], meId: 
       row = { week: wk, myPred: { w: 0, l: 0 }, oppPred: { w: 0, l: 0 }, h2h: { w: 0, l: 0 }, net: 0 };
       weeks.set(wk, row);
     }
-    let touched = false;
+    
     if (g.my_pick) {
-      touched = true;
+      
       const ok = g.my_pick === w;
       s.myPred[ok ? "w" : "l"]++;
       row.myPred[ok ? "w" : "l"]++;
     }
     if (g.opp_pick) {
-      touched = true;
+      
       const ok = g.opp_pick === w;
       s.oppPred[ok ? "w" : "l"]++;
       row.oppPred[ok ? "w" : "l"]++;
@@ -126,7 +126,6 @@ export function computeStandings(games: BoardGame[], payments: Payment[], meId: 
       row.net += r.net;
       s.potCents += 2 * g.stake_each_cents!;
     }
-    if (!touched) weeks.delete(wk) || void 0;
   }
   for (const p of payments) {
     if (p.status === "pending") s.pendingPayments++;
