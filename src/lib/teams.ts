@@ -15,5 +15,5 @@ export function teamColors(code: string): [string, string] {
 export function shortName(full: string): string {
   const parts = full.split(" ");
   if (full.startsWith("Portland")) return "Trail Blazers";
-  return parts[parts.length - 1];
+  return parts[parts.length - 1] ?? full;
 }

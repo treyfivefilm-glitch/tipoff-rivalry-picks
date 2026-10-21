@@ -13,7 +13,7 @@ export function pacificTime(d: string | Date): string {
   return timeFmt.format(typeof d === "string" ? new Date(d) : d) + " PT";
 }
 function toUTCDate(day: string) {
-  const [y, m, dd] = day.split("-").map(Number);
+  const [y = 1970, m = 1, dd = 1] = day.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, dd));
 }
 export function addDays(day: string, n: number): string {
