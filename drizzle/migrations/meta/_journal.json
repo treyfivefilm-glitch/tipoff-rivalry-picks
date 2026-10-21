@@ -1,5 +1,13 @@
 {
   "version": "7",
   "dialect": "postgresql",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792613506798,
+      "tag": "0000_pick_battle_schema",
+      "breakpoints": true
+    }
+  ]
 }
