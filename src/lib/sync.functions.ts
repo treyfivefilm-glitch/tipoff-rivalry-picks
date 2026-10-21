@@ -46,9 +46,9 @@ export const syncGames = createServerFn({ method: "POST" })
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const json = (await res.json()) as { events?: EspnEvent[] };
           const rows = (json.events ?? [])
-            .filter((e) => e.season?.type === 2)
+            .filter((e) => e.season?.type === 2 && (e.competitions[0]?.competitors.length ?? 0) === 2)
             .map((e) => {
-              const c = e.competitions[0].competitors;
+              const c = e.competitions[0]?.competitors ?? [];
               const a = c.find((x) => x.homeAway === "away")!;
               const h = c.find((x) => x.homeAway === "home")!;
               const state = STATE[e.status.type.name] ?? "scheduled";
