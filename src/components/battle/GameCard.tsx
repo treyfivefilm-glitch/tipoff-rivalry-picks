@@ -115,6 +115,15 @@ function Tag({ children, className }: { children: ReactNode; className?: string 
   return <span className={cn("rounded-full px-2 py-0.5 font-cond text-[10px] font-bold uppercase tracking-wider", className)}>{children}</span>;
 }
 
+function TermsLine({ g, highlight }: { g: BoardGame; highlight?: boolean }) {
+  if (!g.wager_status) return null;
+  const bits: string[] = [g.wager_kind === "other" ? "Non-cash wager" : "Cash wager"];
+  if (g.wager_terms) bits.push(`“${g.wager_terms}”`);
+  if (g.settle_by)
+    bits.push(`settle by ${new Date(`${g.settle_by}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`);
+  return <p className={cn("font-cond text-xs", highlight ? "font-bold text-primary" : "text-muted-foreground")}>{bits.join(" · ")}</p>;
+}
+
 function WagerArea({ g, locked, busy, run }: {
   g: BoardGame; locked: boolean; busy: string | null;
   run: (k: string, fn: () => Promise<void>, ok?: string) => Promise<void>;
@@ -123,6 +132,9 @@ function WagerArea({ g, locked, busy, run }: {
   const [stake, setStake] = useState<number>(1000);
   const [custom, setCustom] = useState(false);
   const [customVal, setCustomVal] = useState("");
+  const [kind, setKind] = useState<"cash" | "other">("cash");
+  const [terms, setTerms] = useState("");
+  const [settleBy, setSettleBy] = useState("");
   const friend = b.friend?.name ?? "Friend";
 
   const friendLine = !b.friend ? (
@@ -137,14 +149,17 @@ function WagerArea({ g, locked, busy, run }: {
     const r = h2hResult(g);
     const same = g.my_pick && g.opp_pick && g.my_pick === g.opp_pick;
     return (
-      <div className="flex items-center justify-between gap-2 text-sm">
-        <span className="text-muted-foreground">
-          {!g.my_pick ? "You didn’t pick" : same ? "Same pick · no bet" : isLiveBet(g) ? `Bet ${fmtMoney(g.stake_each_cents!)} each · pot ${fmtMoney(2 * g.stake_each_cents!)}` : "No head-to-head bet"}
-        </span>
-        {r.outcome === "win" && <span className="font-display text-xl text-win">WON {fmtMoney(r.net, true)}</span>}
-        {r.outcome === "loss" && <span className="font-display text-xl text-loss">LOST {fmtMoney(r.net, true)}</span>}
-        {r.outcome === "void" && <span className="font-cond text-sm text-muted-foreground">Void · $0</span>}
-        {r.outcome === "pending" && <span className="font-cond text-sm text-primary">Pending result</span>}
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-muted-foreground">
+            {!g.my_pick ? "You didn’t pick" : same ? "Same pick · no bet" : isLiveBet(g) ? `Bet ${fmtMoney(g.stake_each_cents!)} each · pot ${fmtMoney(2 * g.stake_each_cents!)}` : "No head-to-head bet"}
+          </span>
+          {r.outcome === "win" && <span className="font-display text-xl text-win">WON {fmtMoney(r.net, true)}</span>}
+          {r.outcome === "loss" && <span className="font-display text-xl text-loss">LOST {fmtMoney(r.net, true)}</span>}
+          {r.outcome === "void" && <span className="font-cond text-sm text-muted-foreground">Void · $0</span>}
+          {r.outcome === "pending" && <span className="font-cond text-sm text-primary">Pending result</span>}
+        </div>
+        <TermsLine g={g} />
       </div>
     );
   }
@@ -159,6 +174,7 @@ function WagerArea({ g, locked, busy, run }: {
         <div>
           <p className="flex items-center gap-1 font-display text-xl text-win"><Check className="h-4 w-4" /> BET ON · {fmtMoney(g.stake_each_cents!)} EACH</p>
           <p className="font-cond text-xs text-muted-foreground">Pot {fmtMoney(2 * g.stake_each_cents!)} · locks at tipoff · changing a pick voids it</p>
+          <TermsLine g={g} />
         </div>
         <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run("cancel", () => b.cancelWager(g.game_id), "Bet canceled")}>Cancel</Button>
       </div>
@@ -169,6 +185,7 @@ function WagerArea({ g, locked, busy, run }: {
     return (
       <div className="space-y-2">
         <p className="text-sm"><span className="font-semibold text-primary">{friend}</span> proposes <span className="font-display text-lg">{fmtMoney(g.stake_each_cents!)}</span> each</p>
+        <TermsLine g={g} highlight />
         {!g.my_pick && <p className="font-cond text-xs text-muted-foreground">Pick the other team to accept.</p>}
         {same && <p className="font-cond text-xs text-loss">You both picked {g.my_pick} — no bet possible (still counts for accuracy).</p>}
         <div className="flex gap-2">
@@ -184,17 +201,21 @@ function WagerArea({ g, locked, busy, run }: {
 
   if (status === "proposed" && g.proposed_by === b.me.id) {
     return (
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          You proposed <span className="font-display text-lg text-foreground">{fmtMoney(g.stake_each_cents!)}</span> each · waiting for {friend}
-        </p>
-        <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run("cancel", () => b.cancelWager(g.game_id), "Proposal withdrawn")}>Withdraw</Button>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            You proposed <span className="font-display text-lg text-foreground">{fmtMoney(g.stake_each_cents!)}</span> each · waiting for {friend}
+          </p>
+          <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run("cancel", () => b.cancelWager(g.game_id), "Proposal withdrawn")}>Withdraw</Button>
+        </div>
+        <TermsLine g={g} />
       </div>
     );
   }
 
   const chosen = custom ? Math.round(Number(customVal) * 100) : stake;
   const validStake = Number.isFinite(chosen) && chosen >= 100 && chosen <= 100000;
+  const validTerms = kind === "cash" || terms.trim().length > 0;
 
   return (
     <div className="space-y-2.5">
@@ -221,8 +242,27 @@ function WagerArea({ g, locked, busy, run }: {
             <input inputMode="decimal" placeholder="Amount each, e.g. 15" value={customVal} onChange={(e) => setCustomVal(e.target.value.replace(/[^\d.]/g, ""))}
               className="h-10 w-full rounded-lg border border-input bg-background/60 px-3 text-sm outline-none focus:border-primary" />
           )}
-          <Button variant="gold" className="w-full" disabled={!validStake || !!busy}
-            onClick={() => run("propose", () => b.propose(g.game_id, chosen), `Proposed ${fmtMoney(chosen)} each`)}>
+          <div className="flex gap-1.5">
+            {(["cash", "other"] as const).map((k) => (
+              <button key={k} type="button" onClick={() => setKind(k)}
+                className={cn("h-8 flex-1 rounded-full border font-cond text-xs font-bold uppercase tracking-wider transition-colors",
+                  kind === k ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground")}>
+                {k === "cash" ? "Cash" : "Other / fun"}
+              </button>
+            ))}
+          </div>
+          <input
+            placeholder={kind === "cash" ? "Terms note (optional, e.g. paid via Venmo)" : "Terms (required) — e.g. loser buys dinner"}
+            maxLength={280} value={terms} onChange={(e) => setTerms(e.target.value)}
+            className="h-10 w-full rounded-lg border border-input bg-background/60 px-3 text-sm outline-none focus:border-primary" />
+          <label className="flex items-center gap-2 font-cond text-xs text-muted-foreground">
+            Settle by
+            <input type="date" value={settleBy} onChange={(e) => setSettleBy(e.target.value)}
+              className="h-9 rounded-lg border border-input bg-background/60 px-2 text-sm text-foreground outline-none focus:border-primary" />
+            <span className="text-muted-foreground/70">(optional)</span>
+          </label>
+          <Button variant="gold" className="w-full" disabled={!validStake || !validTerms || !!busy}
+            onClick={() => run("propose", () => b.propose(g.game_id, chosen, { kind, terms: terms.trim(), settleBy: settleBy || null }), `Proposed ${fmtMoney(chosen)} each`)}>
             {busy === "propose" && <Loader2 className="animate-spin" />}
             Propose {validStake ? fmtMoney(chosen) : ""} each
           </Button>

@@ -13,6 +13,13 @@ export interface RoomInfo {
 }
 export type OverrideState = "final" | "canceled" | "postponed";
 
+/** Mutually agreed wager specifics, shown to the friend before they accept. */
+export interface WagerTerms {
+  kind: "cash" | "other";
+  terms: string;
+  settleBy: string | null; // YYYY-MM-DD
+}
+
 export interface BattleApi {
   mode: "live" | "demo";
   room: RoomInfo;
@@ -31,7 +38,7 @@ export interface BattleApi {
   ensureDays: (days: string[]) => void;
   importSeason?: (onProgress: (pct: number) => void) => Promise<void>;
   pick: (gameId: string, team: string) => Promise<void>;
-  propose: (gameId: string, cents: number) => Promise<void>;
+  propose: (gameId: string, cents: number, terms: WagerTerms) => Promise<void>;
   respond: (gameId: string, accept: boolean) => Promise<void>;
   cancelWager: (gameId: string) => Promise<void>;
   recordPayment: (cents: number, note: string) => Promise<void>;

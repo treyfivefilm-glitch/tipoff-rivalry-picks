@@ -38,6 +38,7 @@ export function SettingsTab() {
           {dayGames.map((g) => <OverrideRow key={g.game_id} id={g.game_id} label={`${g.away_code} @ ${g.home_code} · ${pacificTime(g.start_utc)}`} a={g.away_score} h={g.home_score} overridden={g.overridden} />)}
         </section>
       )}
+      {b.importSeason && <ImportSection />}
       <section className="surface space-y-1 rounded-2xl p-4 text-sm text-muted-foreground">
         <h2 className="font-display text-2xl text-foreground">RULES & DATA</h2>
         <p>Pick before tipoff (Pacific time); picks lock on the server at tipoff. Your friend’s pick stays hidden until you both pick or the game starts.</p>
@@ -68,5 +69,41 @@ function OverrideRow({ id, label, a, h, overridden }: { id: string; label: strin
         {overridden && <Button size="sm" variant="ghost" onClick={() => go(() => b.clearOverride(id), "Override cleared")}>Clear</Button>}
       </div>
     </div>
+  );
+}
+
+function ImportSection() {
+  const b = useBattle();
+  const [pct, setPct] = useState<number | null>(null);
+  return (
+    <section className="surface space-y-2 rounded-2xl p-4">
+      <h2 className="font-display text-2xl">SCHEDULE DATA</h2>
+      <p className="text-xs text-muted-foreground">
+        Load the full 2026–27 season from ESPN’s public, unofficial feed (one-time, about a minute). Days also sync automatically as you browse.
+      </p>
+      {pct !== null && (
+        <div className="h-2 overflow-hidden rounded-full bg-background/60">
+          <div className="h-full bg-gold-gradient transition-all" style={{ width: `${pct}%` }} />
+        </div>
+      )}
+      <Button
+        variant="glass"
+        className="w-full"
+        disabled={pct !== null && pct < 100}
+        onClick={async () => {
+          setPct(0);
+          try {
+            await b.importSeason!((p) => setPct(p));
+            toast.success("Season schedule imported");
+          } catch (e) {
+            toast.error(errMsg(e));
+          } finally {
+            setPct(null);
+          }
+        }}
+      >
+        Import full season schedule
+      </Button>
+    </section>
   );
 }

@@ -21,6 +21,9 @@ export interface BoardGame {
   stake_each_cents: number | null;
   wager_status: "proposed" | "accepted" | "declined" | "canceled" | null;
   proposed_by: string | null;
+  wager_kind: "cash" | "other" | null;
+  wager_terms: string | null;
+  settle_by: string | null;
 }
 
 export interface Payment {
