@@ -22,7 +22,7 @@ function AuthPage() {
   const [busy, setBusy] = useState(false);
   const done = () => nav({ href: redirect ?? "/rooms" });
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: { preventDefault: () => void }) {
     e.preventDefault(); setBusy(true);
     try {
       if (mode === "in") {
