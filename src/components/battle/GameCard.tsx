@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Check, EyeOff, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { TeamBadge } from "./TeamBadge";
@@ -111,7 +111,7 @@ function TeamButton({ g, side, onPick, busy, locked, winner }: {
   );
 }
 
-function Tag({ children, className }: { children: React.ReactNode; className?: string }) {
+function Tag({ children, className }: { children: ReactNode; className?: string }) {
   return <span className={cn("rounded-full px-2 py-0.5 font-cond text-[10px] font-bold uppercase tracking-wider", className)}>{children}</span>;
 }
 
