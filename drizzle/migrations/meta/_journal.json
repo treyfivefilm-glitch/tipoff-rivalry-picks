@@ -15,6 +15,13 @@
       "when": 1792613542447,
       "tag": "0001_seed_opening_games",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792617017486,
+      "tag": "0002_wager_terms",
+      "breakpoints": true
     }
   ]
 }

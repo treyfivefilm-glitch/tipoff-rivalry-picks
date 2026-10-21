@@ -304,30 +304,39 @@ export type Database = {
           accepted_by: string | null
           created_at: string
           game_id: string
+          kind: string
           proposed_by: string
           room_id: string
+          settle_by: string | null
           stake_each_cents: number
           status: string
+          terms: string | null
           updated_at: string
         }
         Insert: {
           accepted_by?: string | null
           created_at?: string
           game_id: string
+          kind?: string
           proposed_by: string
           room_id: string
+          settle_by?: string | null
           stake_each_cents: number
           status: string
+          terms?: string | null
           updated_at?: string
         }
         Update: {
           accepted_by?: string | null
           created_at?: string
           game_id?: string
+          kind?: string
           proposed_by?: string
           room_id?: string
+          settle_by?: string | null
           stake_each_cents?: number
           status?: string
+          terms?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -408,11 +417,14 @@ export type Database = {
           overridden: boolean
           proposed_by: string
           provider_updated_at: string
+          settle_by: string
           stake_each_cents: number
           start_utc: string
           state: string
           status_detail: string
+          wager_kind: string
           wager_status: string
+          wager_terms: string
         }[]
       }
       is_member: { Args: { _room: string }; Returns: boolean }
@@ -425,7 +437,14 @@ export type Database = {
         Returns: undefined
       }
       propose_wager: {
-        Args: { p_cents: number; p_game: string; p_room: string }
+        Args: {
+          p_cents: number
+          p_game: string
+          p_kind?: string
+          p_room: string
+          p_settle_by?: string
+          p_terms?: string
+        }
         Returns: undefined
       }
       record_payment: {
