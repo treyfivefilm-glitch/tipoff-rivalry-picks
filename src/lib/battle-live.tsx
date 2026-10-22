@@ -42,11 +42,10 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
 
   const loadBoard = useCallback(
     async (d: string) => {
-      const ws = weekStart(d);
       const { data, error: be } = await supabase.rpc("get_board", {
         p_room: roomId,
-        p_from: `${addDays(ws, -1)}T00:00:00Z`,
-        p_to: `${addDays(ws, 8)}T00:00:00Z`,
+        p_from: `${SEASON_START}T00:00:00Z`,
+        p_to: `${addDays(SEASON_END, 2)}T00:00:00Z`,
       });
       if (be) throw be;
       setGames((data ?? []) as unknown as BoardGame[]);

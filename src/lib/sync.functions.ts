@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { SEASON_START, SEASON_END, addDays } from "./time";
 
 // Source: ESPN's public (unofficial, undocumented) scoreboard JSON. No key; may change or be rate limited.
 const MAP: Record<string, string> = { NY: "NYK", SA: "SAS", GS: "GSW", UTAH: "UTA", NO: "NOP", WSH: "WAS" };
@@ -18,7 +19,7 @@ type EspnEvent = {
 export const syncGames = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { days: string[]; force?: boolean }) => {
-    const days = (input.days ?? []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(0, 21);
+    const days = [...new Set(input.days ?? [])].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= SEASON_START && d <= addDays(SEASON_END, 1)).slice(0, 21);
     return { days, force: !!input.force };
   })
   .handler(async ({ data }) => {
