@@ -152,7 +152,7 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
         setSyncing(true);
         try {
           const d = dayRef.current;
-          await syncGames({ data: { days: [addDays(d, -1), d, addDays(d, 1)], force } });
+          await syncGames({ data: { days: [addDays(d, -1), d, addDays(d, 1)], force: force ?? false } });
           await loadBoard(d);
         } finally {
           setSyncing(false);
@@ -167,8 +167,10 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
         setSyncing(true);
         try {
           for (let i = 0; i < chunks.length; i++) {
-            await syncGames({ data: { days: chunks[i]! } });
-            chunks[i]!.forEach((d) => syncedRef.current.add(d));
+            const chunk = chunks[i];
+            if (!chunk) continue;
+            await syncGames({ data: { days: chunk } });
+            chunk.forEach((d) => syncedRef.current.add(d));
             onProgress(Math.round(((i + 1) / chunks.length) * 100));
           }
           await loadBoard(dayRef.current);
@@ -185,8 +187,8 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
               p_game: gameId,
               p_cents: cents,
               p_kind: t.kind,
-              p_terms: t.terms || null,
-              p_settle_by: t.settleBy,
+              ...(t.terms ? { p_terms: t.terms } : {}),
+              ...(t.settleBy ? { p_settle_by: t.settleBy } : {}),
             }),
           ),
         ),
@@ -196,7 +198,7 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
       respondPayment: (id, confirm) => act(async () => throwIf(await supabase.rpc("respond_payment", { p_payment: id, p_confirm: confirm }))),
       setOverride: (gameId, away, home, state) =>
         act(async () =>
-          throwIf(await supabase.rpc("set_result_override", { p_room: roomId, p_game: gameId, p_away: away!, p_home: home!, p_state: state })),
+            throwIf(await supabase.rpc("set_result_override", { p_room: roomId, p_game: gameId, ...(away !== null ? { p_away: away } : {}), ...(home !== null ? { p_home: home } : {}), p_state: state })),
         ),
       clearOverride: (gameId) => act(async () => throwIf(await supabase.rpc("clear_result_override", { p_room: roomId, p_game: gameId }))),
       renameRoom: (name) =>
@@ -211,7 +213,7 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
         }),
       signOut: async () => {
         await supabase.auth.signOut();
-        nav({ to: "/auth", replace: true });
+        nav({ to: "/auth", search: { redirect: undefined }, replace: true });
       },
     };
   }, [room, me, friend, games, payments, loading, error, lastSync, syncing, day, act, ensureDays, loadBoard, loadStatic, roomId, nav]);

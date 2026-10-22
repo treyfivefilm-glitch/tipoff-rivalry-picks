@@ -45,10 +45,10 @@ function Landing() {
         ) : (
           <>
             <Button asChild variant="gold" size="xl" className="w-full">
-              <Link to="/auth">Sign in</Link>
+              <Link to="/auth" search={{ redirect: undefined }}>Sign in</Link>
             </Button>
             <Button asChild variant="glass" size="xl" className="w-full">
-              <Link to="/auth">Create account</Link>
+              <Link to="/auth" search={{ redirect: undefined }}>Create account</Link>
             </Button>
           </>
         )}

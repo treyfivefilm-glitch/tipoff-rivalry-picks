@@ -1,0 +1,4 @@
+- [ ] Repair current compilation and runtime errors; run existing tests.
+- [ ] Verify live room, picks, accepted wager, result, and recipient-confirmed payment.
+- [ ] Add Wager Center Offers / Active / Ledger with version-safe counteroffers and challenge settlement.
+- [ ] Verify mobile screens, backend protections, and publish readiness.
