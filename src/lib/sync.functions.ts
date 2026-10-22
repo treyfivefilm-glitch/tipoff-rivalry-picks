@@ -47,19 +47,20 @@ export const syncGames = createServerFn({ method: "POST" })
           const json = (await res.json()) as { events?: EspnEvent[] };
           const rows = (json.events ?? [])
             .filter((e) => e.season?.type === 2 && (e.competitions[0]?.competitors.length ?? 0) === 2)
-            .map((e) => {
+            .flatMap((e) => {
               const c = e.competitions[0]?.competitors ?? [];
-              const a = c.find((x) => x.homeAway === "away")!;
-              const h = c.find((x) => x.homeAway === "home")!;
+              const a = c.find((x) => x.homeAway === "away");
+              const h = c.find((x) => x.homeAway === "home");
+              if (!a || !h) return [];
               const state = STATE[e.status.type.name] ?? "scheduled";
               const scored = state === "final" || state === "live";
               const code = (t: EspnTeam) => MAP[t.team.abbreviation] ?? t.team.abbreviation;
-              return {
+              return [{
                 id: `espn:${e.id}`, start_utc: e.date,
                 away_code: code(a), away_name: a.team.displayName, home_code: code(h), home_name: h.team.displayName,
                 away_score: scored ? Number(a.score) : null, home_score: scored ? Number(h.score) : null,
                 state, status_detail: e.status.type.shortDetail ?? null, source: "espn", updated_at: new Date().toISOString(),
-              };
+              }];
             })
             .filter((r) => r.away_code !== "TBD" && r.home_code !== "TBD");
           if (rows.length) {
