@@ -49,7 +49,7 @@ export function isLocked(g: Pick<BoardGame, "start_utc" | "state">, now = Date.n
 export function isLiveBet(g: BoardGame): boolean {
   return (
     g.wager_status === "accepted" &&
-    !!g.stake_each_cents &&
+    g.stake_each_cents !== null &&
     !!g.my_pick &&
     !!g.opp_pick &&
     g.my_pick !== g.opp_pick
@@ -64,7 +64,7 @@ export function h2hResult(g: BoardGame): { outcome: Outcome; net: number } {
   if (g.state === "canceled" || g.state === "postponed") return { outcome: "void", net: 0 };
   const w = winnerOf(g);
   if (!w) return { outcome: "pending", net: 0 };
-  const stake = g.stake_each_cents!;
+  const stake = g.wager_kind === "other" ? 0 : (g.stake_each_cents ?? 0);
   return w === g.my_pick ? { outcome: "win", net: stake } : { outcome: "loss", net: -stake };
 }
 
@@ -127,7 +127,7 @@ export function computeStandings(games: BoardGame[], payments: Payment[], meId: 
       row.h2h[r.outcome === "win" ? "w" : "l"]++;
       s.netCents += r.net;
       row.net += r.net;
-      s.potCents += 2 * g.stake_each_cents!;
+      s.potCents += g.wager_kind === "other" ? 0 : 2 * (g.stake_each_cents ?? 0);
     }
   }
   for (const p of payments) {

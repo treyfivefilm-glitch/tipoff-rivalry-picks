@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Check, EyeOff, Lock, Loader2 } from "lucide-react";
+import { EyeOff, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { TeamBadge } from "./TeamBadge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,8 @@ import { fmtMoney, pacificTime } from "@/lib/time";
 import { shortName } from "@/lib/teams";
 import { cn } from "@/lib/utils";
 
-const STAKES = [500, 1000, 2000, 5000];
+import { OfferForm, OfferActions, OfferTerms } from './WagerOffer';
+import { latestWagers } from '@/lib/wagers';
 
 export function GameCard({ g }: { g: BoardGame }) {
   const b = useBattle();
@@ -81,7 +82,7 @@ function TeamButton({ g, side, onPick, busy, locked, winner }: {
   const won = winner === code;
   const lost = winner && winner !== code;
   return (
-    <button
+    <Button
       type="button"
       disabled={locked || busy}
       onClick={onPick}
@@ -107,7 +108,7 @@ function TeamButton({ g, side, onPick, busy, locked, winner }: {
         {mine && <Tag className="bg-primary text-primary-foreground">You</Tag>}
         {theirs && <Tag className="bg-accent text-accent-foreground">{b.friend?.name ?? "Friend"}</Tag>}
       </div>
-    </button>
+    </Button>
   );
 }
 
@@ -115,160 +116,17 @@ function Tag({ children, className }: { children: ReactNode; className?: string 
   return <span className={cn("rounded-full px-2 py-0.5 font-cond text-[10px] font-bold uppercase tracking-wider", className)}>{children}</span>;
 }
 
-function TermsLine({ g, highlight }: { g: BoardGame; highlight?: boolean }) {
-  if (!g.wager_status) return null;
-  const bits: string[] = [g.wager_kind === "other" ? "Non-cash wager" : "Cash wager"];
-  if (g.wager_terms) bits.push(`“${g.wager_terms}”`);
-  if (g.settle_by)
-    bits.push(`settle by ${new Date(`${g.settle_by}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`);
-  return <p className={cn("font-cond text-xs", highlight ? "font-bold text-primary" : "text-muted-foreground")}>{bits.join(" · ")}</p>;
-}
-
-function WagerArea({ g, locked, busy, run }: {
-  g: BoardGame; locked: boolean; busy: string | null;
-  run: (k: string, fn: () => Promise<void>, ok?: string) => Promise<void>;
-}) {
+function WagerArea({ g, locked }: { g: BoardGame; locked: boolean; busy: string | null; run: (k: string, fn: () => Promise<void>, ok?: string) => Promise<void> }) {
   const b = useBattle();
-  const [stake, setStake] = useState<number>(1000);
-  const [custom, setCustom] = useState(false);
-  const [customVal, setCustomVal] = useState("");
-  const [kind, setKind] = useState<"cash" | "other">("cash");
-  const [terms, setTerms] = useState("");
-  const [settleBy, setSettleBy] = useState("");
-  const friend = b.friend?.name ?? "Friend";
-
-  const friendLine = !b.friend ? (
-    <span>Invite your friend to start battling.</span>
-  ) : g.opp_pick ? null : g.opp_has_picked ? (
-    <span className="flex items-center gap-1"><EyeOff className="h-3.5 w-3.5" /> {friend} picked · hidden until you pick</span>
-  ) : (
-    <span>{friend} hasn’t picked yet</span>
-  );
-
-  if (locked) {
-    const r = h2hResult(g);
-    const same = g.my_pick && g.opp_pick && g.my_pick === g.opp_pick;
-    return (
-      <div className="space-y-1">
-        <div className="flex items-center justify-between gap-2 text-sm">
-          <span className="text-muted-foreground">
-            {!g.my_pick ? "You didn’t pick" : same ? "Same pick · no bet" : isLiveBet(g) ? `Bet ${fmtMoney(g.stake_each_cents!)} each · pot ${fmtMoney(2 * g.stake_each_cents!)}` : "No head-to-head bet"}
-          </span>
-          {r.outcome === "win" && <span className="font-display text-xl text-win">WON {fmtMoney(r.net, true)}</span>}
-          {r.outcome === "loss" && <span className="font-display text-xl text-loss">LOST {fmtMoney(r.net, true)}</span>}
-          {r.outcome === "void" && <span className="font-cond text-sm text-muted-foreground">Void · $0</span>}
-          {r.outcome === "pending" && <span className="font-cond text-sm text-primary">Pending result</span>}
-        </div>
-        <TermsLine g={g} />
-      </div>
-    );
-  }
-
-  const opposite = !!g.my_pick && !!g.opp_pick && g.my_pick !== g.opp_pick;
-  const same = !!g.my_pick && !!g.opp_pick && g.my_pick === g.opp_pick;
-  const status = g.wager_status;
-
-  if (status === "accepted" && isLiveBet(g)) {
-    return (
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <p className="flex items-center gap-1 font-display text-xl text-win"><Check className="h-4 w-4" /> BET ON · {fmtMoney(g.stake_each_cents!)} EACH</p>
-          <p className="font-cond text-xs text-muted-foreground">Pot {fmtMoney(2 * g.stake_each_cents!)} · locks at tipoff · changing a pick voids it</p>
-          <TermsLine g={g} />
-        </div>
-        <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run("cancel", () => b.cancelWager(g.game_id), "Bet canceled")}>Cancel</Button>
-      </div>
-    );
-  }
-
-  if (status === "proposed" && g.proposed_by && g.proposed_by !== b.me.id) {
-    return (
-      <div className="space-y-2">
-        <p className="text-sm"><span className="font-semibold text-primary">{friend}</span> proposes <span className="font-display text-lg">{fmtMoney(g.stake_each_cents!)}</span> each</p>
-        <TermsLine g={g} highlight />
-        {!g.my_pick && <p className="font-cond text-xs text-muted-foreground">Pick the other team to accept.</p>}
-        {same && <p className="font-cond text-xs text-loss">You both picked {g.my_pick} — no bet possible (still counts for accuracy).</p>}
-        <div className="flex gap-2">
-          <Button variant="gold" className="flex-1" disabled={!opposite || !!busy}
-            onClick={() => run("accept", () => b.respond(g.game_id, true), "Bet accepted")}>
-            {busy === "accept" ? <Loader2 className="animate-spin" /> : null} Accept
-          </Button>
-          <Button variant="glass" className="flex-1" disabled={!!busy} onClick={() => run("decline", () => b.respond(g.game_id, false), "Declined")}>Decline</Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (status === "proposed" && g.proposed_by === b.me.id) {
-    return (
-      <div className="space-y-1">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">
-            You proposed <span className="font-display text-lg text-foreground">{fmtMoney(g.stake_each_cents!)}</span> each · waiting for {friend}
-          </p>
-          <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => run("cancel", () => b.cancelWager(g.game_id), "Proposal withdrawn")}>Withdraw</Button>
-        </div>
-        <TermsLine g={g} />
-      </div>
-    );
-  }
-
-  const chosen = custom ? Math.round(Number(customVal) * 100) : stake;
-  const validStake = Number.isFinite(chosen) && chosen >= 100 && chosen <= 100000;
-  const validTerms = kind === "cash" || terms.trim().length > 0;
-
-  return (
-    <div className="space-y-2.5">
-      <div className="flex items-center justify-between font-cond text-xs text-muted-foreground">
-        {friendLine ?? <span>{same ? `Same pick (${g.my_pick}) · no bet` : `${friend} took ${g.opp_pick}`}</span>}
-        {status === "declined" && <span className="text-loss">Last offer declined</span>}
-      </div>
-      {b.friend && g.my_pick && !same && (
-        <>
-          <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
-            {STAKES.map((c) => (
-              <button key={c} type="button" onClick={() => { setStake(c); setCustom(false); }}
-                className={cn("h-9 shrink-0 rounded-full border px-3.5 font-cond text-sm font-bold transition-colors",
-                  !custom && stake === c ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground")}>
-                {fmtMoney(c)}
-              </button>
-            ))}
-            <button type="button" onClick={() => setCustom(true)}
-              className={cn("h-9 shrink-0 rounded-full border px-3.5 font-cond text-sm font-bold", custom ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground")}>
-              Custom
-            </button>
-          </div>
-          {custom && (
-            <input inputMode="decimal" placeholder="Amount each, e.g. 15" value={customVal} onChange={(e) => setCustomVal(e.target.value.replace(/[^\d.]/g, ""))}
-              className="h-10 w-full rounded-lg border border-input bg-background/60 px-3 text-sm outline-none focus:border-primary" />
-          )}
-          <div className="flex gap-1.5">
-            {(["cash", "other"] as const).map((k) => (
-              <button key={k} type="button" onClick={() => setKind(k)}
-                className={cn("h-8 flex-1 rounded-full border font-cond text-xs font-bold uppercase tracking-wider transition-colors",
-                  kind === k ? "border-primary bg-primary/15 text-primary" : "border-border text-muted-foreground")}>
-                {k === "cash" ? "Cash" : "Other / fun"}
-              </button>
-            ))}
-          </div>
-          <input
-            placeholder={kind === "cash" ? "Terms note (optional, e.g. paid via Venmo)" : "Terms (required) — e.g. loser buys dinner"}
-            maxLength={280} value={terms} onChange={(e) => setTerms(e.target.value)}
-            className="h-10 w-full rounded-lg border border-input bg-background/60 px-3 text-sm outline-none focus:border-primary" />
-          <label className="flex items-center gap-2 font-cond text-xs text-muted-foreground">
-            Settle by
-            <input type="date" value={settleBy} onChange={(e) => setSettleBy(e.target.value)}
-              className="h-9 rounded-lg border border-input bg-background/60 px-2 text-sm text-foreground outline-none focus:border-primary" />
-            <span className="text-muted-foreground/70">(optional)</span>
-          </label>
-          <Button variant="gold" className="w-full" disabled={!validStake || !validTerms || !!busy}
-            onClick={() => run("propose", () => b.propose(g.game_id, chosen, { kind, terms: terms.trim(), settleBy: settleBy || null }), `Proposed ${fmtMoney(chosen)} each`)}>
-            {busy === "propose" && <Loader2 className="animate-spin" />}
-            Propose {validStake ? fmtMoney(chosen) : ""} each
-          </Button>
-        </>
-      )}
-      {b.friend && !g.my_pick && <p className="font-cond text-xs text-muted-foreground">Tap a team to pick. Stakes unlock after you pick.</p>}
-    </div>
-  );
+  const v = latestWagers(b.versions).get(g.game_id);
+  const r = h2hResult(g);
+  return <div className="space-y-3">
+    {!g.opp_pick && <p className="flex items-center gap-1 text-xs text-muted-foreground"><EyeOff className="h-3 w-3" />{g.opp_has_picked ? 'Friend picked · hidden until you pick' : 'Friend has not picked yet'}</p>}
+    {v && <OfferTerms v={v} />}
+    {v?.status === 'accepted' && <p className="font-display text-xl text-win">Agreed · {locked ? 'Locked' : 'Picks committed'}</p>}
+    {locked ? <p className="text-sm text-muted-foreground">{r.outcome === 'win' || r.outcome === 'loss' ? (v?.category === 'challenge' ? (r.outcome === 'win' ? 'Challenge won' : 'Challenge owed') : fmtMoney(r.net,true)) : r.outcome === 'void' ? 'Void · no obligation' : v?.status === 'proposed' ? 'Offer expired at tipoff' : r.outcome === 'pending' ? 'Awaiting result' : 'No head-to-head wager'}</p>
+      : v?.status === 'proposed' ? <OfferActions g={g} v={v} />
+      : v?.status !== 'accepted' && b.friend && g.my_pick ? <OfferForm key={v?.version ?? 0} g={g} {...(v ? {current:v} : {})} />
+      : !g.my_pick ? <p className="text-xs text-muted-foreground">Pick a team before proposing.</p> : null}
+  </div>;
 }

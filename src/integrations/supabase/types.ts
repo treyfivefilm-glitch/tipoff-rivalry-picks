@@ -52,6 +52,53 @@ export type Database = {
           },
         ]
       }
+      challenge_submissions: {
+        Row: {
+          created_at: string
+          game_id: string
+          id: string
+          loser_id: string
+          note: string | null
+          responded_at: string | null
+          room_id: string
+          status: string
+          version: number
+          winner_id: string
+        }
+        Insert: {
+          created_at?: string
+          game_id: string
+          id?: string
+          loser_id: string
+          note?: string | null
+          responded_at?: string | null
+          room_id: string
+          status?: string
+          version: number
+          winner_id: string
+        }
+        Update: {
+          created_at?: string
+          game_id?: string
+          id?: string
+          loser_id?: string
+          note?: string | null
+          responded_at?: string | null
+          room_id?: string
+          status?: string
+          version?: number
+          winner_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "challenge_submissions_room_id_game_id_version_fkey"
+            columns: ["room_id", "game_id", "version"]
+            isOneToOne: false
+            referencedRelation: "wager_versions"
+            referencedColumns: ["room_id", "game_id", "version"]
+          },
+        ]
+      }
       games: {
         Row: {
           away_code: string
@@ -299,6 +346,69 @@ export type Database = {
         }
         Relationships: []
       }
+      wager_versions: {
+        Row: {
+          category: string
+          cents: number
+          created_at: string
+          deadline_date: string | null
+          deadline_rule: string
+          game_id: string
+          proposer_id: string
+          recipient_id: string
+          responded_at: string | null
+          room_id: string
+          status: string
+          terms: string
+          version: number
+        }
+        Insert: {
+          category: string
+          cents: number
+          created_at?: string
+          deadline_date?: string | null
+          deadline_rule?: string
+          game_id: string
+          proposer_id: string
+          recipient_id: string
+          responded_at?: string | null
+          room_id: string
+          status?: string
+          terms?: string
+          version: number
+        }
+        Update: {
+          category?: string
+          cents?: number
+          created_at?: string
+          deadline_date?: string | null
+          deadline_rule?: string
+          game_id?: string
+          proposer_id?: string
+          recipient_id?: string
+          responded_at?: string | null
+          room_id?: string
+          status?: string
+          terms?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wager_versions_game_id_fkey"
+            columns: ["game_id"]
+            isOneToOne: false
+            referencedRelation: "games"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "wager_versions_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       wagers: {
         Row: {
           accepted_by: string | null
@@ -436,6 +546,18 @@ export type Database = {
         Args: { p_game: string; p_room: string; p_team: string }
         Returns: undefined
       }
+      offer_wager_v2: {
+        Args: {
+          p_category: string
+          p_cents: number
+          p_deadline: string
+          p_expected: number
+          p_game: string
+          p_room: string
+          p_terms: string
+        }
+        Returns: undefined
+      }
       propose_wager: {
         Args: {
           p_cents: number
@@ -455,12 +577,25 @@ export type Database = {
         Args: { p_name: string; p_room: string }
         Returns: undefined
       }
+      respond_challenge: {
+        Args: { p_confirm: boolean; p_id: string }
+        Returns: undefined
+      }
       respond_payment: {
         Args: { p_confirm: boolean; p_payment: string }
         Returns: undefined
       }
       respond_wager: {
         Args: { p_accept: boolean; p_game: string; p_room: string }
+        Returns: undefined
+      }
+      respond_wager_v2: {
+        Args: {
+          p_action: string
+          p_game: string
+          p_room: string
+          p_version: number
+        }
         Returns: undefined
       }
       set_display_name: {
@@ -474,6 +609,15 @@ export type Database = {
           p_home: number
           p_room: string
           p_state: string
+        }
+        Returns: undefined
+      }
+      submit_challenge: {
+        Args: {
+          p_game: string
+          p_note: string
+          p_room: string
+          p_version: number
         }
         Returns: undefined
       }

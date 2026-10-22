@@ -6,6 +6,7 @@ const base: BoardGame = {
   game_id: "g1", start_utc: "2026-10-22T02:00:00Z", away_code: "GSW", away_name: "Warriors", home_code: "LAL", home_name: "Lakers",
   away_score: 110, home_score: 120, state: "final", status_detail: null, overridden: false, provider_updated_at: "",
   my_pick: "LAL", opp_pick: "GSW", opp_has_picked: true, stake_each_cents: 1000, wager_status: "accepted", proposed_by: "me",
+  wager_kind: "cash", wager_terms: null, settle_by: null,
 };
 
 describe("head-to-head rules", () => {

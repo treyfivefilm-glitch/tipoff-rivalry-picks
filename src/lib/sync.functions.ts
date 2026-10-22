@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { SEASON_START, SEASON_END, addDays } from "./time";
 
 // Source: ESPN's public (unofficial, undocumented) scoreboard JSON. No key; may change or be rate limited.
 const MAP: Record<string, string> = { NY: "NYK", SA: "SAS", GS: "GSW", UTAH: "UTA", NO: "NOP", WSH: "WAS" };
@@ -18,7 +19,7 @@ type EspnEvent = {
 export const syncGames = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { days: string[]; force?: boolean }) => {
-    const days = (input.days ?? []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).slice(0, 21);
+    const days = [...new Set(input.days ?? [])].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= SEASON_START && d <= addDays(SEASON_END, 1)).slice(0, 21);
     return { days, force: !!input.force };
   })
   .handler(async ({ data }) => {
@@ -47,19 +48,20 @@ export const syncGames = createServerFn({ method: "POST" })
           const json = (await res.json()) as { events?: EspnEvent[] };
           const rows = (json.events ?? [])
             .filter((e) => e.season?.type === 2 && (e.competitions[0]?.competitors.length ?? 0) === 2)
-            .map((e) => {
+            .flatMap((e) => {
               const c = e.competitions[0]?.competitors ?? [];
-              const a = c.find((x) => x.homeAway === "away")!;
-              const h = c.find((x) => x.homeAway === "home")!;
+              const a = c.find((x) => x.homeAway === "away");
+              const h = c.find((x) => x.homeAway === "home");
+              if (!a || !h) return [];
               const state = STATE[e.status.type.name] ?? "scheduled";
               const scored = state === "final" || state === "live";
               const code = (t: EspnTeam) => MAP[t.team.abbreviation] ?? t.team.abbreviation;
-              return {
+              return [{
                 id: `espn:${e.id}`, start_utc: e.date,
                 away_code: code(a), away_name: a.team.displayName, home_code: code(h), home_name: h.team.displayName,
                 away_score: scored ? Number(a.score) : null, home_score: scored ? Number(h.score) : null,
                 state, status_detail: e.status.type.shortDetail ?? null, source: "espn", updated_at: new Date().toISOString(),
-              };
+              }];
             })
             .filter((r) => r.away_code !== "TBD" && r.home_code !== "TBD");
           if (rows.length) {
