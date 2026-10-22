@@ -1,5 +1,6 @@
 import { createContext, useContext } from "react";
 import type { BoardGame, Payment } from "./rules";
+import type { WagerVersion, ChallengeSubmission, WagerCategory, DeadlineRule } from './wagers';
 
 export interface Player {
   id: string;
@@ -15,9 +16,9 @@ export type OverrideState = "final" | "canceled" | "postponed";
 
 /** Mutually agreed wager specifics, shown to the friend before they accept. */
 export interface WagerTerms {
-  kind: "cash" | "other";
+  kind: WagerCategory;
   terms: string;
-  settleBy: string | null; // YYYY-MM-DD
+  deadline: DeadlineRule;
 }
 
 export interface BattleApi {
@@ -28,6 +29,8 @@ export interface BattleApi {
   isOwner: boolean;
   games: BoardGame[];
   payments: Payment[];
+  versions: WagerVersion[];
+  challenges: ChallengeSubmission[];
   loading: boolean;
   error: string | null;
   lastSync: string | null;
@@ -38,9 +41,11 @@ export interface BattleApi {
   ensureDays: (days: string[]) => void;
   importSeason?: (onProgress: (pct: number) => void) => Promise<void>;
   pick: (gameId: string, team: string) => Promise<void>;
-  propose: (gameId: string, cents: number, terms: WagerTerms) => Promise<void>;
-  respond: (gameId: string, accept: boolean) => Promise<void>;
-  cancelWager: (gameId: string) => Promise<void>;
+  propose: (gameId: string, cents: number, terms: WagerTerms, expected: number) => Promise<void>;
+  respond: (gameId: string, accept: boolean, version: number) => Promise<void>;
+  cancelWager: (gameId: string, version: number) => Promise<void>;
+  submitChallenge: (gameId: string, version: number, note: string) => Promise<void>;
+  respondChallenge: (id: string, confirm: boolean) => Promise<void>;
   recordPayment: (cents: number, note: string) => Promise<void>;
   respondPayment: (id: string, confirm: boolean) => Promise<void>;
   setOverride: (gameId: string, away: number | null, home: number | null, state: OverrideState) => Promise<void>;
