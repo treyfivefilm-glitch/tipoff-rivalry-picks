@@ -29,6 +29,13 @@
       "when": 1792688729202,
       "tag": "0003_versioned_wager_center",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792723460682,
+      "tag": "0004_cascade_wager_center_fks",
+      "breakpoints": true
     }
   ]
 }
