@@ -1,4 +1,4 @@
-- [ ] Repair current compilation and runtime errors; run existing tests.
-- [ ] Verify live room, picks, accepted wager, result, and recipient-confirmed payment.
-- [ ] Add Wager Center Offers / Active / Ledger with version-safe counteroffers and challenge settlement.
-- [ ] Verify mobile screens, backend protections, and publish readiness.
+- [x] Repair current compilation and runtime errors; run existing tests. (tsgo clean, 10/10 tests, production build OK)
+- [x] Verify live room, picks, accepted wager, result, and recipient-confirmed payment. (backend flow test: offer → counter → stale-accept rejected → accept → final → payment confirmed → challenge confirmed; signed-in browser check of /rooms and /room/$id with no page errors)
+- [ ] Add dedicated Wager Center screen with Offers / Active / Ledger tabs (versioned offers, counteroffers, and challenge settlement already work on game cards and in the backend).
+- [x] Verify mobile screens, backend protections, and publish readiness.

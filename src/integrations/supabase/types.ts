@@ -91,6 +91,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "challenge_submissions_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "challenge_submissions_room_id_game_id_version_fkey"
             columns: ["room_id", "game_id", "version"]
             isOneToOne: false
