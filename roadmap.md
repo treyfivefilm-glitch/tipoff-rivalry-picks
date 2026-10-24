@@ -1,4 +1,6 @@
-- [x] Repair current compilation and runtime errors; run existing tests. (tsgo clean, 10/10 tests, production build OK)
-- [x] Verify live room, picks, accepted wager, result, and recipient-confirmed payment. (backend flow test: offer → counter → stale-accept rejected → accept → final → payment confirmed → challenge confirmed; signed-in browser check of /rooms and /room/$id with no page errors)
-- [ ] Add dedicated Wager Center screen with Offers / Active / Ledger tabs (versioned offers, counteroffers, and challenge settlement already work on game cards and in the backend).
-- [x] Verify mobile screens, backend protections, and publish readiness.
+- [x] Repair compilation/runtime errors; run tests. (tsgo clean, 10/10 tests, build OK)
+- [x] Verify live room, picks, accepted wager, result, recipient-confirmed payment (backend two-player flow test).
+- [ ] Clear critical security finding: sync_state readable by all signed-in users → lock table, expose via security-definer function.
+- [ ] Add Wager Center tab (Offers / Active / Ledger) using versioned offers, challenges, payments.
+- [ ] Re-run tsgo, vitest, production build; browser-verify room navigation.
+- [ ] Rescan security; publish only with no critical findings.
