@@ -1,4 +1,6 @@
-- [x] Repair current compilation and runtime errors; run existing tests. (tsgo clean, 10/10 tests, production build OK)
-- [x] Verify live room, picks, accepted wager, result, and recipient-confirmed payment. (backend flow test: offer → counter → stale-accept rejected → accept → final → payment confirmed → challenge confirmed; signed-in browser check of /rooms and /room/$id with no page errors)
-- [ ] Add dedicated Wager Center screen with Offers / Active / Ledger tabs (versioned offers, counteroffers, and challenge settlement already work on game cards and in the backend).
-- [x] Verify mobile screens, backend protections, and publish readiness.
+- [x] Repair compilation/runtime errors; run tests. (tsgo clean, 16/16 tests, build OK)
+- [x] Verify live room, picks, accepted wager, result, recipient-confirmed payment (backend two-player flow test).
+- [x] Clear critical security finding: sync_state locked; app reads freshness via security-definer get_last_sync. Rescan: 0 errors, 1 intentional info (public games schedule).
+- [x] Add Wager Center tab (Offers / Active / Ledger) with versioned offers, payment confirmation, challenge settlement, revision history; 4-tab nav with attention badge.
+- [x] Re-run tsgo, vitest, production build; browser-verify room navigation (signed-in 390px check, no page errors).
+- [x] Publish requested (no critical findings remain) — deploy to https://tipoff-rivalry-picks.lovable.app scheduled.

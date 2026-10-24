@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { CalendarDays, History, Trophy } from "lucide-react";
+import { CalendarDays, HandCoins, History, Trophy } from "lucide-react";
 import { LiveBattle } from "@/lib/battle-live";
 import { Shell, SettingsIcon, tabClass } from "@/components/battle/Shell";
 import { GamesTab } from "@/components/battle/GamesTab";
 import { StandingsTab } from "@/components/battle/StandingsTab";
 import { HistoryTab } from "@/components/battle/HistoryTab";
 import { SettingsTab } from "@/components/battle/SettingsTab";
+import { WagerCenter, useWagerAttention } from "@/components/battle/WagerCenter";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/room/$id")({
   head: () => ({
@@ -29,10 +31,11 @@ function RoomPage() {
   );
 }
 
-type Tab = "games" | "standings" | "history" | "settings";
+type Tab = "games" | "wagers" | "standings" | "history" | "settings";
 
 function RoomInner() {
   const [tab, setTab] = useState<Tab>("games");
+  const attention = useWagerAttention();
   return (
     <Shell
       settingsLink={
@@ -45,6 +48,14 @@ function RoomInner() {
           <button type="button" data-status={tab === "games" ? "active" : undefined} className={tabClass} onClick={() => setTab("games")}>
             <CalendarDays className="h-5 w-5" /> Games
           </button>
+          <button type="button" data-status={tab === "wagers" ? "active" : undefined} className={cn(tabClass, "relative")} onClick={() => setTab("wagers")}>
+            <HandCoins className="h-5 w-5" /> Wagers
+            {attention > 0 && (
+              <span className="absolute right-2 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-loss px-1 text-[9px] font-bold text-white">
+                {attention}
+              </span>
+            )}
+          </button>
           <button type="button" data-status={tab === "standings" ? "active" : undefined} className={tabClass} onClick={() => setTab("standings")}>
             <Trophy className="h-5 w-5" /> Standings
           </button>
@@ -55,6 +66,7 @@ function RoomInner() {
       }
     >
       {tab === "games" && <GamesTab />}
+      {tab === "wagers" && <WagerCenter />}
       {tab === "standings" && <StandingsTab />}
       {tab === "history" && <HistoryTab />}
       {tab === "settings" && <SettingsTab />}

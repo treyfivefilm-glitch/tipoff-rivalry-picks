@@ -544,6 +544,7 @@ export type Database = {
           wager_terms: string
         }[]
       }
+      get_last_sync: { Args: { p_day: string }; Returns: string }
       is_member: { Args: { _room: string }; Returns: boolean }
       join_room: {
         Args: { p_code: string; p_display_name: string }

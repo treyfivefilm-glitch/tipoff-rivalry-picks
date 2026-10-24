@@ -42,7 +42,7 @@ export function Shell({ settingsLink, tabs, children }: { settingsLink: ReactNod
       </header>
       <main className="flex-1 px-4 pb-28 pt-4">{children}</main>
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/90 backdrop-blur-lg safe-bottom">
-        <div className="mx-auto grid max-w-md grid-cols-3">{tabs}</div>
+        <div className="mx-auto grid max-w-md grid-cols-4">{tabs}</div>
       </nav>
     </div>
   );

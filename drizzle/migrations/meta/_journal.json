@@ -43,6 +43,13 @@
       "when": 1792723514194,
       "tag": "0005_tighten_sync_state_read",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792867350055,
+      "tag": "0006_lock_down_sync_state",
+      "breakpoints": true
     }
   ]
 }
