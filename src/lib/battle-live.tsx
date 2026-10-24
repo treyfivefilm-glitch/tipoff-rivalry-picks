@@ -63,8 +63,8 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
       const { data: ps, error: pe } = await supabase.from("payments").select("*").eq("room_id", roomId).order("created_at", { ascending: false });
       if (pe) throw pe;
       setPayments((ps ?? []) as Payment[]);
-      const { data: ss } = await supabase.from("sync_state").select("synced_at").eq("day", d).maybeSingle();
-      setLastSync(ss?.synced_at ?? null);
+      const { data: ss } = await supabase.rpc("get_last_sync", { p_day: d });
+      setLastSync(ss ?? null);
       setError(null);
     },
     [roomId],
