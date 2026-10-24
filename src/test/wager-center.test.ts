@@ -10,7 +10,7 @@ function game(over: Partial<BoardGame>): BoardGame {
     game_id: "g1", start_utc: future, away_code: "LAL", away_name: "Lakers", home_code: "BOS", home_name: "Celtics",
     away_score: null, home_score: null, state: "scheduled", status_detail: null, overridden: false,
     provider_updated_at: future, my_pick: "LAL", opp_pick: "BOS", opp_has_picked: true,
-    stake_each_cents: 1000, wager_status: null, proposed_by: null, wager_kind: null, wager_terms: null, settle_by: null,
+    stake_each_cents: 1000, wager_status: "accepted", proposed_by: null, wager_kind: "cash", wager_terms: null, settle_by: null,
     ...over,
   };
 }
