@@ -3,4 +3,4 @@
 - [x] Clear critical security finding: sync_state locked; app reads freshness via security-definer get_last_sync. Rescan: 0 errors, 1 intentional info (public games schedule).
 - [x] Add Wager Center tab (Offers / Active / Ledger) with versioned offers, payment confirmation, challenge settlement, revision history; 4-tab nav with attention badge.
 - [x] Re-run tsgo, vitest, production build; browser-verify room navigation (signed-in 390px check, no page errors).
-- [ ] Publish (no critical findings remain).
+- [x] Publish requested (no critical findings remain) — deploy to https://tipoff-rivalry-picks.lovable.app scheduled.
