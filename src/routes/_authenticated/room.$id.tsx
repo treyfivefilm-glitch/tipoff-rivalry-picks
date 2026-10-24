@@ -8,6 +8,7 @@ import { StandingsTab } from "@/components/battle/StandingsTab";
 import { HistoryTab } from "@/components/battle/HistoryTab";
 import { SettingsTab } from "@/components/battle/SettingsTab";
 import { WagerCenter, useWagerAttention } from "@/components/battle/WagerCenter";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/room/$id")({
   head: () => ({
