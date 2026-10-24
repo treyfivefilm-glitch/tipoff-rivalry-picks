@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ArrowRight, CheckCircle2, CircleDollarSign, ClipboardCheck, Clock, XCircle } from "lucide-react";
+import { CheckCircle2, CircleDollarSign, ClipboardCheck, Clock, XCircle } from "lucide-react";
 import { useBattle, errMsg } from "@/lib/battle-context";
 import { latestWagers, wagerLane, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
 import { computeStandings, h2hResult, winnerOf, type BoardGame, type Payment } from "@/lib/rules";
@@ -476,6 +476,3 @@ export function WagerCenterNavBadge() {
     </span>
   );
 }
-
-// Re-export for nav label clarity
-export { ArrowRight as _unused };
