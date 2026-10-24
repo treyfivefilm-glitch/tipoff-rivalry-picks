@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { CalendarDays, History, Trophy } from "lucide-react";
+import { CalendarDays, HandCoins, History, Trophy } from "lucide-react";
 import { LiveBattle } from "@/lib/battle-live";
 import { Shell, SettingsIcon, tabClass } from "@/components/battle/Shell";
 import { GamesTab } from "@/components/battle/GamesTab";
 import { StandingsTab } from "@/components/battle/StandingsTab";
 import { HistoryTab } from "@/components/battle/HistoryTab";
 import { SettingsTab } from "@/components/battle/SettingsTab";
+import { WagerCenter, useWagerAttention } from "@/components/battle/WagerCenter";
 
 export const Route = createFileRoute("/_authenticated/room/$id")({
   head: () => ({
@@ -29,10 +30,11 @@ function RoomPage() {
   );
 }
 
-type Tab = "games" | "standings" | "history" | "settings";
+type Tab = "games" | "wagers" | "standings" | "history" | "settings";
 
 function RoomInner() {
   const [tab, setTab] = useState<Tab>("games");
+  const attention = useWagerAttention();
   return (
     <Shell
       settingsLink={
