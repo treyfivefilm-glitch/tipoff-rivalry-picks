@@ -13,6 +13,8 @@ export const Route = createFileRoute("/_authenticated/rooms")({
       { name: "description", content: "Create or join a private pick battle room." },
       { property: "og:title", content: "Your rooms · NBA Pick Battle" },
       { property: "og:description", content: "Create or join a private pick battle room." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: RoomsPage,

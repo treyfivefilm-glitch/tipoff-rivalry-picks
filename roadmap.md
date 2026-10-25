@@ -4,3 +4,5 @@
 - [x] Add Wager Center tab (Offers / Active / Ledger) with versioned offers, payment confirmation, challenge settlement, revision history; 4-tab nav with attention badge.
 - [x] Re-run tsgo, vitest, production build; browser-verify room navigation (signed-in 390px check, no page errors).
 - [x] Publish requested (no critical findings remain) — deploy to https://tipoff-rivalry-picks.lovable.app scheduled.
+- [ ] Add confirmed Leave Room, transactional obligation checks, owner transfer and permanently closed invites; preserve all history.
+- [ ] Verify departure rules, mobile navigation, tests, current build and fresh security scan; publish only if checks pass.

@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/reset-password")({
-  head: () => ({ meta: [{ title: "Reset password · NBA Pick Battle" }, { name: "description", content: "Set a new password." }, { property: "og:title", content: "Reset password" }, { property: "og:description", content: "Set a new password." }] }),
+  head: () => ({ meta: [{ title: "Reset password · NBA Pick Battle" }, { name: "description", content: "Set a new password." }, { property: "og:title", content: "Reset password · NBA Pick Battle" }, { property: "og:description", content: "Set a new password for NBA Pick Battle." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
   component: () => {
     const [pw, setPw] = useState("");
     const nav = useNavigate();

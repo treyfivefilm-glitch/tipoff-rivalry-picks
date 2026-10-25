@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { BattleContext, type BattleApi, type Player, type RoomInfo, type WagerTerms } from "./battle-context";
 import type { BoardGame, Payment } from "./rules";
@@ -16,6 +18,8 @@ const throwIf = (r: { error: { message: string } | null }) => {
  *  realtime on audit_events + 25s polling + refocus refresh. */
 export function LiveBattle({ roomId, children }: { roomId: string; children: ReactNode }) {
   const nav = useNavigate();
+  const qc = useQueryClient();
+  const departing = useRef(false);
   const sync = useServerFn(syncGames);
   const [room, setRoom] = useState<RoomInfo | null>(null);
   const [members, setMembers] = useState<Player[]>([]);
@@ -37,7 +41,7 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
     const { data: u } = await supabase.auth.getUser();
     if (!u.user) throw new Error("Not signed in");
     setMeId(u.user.id);
-    const { data: r, error: re } = await supabase.from("rooms").select("id,name,owner_id,invite_code").eq("id", roomId).single();
+    const { data: r, error: re } = await supabase.from("rooms").select("id,name,owner_id,invite_code,invites_closed").eq("id", roomId).single();
     if (re) throw re;
     setRoom(r as RoomInfo);
     const { data: ms, error: mErr } = await supabase.from("room_members").select("user_id,display_name").eq("room_id", roomId);
@@ -112,6 +116,7 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
   useEffect(() => {
     if (loading) return;
     const tick = () => {
+      if (departing.current) return;
       loadBoard(dayRef.current).catch((e) => setError(e instanceof Error ? e.message : 'Refresh failed'));
       loadStatic().catch(() => {});
     };
@@ -232,12 +237,22 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
           throwIf(await supabase.rpc("set_display_name", { p_room: roomId, p_name: name }));
           await loadStatic();
         }),
+      leaveRoom: async () => {
+        if (departing.current) return;
+        departing.current = true;
+        try {
+          throwIf(await supabase.rpc("leave_room", { p_room: roomId }));
+        } catch (e) { departing.current = false; throw e; }
+        toast.success("You left the room. Its history is preserved.");
+        await qc.invalidateQueries({ queryKey: ["my-rooms"] });
+        await nav({ to: "/rooms", replace: true });
+      },
       signOut: async () => {
         await supabase.auth.signOut();
         nav({ to: "/auth", search: { redirect: undefined }, replace: true });
       },
     };
-  }, [room, me, friend, games, payments, versions, challenges, loading, error, lastSync, syncing, day, act, ensureDays, loadBoard, loadStatic, roomId, nav, sync]);
+  }, [room, me, friend, games, payments, versions, challenges, loading, error, lastSync, syncing, day, act, ensureDays, loadBoard, loadStatic, roomId, nav, qc, sync]);
 
   if (loading || !api) {
     return (
