@@ -14,4 +14,12 @@ describe("App routing", () => {
 
     expect(matches.at(-1)?.routeId).not.toBe(rootRouteId);
   });
+
+  it("matches the rooms list page so the room header link has a destination", () => {
+    const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
+
+    const matches = router.matchRoutes("/rooms");
+
+    expect(matches.at(-1)?.routeId).toBe("/_authenticated/rooms");
+  });
 });

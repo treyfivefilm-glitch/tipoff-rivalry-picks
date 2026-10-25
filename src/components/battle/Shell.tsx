@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useMemo } from "react";
-import { Settings } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ArrowLeft, Settings } from "lucide-react";
 import { useBattle } from "@/lib/battle-context";
 import { computeStandings } from "@/lib/rules";
 import { fmtMoney } from "@/lib/time";
@@ -16,12 +17,20 @@ export function Shell({ settingsLink, tabs, children }: { settingsLink: ReactNod
         </div>
       )}
       <header className="px-4 pt-4">
-        <div className="flex items-center justify-between">
-          <div className="min-w-0">
-            <p className="truncate font-cond text-xs uppercase tracking-[0.25em] text-muted-foreground">{b.room.name}</p>
-            <h1 className="font-display text-5xl leading-none text-primary drop-shadow">PICK BATTLE</h1>
-          </div>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+          <Link
+            to="/rooms"
+            aria-label="Back to my rooms list"
+            className="inline-flex w-fit items-center gap-1 self-start rounded-full border border-border bg-secondary/60 px-3 py-1.5 font-cond text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-primary"
+          >
+            <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
+            <span>All Rooms</span>
+          </Link>
           {settingsLink}
+        </div>
+        <div className="mt-1 min-w-0">
+          <p className="truncate font-cond text-xs uppercase tracking-[0.25em] text-muted-foreground">{b.room.name}</p>
+          <h1 className="font-display text-5xl leading-none text-primary drop-shadow">PICK BATTLE</h1>
         </div>
         <div className="surface mt-4 grid grid-cols-[1fr_auto_1fr] items-center rounded-2xl px-4 py-3 animate-rise">
           <ScoreSide name={b.me.name} label="You" rec={`${s.h2h.w}-${s.h2h.l}`} sub={`Picks ${s.myPred.w}-${s.myPred.l}`} />
