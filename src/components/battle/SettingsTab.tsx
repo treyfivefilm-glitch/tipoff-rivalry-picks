@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { useBattle, errMsg } from "@/lib/battle-context";
 import { Button } from "@/components/ui/button";
 import { pacificDay, pacificTime } from "@/lib/time";
+import { RoomManagement } from "./RoomManagement";
 
 const input = "h-11 w-full rounded-lg border border-input bg-background/60 px-3 outline-none focus:border-primary";
 
@@ -19,7 +20,7 @@ export function SettingsTab() {
       <section className="surface space-y-2 rounded-2xl p-4">
         <h2 className="font-display text-2xl">INVITE</h2>
         <p className="text-sm text-muted-foreground">Code <b className="font-display text-xl text-primary">{b.room.invite_code}</b> · max 2 players</p>
-        <Button variant="gold" className="w-full" onClick={() => go(async () => { await navigator.clipboard.writeText(link); }, "Invite link copied")}>Copy invite link</Button>
+        <Button variant="gold" className="w-full" disabled={b.room.invites_closed} onClick={() => go(async () => { await navigator.clipboard.writeText(link); }, "Invite link copied")}>{b.room.invites_closed ? "Invitations closed" : "Copy invite link"}</Button>
       </section>
       <section className="surface space-y-2 rounded-2xl p-4">
         <h2 className="font-display text-2xl">NAMES</h2>
@@ -46,7 +47,8 @@ export function SettingsTab() {
         <p>Schedule & scores come from ESPN’s public, unofficial scoreboard feed, refreshed when you open a day or tap Refresh. It isn’t guaranteed — the owner can correct results.</p>
         <p>Tracking only. No real money moves through this app.</p>
       </section>
-      {b.signOut && <Button variant="outline" className="w-full" onClick={() => b.signOut!()}>Sign out</Button>}
+      <RoomManagement />
+      {b.signOut && <Button variant="outline" className="w-full" onClick={() => b.signOut?.()}>Sign out</Button>}
     </div>
   );
 }
@@ -93,7 +95,7 @@ function ImportSection() {
         onClick={async () => {
           setPct(0);
           try {
-            await b.importSeason!((p) => setPct(p));
+            await b.importSeason?.((p) => setPct(p));
             toast.success("Season schedule imported");
           } catch (e) {
             toast.error(errMsg(e));

@@ -11,6 +11,7 @@ export interface RoomInfo {
   name: string;
   owner_id: string;
   invite_code: string;
+  invites_closed: boolean;
 }
 export type OverrideState = "final" | "canceled" | "postponed";
 
@@ -52,6 +53,7 @@ export interface BattleApi {
   clearOverride: (gameId: string) => Promise<void>;
   renameRoom: (name: string) => Promise<void>;
   setName: (name: string) => Promise<void>;
+  leaveRoom: () => Promise<void>;
   signOut?: () => Promise<void>;
   resetDemo?: () => void;
 }
