@@ -316,6 +316,7 @@ export type Database = {
           created_at: string
           id: string
           invite_code: string
+          invites_closed: boolean
           name: string
           owner_id: string
         }
@@ -323,6 +324,7 @@ export type Database = {
           created_at?: string
           id?: string
           invite_code: string
+          invites_closed?: boolean
           name?: string
           owner_id: string
         }
@@ -330,6 +332,7 @@ export type Database = {
           created_at?: string
           id?: string
           invite_code?: string
+          invites_closed?: boolean
           name?: string
           owner_id?: string
         }
@@ -478,6 +481,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _lock_room_member: { Args: { p_room: string }; Returns: undefined }
       _log: {
         Args: { _detail: Json; _game: string; _kind: string; _room: string }
         Returns: undefined
@@ -550,6 +554,7 @@ export type Database = {
         Args: { p_code: string; p_display_name: string }
         Returns: string
       }
+      leave_room: { Args: { p_room: string }; Returns: undefined }
       make_pick: {
         Args: { p_game: string; p_room: string; p_team: string }
         Returns: undefined
