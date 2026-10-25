@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useMemo } from "react";
-import { Settings } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ArrowLeft, Settings } from "lucide-react";
 import { useBattle } from "@/lib/battle-context";
 import { computeStandings } from "@/lib/rules";
 import { fmtMoney } from "@/lib/time";
