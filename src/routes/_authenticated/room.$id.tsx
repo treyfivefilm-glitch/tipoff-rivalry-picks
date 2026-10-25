@@ -17,6 +17,8 @@ export const Route = createFileRoute("/_authenticated/room/$id")({
       { name: "description", content: "Your private head-to-head pick battle room." },
       { property: "og:title", content: "NBA Pick Battle room" },
       { property: "og:description", content: "Your private head-to-head pick battle room." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: RoomPage,
