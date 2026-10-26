@@ -1,26 +1,56 @@
 // @vitest-environment node
 import postgres from "postgres";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { isStagingDatabaseName, stagingDatabaseUrl } from "./staging-db";
 
-// Real RPC/RLS checks. Every fixture is rolled back; no test room is persisted.
-const url = process.env["SUPABASE_DB_URL"];
+// Real RPC/RLS checks on an explicitly designated isolated DB only.
+const url = stagingDatabaseUrl(process.env);
 describe.skipIf(!url)("leave_room database safety", () => {
-  const db = postgres(url ?? "", { max: 1, prepare: false });
-  const owner = "00000000-0000-4000-8000-000000000001";
-  const member = "00000000-0000-4000-8000-000000000002";
-  const outsider = "00000000-0000-4000-8000-000000000003";
-  const room = "00000000-0000-4000-8000-000000000004";
-  const game = "leave-room-transaction-test";
-  beforeAll(async () => { await db`BEGIN`; });
-  afterAll(async () => { await db`ROLLBACK`; await db.end(); });
+  let pool: ReturnType<typeof postgres> | undefined;
+  let connection: postgres.ReservedSql | undefined;
+  // Fail before any query if a hook did not acquire the reserved connection.
+  function db(strings: TemplateStringsArray, ...values: postgres.ParameterOrFragment<never>[]) {
+    if (!connection) throw new Error("No reserved staging test connection");
+    return connection(strings, ...values);
+  }
+  const owner = randomUUID();
+  const member = randomUUID();
+  const outsider = randomUUID();
+  const room = randomUUID();
+  const game = `leave-room-${randomUUID()}`;
+  const invite = `LEAVE-${randomUUID().slice(0, 8).toUpperCase()}`;
+  beforeAll(async () => {
+    if (!url) throw new Error("Staging tests are not enabled");
+    pool = postgres(url, { max: 1, prepare: false, connect_timeout: 5, idle_timeout: 5 });
+    const [target] = await pool<{ name: string }[]>`SELECT current_database() AS name`;
+    if (!target || !isStagingDatabaseName(target.name)) throw new Error("Connected database is not designated test/staging; refusing fixtures");
+  });
+  afterAll(async () => { await pool?.end({ timeout: 5 }); });
   beforeEach(async () => {
-    await db`SAVEPOINT scenario`;
-    await db`INSERT INTO public.rooms(id,name,owner_id,invite_code) VALUES(${room},'Transactional departure test',${owner},'LEAVE-TRANSACTION-TEST')`;
+    if (!pool) throw new Error("Staging test pool unavailable");
+    connection = await pool.reserve();
+    await db`BEGIN`;
+    await db`SET LOCAL statement_timeout = '5s'`;
+    await db`SET LOCAL lock_timeout = '2s'`;
+    await db`INSERT INTO public.rooms(id,name,owner_id,invite_code) VALUES(${room},'Transactional departure test',${owner},${invite})`;
     await db`INSERT INTO public.room_members(room_id,user_id,display_name) VALUES(${room},${owner},'Owner'),(${room},${member},'Member')`;
     await db`INSERT INTO public.games(id,start_utc,away_code,away_name,home_code,home_name,state,away_score,home_score) VALUES(${game},now()-interval '1 day','A','Away','H','Home','final',100,90)`;
     await db`INSERT INTO public.picks(room_id,game_id,user_id,team_code) VALUES(${room},${game},${owner},'A'),(${room},${game},${member},'H')`;
   });
-  afterEach(async () => { await db`ROLLBACK TO SAVEPOINT scenario`; });
+  afterEach(async () => {
+    const reserved = connection;
+    if (!reserved) return;
+    try {
+      // ROLLBACK also recovers an aborted transaction after an expected RPC error.
+      await reserved`ROLLBACK`;
+      await reserved`RESET ROLE`;
+      await reserved`RESET request.jwt.claim.sub`;
+      await reserved`RESET request.jwt.claims`;
+      expect((await reserved`SELECT id FROM public.rooms WHERE id=${room}`)).toHaveLength(0);
+      expect((await reserved`SELECT id FROM public.games WHERE id=${game}`)).toHaveLength(0);
+    } finally { connection = undefined; reserved.release(); }
+  });
   async function asUser(id: string) {
     await db`SELECT set_config('request.jwt.claim.sub',${id},true),set_config('request.jwt.claims',${JSON.stringify({ sub: id, role: "authenticated" })},true)`;
     await db`SET LOCAL ROLE authenticated`;
@@ -34,6 +64,8 @@ describe.skipIf(!url)("leave_room database safety", () => {
     await leave();
     expect((await db`SELECT id FROM public.rooms WHERE id=${room}`)).toHaveLength(0);
     await db`RESET ROLE`;
+    // RLS hides the retained room from the departed member; it is NOT deleted.
+    expect((await db`SELECT id FROM public.rooms WHERE id=${room}`)).toHaveLength(1);
     expect((await db`SELECT * FROM public.picks WHERE room_id=${room}`)).toHaveLength(2);
     expect((await db`SELECT user_id FROM public.room_members WHERE room_id=${room}`)).toHaveLength(1);
     expect((await db`SELECT invites_closed FROM public.rooms WHERE id=${room}`)[0]?.invites_closed).toBe(true);
@@ -69,7 +101,7 @@ describe.skipIf(!url)("leave_room database safety", () => {
   });
   it("closed invite cannot admit replacement", async () => {
     await leave(); await db`RESET ROLE`; await asUser(outsider);
-    await expect(db`SELECT public.join_room('LEAVE-TRANSACTION-TEST','Replacement')`).rejects.toThrow(/permanently closed/);
+    await expect(db`SELECT public.join_room(${invite},'Replacement')`).rejects.toThrow(/permanently closed/);
   });
   it("direct client membership deletion is forbidden", async () => {
     await asUser(member); await expect(db`DELETE FROM public.room_members WHERE room_id=${room}`).rejects.toThrow(/permission denied/);
