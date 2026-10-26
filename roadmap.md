@@ -6,4 +6,4 @@
 - [x] Publish requested (no critical findings remain) — deploy to https://tipoff-rivalry-picks.lovable.app scheduled.
 - [ ] Add confirmed Leave Room, transactional obligation checks, owner transfer and permanently closed invites; preserve all history.
 - [ ] Complete departure QA on an isolated staging database; production changes and publishing remain blocked pending QA.
-- [ ] First reliability patch: staging-only opt-in DB tests, retained-room assertions, transaction/session cleanup, and non-destructive CI.
+- [x] First reliability patch: staging-only opt-in DB tests, retained-room assertions, transaction/session cleanup, and non-destructive CI. Local suite: 30 passed, 15 DB tests safely skipped; automatic typecheck/build OK. CI execution and DB QA await isolated staging credentials/review.
