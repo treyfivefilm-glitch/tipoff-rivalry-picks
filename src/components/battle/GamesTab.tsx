@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { filterCounts, GAME_FILTERS, matchesFilter, type GameFilter } from "@/lib/qol";
 import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { useBattle } from "@/lib/battle-context";
 import { GameCard } from "./GameCard";
@@ -29,6 +30,9 @@ export function GamesTab() {
     return m;
   }, [b.games]);
   const list = byDay.get(b.day) ?? [];
+  const [filter, setFilter] = useState<GameFilter>("all");
+  const counts = useMemo(() => filterCounts(list), [list]);
+  const shown = useMemo(() => list.filter((g) => matchesFilter(g, filter)), [list, filter]);
   const chipRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -91,6 +95,27 @@ export function GamesTab() {
 
       {b.error && <p className="rounded-xl border border-loss/40 bg-loss/10 p-3 text-sm text-loss">{b.error}</p>}
 
+      {b.day !== today && today >= SEASON_START && today <= SEASON_END && (
+        <button type="button" onClick={() => b.setDay(today)} className="min-h-11 w-full rounded-xl border border-primary/50 font-cond text-sm font-bold text-primary">
+          Jump to Today
+        </button>
+      )}
+
+      {!b.loading && list.length > 0 && (
+        <div role="group" aria-label="Filter games" className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
+          {GAME_FILTERS.map((f) => (
+            <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}
+              className={cn("min-h-11 shrink-0 rounded-full border px-3 font-cond text-xs font-bold",
+                filter === f.id ? "border-primary bg-gold-gradient text-primary-foreground" : "border-border bg-card/70")}>
+              {f.label} <span className="opacity-80">{counts[f.id]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {!b.loading && counts.need > 0 && filter !== "need" && (
+        <p className="font-cond text-xs text-primary">{counts.need} game{counts.need > 1 ? "s" : ""} still need your pick before tipoff.</p>
+      )}
+
       {b.loading ? (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-60 rounded-2xl bg-card" />)}
@@ -102,9 +127,15 @@ export function GamesTab() {
             {b.syncing ? "Checking the schedule…" : "No games found for this day. If you expected games, tap Refresh or import the season in Settings."}
           </p>
         </div>
+      ) : shown.length === 0 ? (
+        <div className="surface rounded-2xl p-6 text-center">
+          <p className="font-display text-2xl">NOTHING HERE</p>
+          <p className="mt-1 text-sm text-muted-foreground">No games on this day match “{GAME_FILTERS.find((f) => f.id === filter)?.label}”.</p>
+          <button type="button" onClick={() => setFilter("all")} className="mt-3 min-h-11 px-4 font-cond text-sm font-bold text-primary">Show all games</button>
+        </div>
       ) : (
         <div className="space-y-3">
-          {list.map((g) => <GameCard key={g.game_id} g={g} />)}
+          {shown.map((g) => <GameCard key={g.game_id} g={g} />)}
         </div>
       )}
     </div>
