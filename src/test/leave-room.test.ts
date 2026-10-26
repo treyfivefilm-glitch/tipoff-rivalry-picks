@@ -68,7 +68,7 @@ describe.skipIf(!url)("leave_room database safety", () => {
     expect((await db`SELECT id FROM public.rooms WHERE id=${room}`)).toHaveLength(1);
     expect((await db`SELECT * FROM public.picks WHERE room_id=${room}`)).toHaveLength(2);
     expect((await db`SELECT user_id FROM public.room_members WHERE room_id=${room}`)).toHaveLength(1);
-    expect((await db`SELECT invites_closed FROM public.rooms WHERE id=${room}`)[0]?.invites_closed).toBe(true);
+    expect((await db`SELECT invites_closed FROM public.rooms WHERE id=${room}`)[0]?.['invites_closed']).toBe(true);
   });
   it("third party cannot leave", async () => { await expect(leave(outsider)).rejects.toThrow(/Not a member/); });
   it("pending offer blocks leave", async () => { await wager("proposed"); await expect(leave()).rejects.toThrow(/pending offers/); });
@@ -88,12 +88,12 @@ describe.skipIf(!url)("leave_room database safety", () => {
     await wager("accepted");
     await db`INSERT INTO public.payments(room_id,payer_id,recipient_id,cents,status) VALUES(${room},${member},${owner},1000,'confirmed')`;
     await leave(owner); await db`RESET ROLE`;
-    expect((await db`SELECT owner_id FROM public.rooms WHERE id=${room}`)[0]?.owner_id).toBe(member);
+    expect((await db`SELECT owner_id FROM public.rooms WHERE id=${room}`)[0]?.['owner_id']).toBe(member);
     expect((await db`SELECT * FROM public.wagers WHERE room_id=${room}`)).toHaveLength(1);
     expect((await db`SELECT * FROM public.audit_events WHERE room_id=${room} AND kind='ownership_transferred'`)).toHaveLength(1);
     await asUser(member);
     await db`SELECT public.rename_room(${room}::uuid,'Remaining owner')`;
-    expect((await db`SELECT name FROM public.rooms WHERE id=${room}`)[0]?.name).toBe("Remaining owner");
+    expect((await db`SELECT name FROM public.rooms WHERE id=${room}`)[0]?.['name']).toBe("Remaining owner");
   });
   it("sole owner is blocked rather than deleting room", async () => {
     await db`DELETE FROM public.room_members WHERE room_id=${room} AND user_id=${member}`;
@@ -108,6 +108,6 @@ describe.skipIf(!url)("leave_room database safety", () => {
   });
   it("direct owner mutation and destructive room deletion are forbidden", async () => {
     const [rights] = await db`SELECT has_table_privilege('authenticated','public.rooms','UPDATE') AS update_allowed,has_table_privilege('authenticated','public.rooms','DELETE') AS delete_allowed`;
-    expect(rights?.update_allowed).toBe(false); expect(rights?.delete_allowed).toBe(false);
+    expect(rights?.['update_allowed']).toBe(false); expect(rights?.['delete_allowed']).toBe(false);
   });
 });
