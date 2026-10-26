@@ -1,0 +1,43 @@
+name: Non-destructive reliability checks
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      RUN_STAGING_DB_TESTS: 'false'
+      STAGING_TEST_DB_URL: ''
+      SUPABASE_DB_URL: ''
+      LOVABLE_DB_MIGRATION_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      SUPABASE_URL: 'http://127.0.0.1:54321'
+      SUPABASE_PUBLISHABLE_KEY: 'ci-public-key-not-a-credential'
+      VITE_SUPABASE_URL: 'http://127.0.0.1:54321'
+      VITE_SUPABASE_PUBLISHABLE_KEY: 'ci-public-key-not-a-credential'
+      VITE_SUPABASE_PROJECT_ID: 'local-ci'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.12'
+      - name: Remove app connection files from the CI checkout only
+        run: rm -f .env .env.*
+      - run: bun install --frozen-lockfile
+      - name: TypeScript checks
+        run: bunx tsgo --noEmit
+      - name: Unit tests (database integration deliberately disabled)
+        run: bunx vitest run
+      - name: Compile only (no deploy or migrations)
+        run: bun run build
