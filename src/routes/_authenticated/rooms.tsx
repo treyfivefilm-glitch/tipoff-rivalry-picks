@@ -2,9 +2,12 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Crown, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { buildRoomCards, type RoomCard } from "@/lib/qol";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/rooms")({
   head: () => ({
@@ -20,7 +23,32 @@ export const Route = createFileRoute("/_authenticated/rooms")({
   component: RoomsPage,
 });
 
-const input = "h-12 w-full rounded-xl border border-input bg-background/60 px-4 outline-none focus:border-primary";
+const input = "h-12 w-full rounded-xl border border-input bg-background/60 px-4 text-base outline-none focus:border-primary";
+
+export function RoomCardView({ c }: { c: RoomCard }) {
+  const players = [c.ownerName, c.otherName].filter(Boolean).join(" vs ");
+  const badge =
+    c.inviteState === "open" ? { t: "Waiting for friend · invite open", cls: "border-primary/50 text-primary" }
+    : c.inviteState === "full" ? { t: "Full", cls: "border-win/50 text-win" }
+    : { t: "Invites closed", cls: "border-border text-muted-foreground" };
+  return (
+    <Link to="/room/$id" params={{ id: c.id }} aria-label={`Open room ${c.name}`}
+      className="flex min-h-16 items-center justify-between gap-3 rounded-xl bg-background/40 px-4 py-3 transition-colors hover:bg-background/70">
+      <div className="min-w-0">
+        <p className="flex items-center gap-1.5 truncate font-semibold">
+          {c.youOwn && <Crown className="h-3.5 w-3.5 shrink-0 text-primary" aria-label="You own this room" />}
+          <span className="truncate">{c.name}</span>
+        </p>
+        <p className="truncate text-sm text-muted-foreground">{players || "No players listed"}</p>
+        <div className="mt-1 flex flex-wrap items-center gap-2 font-cond text-[11px]">
+          <span className="flex items-center gap-1 text-muted-foreground"><Users className="h-3 w-3" /> {Math.min(c.players, 2)}/2 players</span>
+          <span className={cn("rounded-full border px-2 py-0.5", badge.cls)}>{badge.t}</span>
+        </div>
+      </div>
+      <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+    </Link>
+  );
+}
 
 function RoomsPage() {
   const qc = useQueryClient();
@@ -28,9 +56,17 @@ function RoomsPage() {
   const rooms = useQuery({
     queryKey: ["my-rooms"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("rooms").select("id, name, invite_code");
+      const { data: u } = await supabase.auth.getUser();
+      const { data, error } = await supabase.from("rooms").select("id, name, owner_id, invites_closed").order("created_at", { ascending: false });
       if (error) throw error;
-      return data;
+      const ids = (data ?? []).map((r) => r.id);
+      let members: { room_id: string; user_id: string; display_name: string }[] = [];
+      if (ids.length) {
+        const { data: ms, error: me } = await supabase.from("room_members").select("room_id, user_id, display_name").in("room_id", ids);
+        if (me) throw me;
+        members = ms ?? [];
+      }
+      return buildRoomCards(data ?? [], members, u.user?.id ?? null);
     },
   });
   const [name, setName] = useState("");
@@ -59,34 +95,32 @@ function RoomsPage() {
   return (
     <div className="mx-auto max-w-md space-y-4 px-4 py-8">
       <h1 className="font-display text-5xl text-primary">YOUR BATTLES</h1>
-      <section className="surface space-y-2 rounded-2xl p-4">
-        {rooms.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-        {rooms.data?.length === 0 && <p className="text-sm text-muted-foreground">No rooms yet — create one or join with a code.</p>}
-        {rooms.data?.map((r) => (
-          <Link
-            key={r.id}
-            to="/room/$id"
-            params={{ id: r.id }}
-            className="flex items-center justify-between rounded-xl bg-background/40 px-3 py-3 transition-colors hover:bg-background/70"
-          >
-            <span className="font-semibold">{r.name}</span>
-            <span className="flex items-center gap-1 font-cond text-xs text-muted-foreground">
-              Code {r.invite_code} <ChevronRight className="h-4 w-4" />
-            </span>
-          </Link>
-        ))}
+      <section className="surface space-y-2 rounded-2xl p-4" aria-busy={rooms.isLoading}>
+        {rooms.isLoading && [0, 1].map((i) => <Skeleton key={i} className="h-20 rounded-xl bg-background/40" />)}
+        {rooms.isError && (
+          <div className="space-y-2 text-center">
+            <p className="text-sm text-loss">Couldn't load your rooms. Check your connection.</p>
+            <Button variant="glass" onClick={() => rooms.refetch()} disabled={rooms.isFetching}>Try again</Button>
+          </div>
+        )}
+        {rooms.data?.length === 0 && (
+          <p className="py-2 text-center text-sm text-muted-foreground">No rooms yet — create one below, or join with your friend's code.</p>
+        )}
+        {rooms.data?.map((c) => <RoomCardView key={c.id} c={c} />)}
       </section>
       <section className="surface space-y-2 rounded-2xl p-4">
-        <input className={input} placeholder="Your display name" maxLength={30} value={name} onChange={(e) => setName(e.target.value)} />
+        <label className="sr-only" htmlFor="dn">Your display name</label>
+        <input id="dn" className={input} placeholder="Your display name" maxLength={30} autoComplete="nickname" value={name} onChange={(e) => setName(e.target.value)} />
         <Button variant="gold" size="xl" className="w-full" disabled={busy} onClick={() => run(() => rpc("create_room", { p_name: "Pick Battle", p_display_name: name }), "Room created")}>
           Create a room
         </Button>
-        <input className={input} placeholder="Invite code" value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} />
+        <label className="sr-only" htmlFor="ic">Invite code</label>
+        <input id="ic" className={input} placeholder="Invite code" autoCapitalize="characters" autoCorrect="off" spellCheck={false} value={code} onChange={(e) => setCode(e.target.value.toUpperCase().trim())} />
         <Button variant="glass" size="xl" className="w-full" disabled={busy || !code} onClick={() => run(() => rpc("join_room", { p_code: code, p_display_name: name }), "Joined room")}>
           Join with code
         </Button>
       </section>
-      <p className="text-center font-cond text-xs text-muted-foreground">Rooms are private and capped at two players.</p>
+      <p className="text-center font-cond text-xs text-muted-foreground">Rooms are private and capped at two players. Share your invite code from the room's Settings.</p>
     </div>
   );
 }
