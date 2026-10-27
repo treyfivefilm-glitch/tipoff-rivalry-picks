@@ -2,6 +2,7 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, syncUtcBounds } from "../_shared/sync-days.ts";
+import { isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -130,7 +131,14 @@ Deno.serve(async (req) => {
     // An official season schedule covers every day; a daily scoreboard overlays
     // live clock, current scores and final results when it matches the day.
     const [scheduleResult, liveResult] = await Promise.allSettled([
-      getJson<Schedule>(SCHEDULE_URL), getJson<Scoreboard>(LIVE_URL),
+      getJson<Schedule>(SCHEDULE_URL).then(payload => {
+        if (!isValidNbaSchedule(payload)) throw new Error("Invalid NBA schedule payload");
+        return payload;
+      }),
+      getJson<Scoreboard>(LIVE_URL).then(payload => {
+        if (!isValidNbaScoreboard(payload)) throw new Error("Invalid NBA scoreboard payload");
+        return payload;
+      }),
     ]);
     if (scheduleResult.status === "rejected" && liveResult.status === "rejected") {
       throw new Error("Both NBA schedule and live scoreboard are unavailable");
