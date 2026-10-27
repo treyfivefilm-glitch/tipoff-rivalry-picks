@@ -137,3 +137,19 @@ export function groupUsableNbaGamesByPacificDay<T>(
   }
   return grouped;
 }
+
+
+/** The live feed may temporarily lag behind the full-season schedule. Prefer
+ * later NBA game states so a stale scheduled/live snapshot cannot erase a
+ * verified final (or make a live game appear not to have started). A genuine
+ * postponement/cancellation is allowed to supersede an earlier state.
+ */
+export function shouldOverlayNbaGame(
+  previous: { gameStatus: number; gameStatusText?: string } | undefined,
+  incoming: { gameStatus: number; gameStatusText?: string },
+): boolean {
+  if (!previous) return true;
+  const detail = (incoming.gameStatusText ?? "").toLowerCase();
+  if (detail.includes("postpon") || detail.includes("cancel")) return true;
+  return incoming.gameStatus >= previous.gameStatus;
+}
