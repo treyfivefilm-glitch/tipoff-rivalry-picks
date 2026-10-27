@@ -41,9 +41,9 @@ export function PushSettings() {
         userVisibleOnly:true,applicationServerKey:toBytes(vapidKey).buffer as ArrayBuffer,
       });
       const keys=subscription.toJSON().keys;
-      if(!keys?.p256dh||!keys.auth)throw new Error("Could not save push subscription keys");
+      if(!keys?.p256dh||!keys['auth'])throw new Error("Could not save push subscription keys");
       const {error}=await supabase.from("push_subscriptions" as never).upsert({
-        endpoint:subscription.endpoint,user_id:auth.user.id,p256dh:keys.p256dh,auth:keys.auth,
+        endpoint:subscription.endpoint,user_id:auth.user.id,p256dh:keys['p256dh'],auth:keys['auth'],
       } as never,{onConflict:"endpoint"});
       if(error)throw error;
       setEnabled(true);
