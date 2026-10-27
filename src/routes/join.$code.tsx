@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CheckCircle2, ChevronRight, Loader2, ShieldAlert, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { isValidInviteCode, normalizeInviteCode } from "@/lib/invites";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/join/$code")({
@@ -24,8 +25,8 @@ const input = "min-h-12 w-full rounded-xl border border-input bg-background/60 p
 
 function JoinPage() {
   const { code: rawCode } = Route.useParams();
-  const code = rawCode.trim().toUpperCase();
-  const valid = /^[A-F0-9]{6}$/.test(code);
+  const code = normalizeInviteCode(rawCode);
+  const valid = isValidInviteCode(code);
   const nav = useNavigate();
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [name, setName] = useState("");
