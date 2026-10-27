@@ -55,6 +55,26 @@ describe("unattended NBA worker pure preparation", () => {
     expect(prepareUnattendedNbaDay("2026-11-17", null, live([game(3, 104, 105)]), []).cacheable).toBe(true);
   });
 
+  it("does not mark every day fresh when a schedule has only malformed game rows", () => {
+    const malformedSeason = schedule([{ gameId: "broken", awayTeam: null }]);
+    expect(prepareUnattendedNbaDay("2026-11-16", malformedSeason, null, [])).toEqual({
+      rows: [], cacheable: false,
+    });
+    // A verified live result can still refresh its own day during this outage.
+    const liveFallback = prepareUnattendedNbaDay(
+      "2026-11-17", malformedSeason, live([game(3, 105, 103)]), [],
+    );
+    expect(liveFallback.cacheable).toBe(true);
+    expect(liveFallback.rows[0]).toMatchObject({ state: "final", away_score: 105, home_score: 103 });
+  });
+
+  it("skips malformed schedule games without rejecting an otherwise valid season", () => {
+    const mixedSeason = schedule([{ gameId: "broken", homeTeam: null }, game()]);
+    expect(prepareUnattendedNbaDay("2026-11-16", mixedSeason, null, [])).toEqual({
+      rows: [], cacheable: true,
+    });
+  });
+
   it("allows a zero-game day only with a validated full-season schedule", () => {
     expect(prepareUnattendedNbaDay("2026-11-16", schedule([game()]), null, [])).toEqual({
       rows: [], cacheable: true,
