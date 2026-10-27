@@ -129,33 +129,56 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
     };
   }, [loadStatic, loadBoard, sync]);
 
-  // Cross-device freshness: realtime on the room's audit log, plus polling and refocus.
+  // Live-score freshness: fetch the NBA feed periodically, not just the
+  // previously stored database rows. Use a separate interval from realtime
+  // events so score updates cannot recursively trigger more provider fetches.
   useEffect(() => {
     if (loading) return;
-    const tick = () => {
-      if (departing.current) return;
-      loadBoard(dayRef.current).catch((e) => setError(e instanceof Error ? e.message : 'Refresh failed'));
-      loadStatic().catch(() => {});
+    let syncingLive = false;
+    const updateBoard = () => {
+      if (departing.current || document.visibilityState !== "visible") return;
+      loadBoard(dayRef.current).catch((e) => setError(e instanceof Error ? e.message : "Board refresh failed"));
     };
-    const iv = setInterval(tick, 25000);
+    const updateScores = async () => {
+      if (departing.current || syncingLive || document.visibilityState !== "visible") return;
+      syncingLive = true;
+      const today = todayPacific();
+      try {
+        const result = await sync({ data: { days: [addDays(today, -1), today, addDays(today, 1)] } });
+        await loadBoard(dayRef.current);
+        if (result.errors.length) setError(`Live scores: ${result.errors.slice(0, 2).join("; ")}`);
+        else setError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Live score updates unavailable");
+      } finally {
+        syncingLive = false;
+      }
+    };
+    const boardInterval = window.setInterval(updateBoard, 25000);
+    const scoreInterval = window.setInterval(() => void updateScores(), 90000);
     const onVis = () => {
-      if (document.visibilityState === "visible") tick();
+      if (document.visibilityState === "visible") {
+        updateBoard();
+        void updateScores();
+        loadStatic().catch(() => {});
+      }
     };
     document.addEventListener("visibilitychange", onVis);
     const ch = supabase
       .channel(`room-${roomId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, tick)
+      .on("postgres_changes", { event: "*", schema: "public", table: "games" }, updateBoard)
       .on("postgres_changes", { event: "*", schema: "public", table: "audit_events", filter: `room_id=eq.${roomId}` }, () => {
-        tick();
+        updateBoard();
         loadStatic().catch(() => {});
       })
       .subscribe();
     return () => {
-      clearInterval(iv);
+      window.clearInterval(boardInterval);
+      window.clearInterval(scoreInterval);
       document.removeEventListener("visibilitychange", onVis);
       supabase.removeChannel(ch);
     };
-  }, [loading, loadBoard, loadStatic, roomId]);
+  }, [loading, loadBoard, loadStatic, roomId, sync]);
 
   const act = useCallback(
     async (fn: () => Promise<unknown>) => {
