@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { EyeOff, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { TeamBadge } from "./TeamBadge";
+import { TipoffCountdown } from "./TipoffCountdown";
 import { Button } from "@/components/ui/button";
 import { useBattle, errMsg } from "@/lib/battle-context";
 import { h2hResult, isLiveBet, isLocked, winnerOf, type BoardGame } from "@/lib/rules";
@@ -32,8 +33,11 @@ export function GameCard({ g }: { g: BoardGame }) {
 
   return (
     <article className="surface overflow-hidden rounded-2xl animate-rise">
-      <div className="flex items-center justify-between px-4 pt-3 font-cond text-xs uppercase tracking-wider">
-        <span className="text-muted-foreground">{pacificTime(g.start_utc)}</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3 font-cond text-xs uppercase tracking-wider">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-muted-foreground">{pacificTime(g.start_utc)}</span>
+          <TipoffCountdown startUtc={g.start_utc} scheduled={g.state === "scheduled"} />
+        </div>
         <StatusPill g={g} />
       </div>
       <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 p-3">
