@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Check, Copy, Share2, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useBattle, errMsg } from "@/lib/battle-context";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,33 @@ export function SettingsTab() {
   const b = useBattle();
   const [name, setName] = useState(b.me.name);
   const [room, setRoom] = useState(b.room.name);
-  const link = typeof window !== "undefined" ? `${window.location.origin}/join/${b.room.invite_code}` : "";
+  const canInvite = !b.room.invites_closed && !b.friend;
+  const inviteUrl = () => new URL(`/join/${b.room.invite_code}`, window.location.origin).href;
+  async function shareInvite() {
+    if (!canInvite) return;
+    const url = inviteUrl();
+    const text = `You're invited to ${b.room.name} on TIPOFF Rivalry Picks. Pick NBA winners with me!`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Join my TIPOFF battle", text, url });
+      } else {
+        await navigator.clipboard.writeText(`${text}\n${url}`);
+        toast.success("Invite message copied. Paste it into Messages.");
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return;
+      toast.error("Unable to share. Try Copy Link instead.");
+    }
+  }
+  async function copyInvite(value: "link" | "code") {
+    if (!canInvite) return;
+    try {
+      await navigator.clipboard.writeText(value === "link" ? inviteUrl() : b.room.invite_code);
+      toast.success(value === "link" ? "Invite link copied" : "Invite code copied");
+    } catch {
+      toast.error("Unable to copy automatically. You can select the code shown below.");
+    }
+  }
   const go = async (fn: () => Promise<void>, ok: string) => { try { await fn(); toast.success(ok); } catch (e) { toast.error(errMsg(e)); } };
   const dayGames = b.games.filter((g) => pacificDay(g.start_utc) === b.day && new Date(g.start_utc).getTime() <= Date.now());
 
@@ -22,10 +49,34 @@ export function SettingsTab() {
     <div className="space-y-4">
       <AccountSecurity />
       <PushSettings />
-      <section className="surface space-y-2 rounded-2xl p-4">
-        <h2 className="font-display text-2xl">INVITE</h2>
-        <p className="text-sm text-muted-foreground">Code <b className="font-display text-xl text-primary">{b.room.invite_code}</b> · max 2 players</p>
-        <Button variant="gold" className="w-full" disabled={b.room.invites_closed} onClick={() => go(async () => { await navigator.clipboard.writeText(link); }, "Invite link copied")}>{b.room.invites_closed ? "Invitations closed" : "Copy invite link"}</Button>
+      <section className="tipoff-card space-y-3 rounded-2xl p-4" aria-label="Invite a friend">
+        <div className="flex items-center gap-2">
+          <Users className="h-5 w-5 text-[#ff882e]" />
+          <h2 className="font-display text-2xl">INVITE YOUR RIVAL</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          {b.room.invites_closed
+            ? "Invitations are closed. Create a new room to play with someone else."
+            : b.friend
+              ? `You're already paired with ${b.friend.name}. This room holds two players.`
+              : "Send one link. Your friend can join with a single tap—no code to type."}
+        </p>
+        <div className="flex items-center justify-between rounded-xl border border-border bg-background/60 px-4 py-3">
+          <span className="font-cond text-xs uppercase tracking-widest text-muted-foreground">Invite code</span>
+          <span className="font-display text-2xl tracking-[.15em] text-primary">{b.room.invite_code}</span>
+        </div>
+        <Button variant="gold" className="min-h-12 w-full" disabled={!canInvite} onClick={() => void shareInvite()}>
+          <Share2 className="h-4 w-4" /> {b.room.invites_closed ? "Invitations closed" : b.friend ? "Room full" : "Share battle invite"}
+        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="outline" className="min-h-11" disabled={!canInvite} onClick={() => void copyInvite("link")}>
+            <Copy className="h-4 w-4" /> Copy link
+          </Button>
+          <Button variant="outline" className="min-h-11" disabled={!canInvite} onClick={() => void copyInvite("code")}>
+            <Check className="h-4 w-4" /> Copy code
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">The invitation is private to anyone with this link. It does not reveal either player's hidden picks.</p>
       </section>
       <section className="surface space-y-2 rounded-2xl p-4">
         <h2 className="font-display text-2xl">NAMES</h2>
