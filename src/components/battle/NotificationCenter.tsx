@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bell, CheckCheck, X } from "lucide-react";
 import { useBattle } from "@/lib/battle-context";
 import { roomAlerts, type RoomAlertTarget } from "@/lib/upgrade-helpers";
+import { pacificDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 export function NotificationCenter({ onNavigate }: { onNavigate: (tab: RoomAlertTarget) => void }) {
@@ -24,6 +25,17 @@ export function NotificationCenter({ onNavigate }: { onNavigate: (tab: RoomAlert
       setReadIds([]);
     }
   }, [storageKey]);
+
+  function openAlert(alert: { id: string; target: RoomAlertTarget }) {
+    markRead([alert.id]);
+    if (alert.target === "games") {
+      const gameId = alert.id.split(":").slice(1).join(":");
+      const game = b.games.find((g) => g.game_id === gameId);
+      if (game) b.setDay(pacificDay(game.start_utc));
+    }
+    onNavigate(alert.target);
+    setOpen(false);
+  }
 
   function markRead(ids: string[]) {
     const next = [...new Set([...readIds, ...ids])].slice(-300);
@@ -70,7 +82,7 @@ export function NotificationCenter({ onNavigate }: { onNavigate: (tab: RoomAlert
           {!alerts.length && <p className="rounded-lg bg-background/40 p-4 text-center text-sm text-muted-foreground">All caught up — no action needed.</p>}
           <div className="space-y-2">
             {alerts.map((a) => (
-              <button key={a.id} type="button" onClick={() => { markRead([a.id]); onNavigate(a.target); setOpen(false); }}
+              <button key={a.id} type="button" onClick={() => openAlert(a)}
                 className={cn("w-full rounded-xl border p-3 text-left transition-colors hover:bg-background/60",
                   readIds.includes(a.id) ? "border-border bg-background/20" : "border-primary/40 bg-primary/10")}>
                 <span className="font-cond text-sm font-bold">{a.title}</span>
