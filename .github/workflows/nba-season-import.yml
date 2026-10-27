@@ -1,0 +1,19 @@
+name: One-time official NBA season import
+on:
+  push:
+    branches: [feature/independent-backend-2026-10-26]
+    paths: [.github/workflows/nba-season-import.yml]
+  workflow_dispatch:
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: https://dpujooxxocujnpygmtbf.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_n9kqzuPy7MwJE1sFrjaxOQ_Muhu83ie
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Import all 2026–27 season games into independent database
+        run: bun scripts/nba-season-import.ts
