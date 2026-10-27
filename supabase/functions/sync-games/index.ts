@@ -2,7 +2,7 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
-import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
+import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -146,6 +146,13 @@ Deno.serve(async (req) => {
     if (scheduleResult.status === "rejected") errors.push("Season schedule unavailable");
     if (liveResult.status === "rejected") errors.push("Live scoreboard unavailable");
 
+    // A syntactically valid HTTP 200 schedule can still contain only malformed
+    // or 1900 placeholder games. It must not make every day look freshly empty.
+    const verifiedSeason = scheduleResult.status === "fulfilled" &&
+      hasVerifiedNbaSeasonGame(scheduleResult.value, START, END);
+    if (scheduleResult.status === "fulfilled" && !verifiedSeason) {
+      errors.push("Season schedule has no verified in-season NBA games");
+    }
     const gamesByDay = new Map<string,NbaGame[]>();
     if (scheduleResult.status === "fulfilled") {
       for (const segment of scheduleResult.value.leagueSchedule?.gameDates ?? []) {
@@ -191,7 +198,7 @@ Deno.serve(async (req) => {
       const rows = [...unique.values()];
       // A valid empty daily scoreboard cannot establish that a game day had
       // zero games while the full-season schedule provider is unavailable.
-      if (!canCacheNbaDay(scheduleResult.status === "fulfilled", liveGamesByDay.has(day) ? day : undefined, day, rows.length)) {
+      if (!canCacheNbaDay(verifiedSeason, liveGamesByDay.has(day) ? day : undefined, day, rows.length)) {
         errors.push(`${day}: no verified NBA games available to refresh`);
         continue;
       }
