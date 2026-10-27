@@ -11,8 +11,8 @@ export const Route = createFileRoute("/auth")({
 });
 
 // Google is opt-in only after the standalone backend owns valid OAuth credentials.
-const googleEnabled = import.meta.env.VITE_ENABLE_GOOGLE_OAUTH === "true";
-const guestEnabled = import.meta.env.VITE_ENABLE_GUEST_LOGIN === "true";
+const googleEnabled = import.meta.env["VITE_ENABLE_GOOGLE_OAUTH"] === "true";
+const guestEnabled = import.meta.env["VITE_ENABLE_GUEST_LOGIN"] === "true";
 
 const input = "h-12 w-full rounded-xl border border-input bg-background/60 px-4 outline-none focus:border-primary";
 
