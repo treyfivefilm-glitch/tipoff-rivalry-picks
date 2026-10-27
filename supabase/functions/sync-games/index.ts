@@ -2,7 +2,7 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, syncUtcBounds } from "../_shared/sync-days.ts";
-import { isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
+import { canCacheNbaDay, isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -184,13 +184,7 @@ Deno.serve(async (req) => {
     let updated=0, checked=0;
     for (const day of due) {
       const list = gamesByDay.get(day);
-      // Never incorrectly mark a real scheduled day as having zero games
-      // because of a broken, stale, or temporarily unavailable provider.
-      if (!list && scheduleResult.status === "rejected" && liveDay !== day) {
-        errors.push(`${day}: no verified NBA schedule available`);
-        continue;
-      }
-      const unique = new Map<string,Row>();
+       const unique = new Map<string,Row>();
       for (const game of list ?? []) {
         const away = norm(game.awayTeam?.teamTricode ?? "");
         const home = norm(game.homeTeam?.teamTricode ?? "");
@@ -199,6 +193,12 @@ Deno.serve(async (req) => {
         if (row) unique.set(row.id,row);
       }
       const rows = [...unique.values()];
+      // A valid empty daily scoreboard cannot establish that a game day had
+      // zero games while the full-season schedule provider is unavailable.
+      if (!canCacheNbaDay(scheduleResult.status === "fulfilled", liveDay, day, rows.length)) {
+        errors.push(`${day}: no verified NBA games available to refresh`);
+        continue;
+      }
       if (rows.length) await save("games", rows, "id");
       await save("sync_state", { day, synced_at:new Date().toISOString(), game_count:rows.length },"day");
       updated+=rows.length;
