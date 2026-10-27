@@ -74,6 +74,9 @@ export function isUsableNbaGame(value: unknown): boolean {
   // A provider may return HTTP 200 and mark a game final without usable scores.
   // Never publish an unscored final: wagers depend on a verified winner.
   const status = value["gameStatus"];
+  // The official NBA feed uses 1=scheduled, 2=live, 3=final. Unknown
+  // statuses must not silently become "scheduled" or certify a feed as fresh.
+  if (status !== 1 && status !== 2 && status !== 3) return false;
   const scoreValid = (score: unknown): boolean => {
     if (typeof score !== "number" && typeof score !== "string") return false;
     if (typeof score === "string" && score.trim() === "") return false;
@@ -93,7 +96,6 @@ export function isUsableNbaGame(value: unknown): boolean {
   return typeof value["gameId"] === "string" && value["gameId"].trim().length > 0 &&
     typeof tipoff === "string" && Number.isFinite(Date.parse(tipoff)) &&
     (value["gameStatusText"] == null || typeof value["gameStatusText"] === "string") &&
-    (value["gameStatus"] == null || typeof value["gameStatus"] === "number") &&
     teamsValid;
 }
 
