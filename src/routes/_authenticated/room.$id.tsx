@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { CalendarDays, HandCoins, History, Trophy } from "lucide-react";
+import { CalendarDays, HandCoins, History, Trophy, UserRound } from "lucide-react";
 import { LiveBattle } from "@/lib/battle-live";
 import { Shell, SettingsIcon, tabClass } from "@/components/battle/Shell";
 import { GamesTab } from "@/components/battle/GamesTab";
 import { StandingsTab } from "@/components/battle/StandingsTab";
 import { HistoryTab } from "@/components/battle/HistoryTab";
 import { SettingsTab } from "@/components/battle/SettingsTab";
+import { ProfileTab } from "@/components/battle/ProfileTab";
 import { WagerCenter, useWagerAttention } from "@/components/battle/WagerCenter";
 import { NotificationCenter } from "@/components/battle/NotificationCenter";
 import { cn } from "@/lib/utils";
@@ -34,7 +35,7 @@ function RoomPage() {
   );
 }
 
-type Tab = "games" | "wagers" | "standings" | "history" | "settings";
+type Tab = "games" | "wagers" | "standings" | "history" | "settings" | "profile";
 
 function RoomInner() {
   const [tab, setTab] = useState<Tab>("games");
@@ -68,6 +69,9 @@ function RoomInner() {
           <button type="button" data-status={tab === "history" ? "active" : undefined} className={tabClass} onClick={() => setTab("history")}>
             <History className="h-5 w-5" /> History
           </button>
+          <button type="button" data-status={tab === "profile" ? "active" : undefined} className={tabClass} onClick={() => setTab("profile")}>
+            <UserRound className="h-5 w-5" /> Profile
+          </button>
         </>
       }
     >
@@ -76,6 +80,7 @@ function RoomInner() {
       {tab === "standings" && <StandingsTab />}
       {tab === "history" && <HistoryTab />}
       {tab === "settings" && <SettingsTab />}
+      {tab === "profile" && <ProfileTab />}
     </Shell>
   );
 }
