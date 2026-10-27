@@ -2,7 +2,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/auth")({
@@ -40,36 +39,24 @@ function AuthPage() {
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
     if (error) toast.error(error.message); else toast.success("Reset link sent");
   }
+  // Enable this only after our own backend has its Google OAuth credentials.
+  const googleEnabled = import.meta.env.VITE_ENABLE_GOOGLE_OAUTH === "true";
   async function google() {
-    if (busy) return;
+    if (busy || !googleEnabled) return;
     setBusy(true);
     try {
-      // Lovable's managed OAuth broker is bound to Lovable-hosted domains.
-      // Standalone deployments (Vercel/custom domains) must use the
-      // Supabase OAuth endpoint instead of the preview-only broker.
-      const host = window.location.hostname;
-      const lovableHost = /(^|\\.)(lovable\\.app|lovableproject\\.com|lovableproject-dev\\.com|gpt-eng\\.com|gptengineer\\.run)$/.test(host);
-      if (lovableHost) {
-        if (redirect) sessionStorage.setItem("pb-redirect", redirect);
-        const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-        if (result.error) throw result.error;
-        if (!result.redirected) done();
-        return;
-      }
-
-      // This exact origin (or a matching preview wildcard) must be present
-      // in the backend's allowed redirect URLs. Never redirect to arbitrary hosts.
-      const redirectTo = window.location.origin + (redirect ?? "/rooms");
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo, skipBrowserRedirect: true },
+        options: {
+          redirectTo: window.location.origin + (redirect ?? "/rooms"),
+          skipBrowserRedirect: true,
+        },
       });
       if (error) throw error;
-      if (!data.url) throw new Error("Google sign-in isn't available on this domain yet.");
+      if (!data.url) throw new Error("Google sign-in is not configured yet");
       window.location.assign(data.url);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : String(error));
-    } finally {
       setBusy(false);
     }
   }
@@ -83,7 +70,13 @@ function AuthPage() {
         <input className={input} type="password" required minLength={6} placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} />
         <Button variant="gold" size="xl" className="w-full" disabled={busy}>{mode === "in" ? "Sign in" : "Sign up"}</Button>
       </form>
-      <Button variant="glass" size="xl" onClick={google}>Continue with Google</Button>
+      {googleEnabled ? (
+        <Button variant="glass" size="xl" disabled={busy} onClick={google}>Continue with Google</Button>
+      ) : (
+        <p className="rounded-lg border border-border p-3 text-center text-sm text-muted-foreground">
+          Sign in with email and password. Google sign-in will return once configured on our own backend.
+        </p>
+      )}
       <div className="flex justify-between text-sm">
         <button className="text-primary" onClick={() => setMode(mode === "in" ? "up" : "in")}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>
         <button className="text-muted-foreground" onClick={forgot}>Forgot password</button>
