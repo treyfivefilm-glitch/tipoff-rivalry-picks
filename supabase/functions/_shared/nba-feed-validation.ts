@@ -58,6 +58,19 @@ export function isUsableNbaGame(value: unknown): boolean {
       team["teamTricode"].trim().length > 0 &&
       (team["teamName"] == null || typeof team["teamName"] === "string");
   });
+  // A corrupted same-team matchup must not establish that a season or live
+  // scoreboard is healthy. Normalize the provider's short NBA aliases first.
+  const aliases: Record<string, string> = {
+    NY: "NYK", SA: "SAS", GS: "GSW", NO: "NOP", UTAH: "UTA", WSH: "WAS",
+  };
+  const code = (team: unknown): string => {
+    if (!record(team) || typeof team["teamTricode"] !== "string") return "";
+    const normalized = team["teamTricode"].trim().toUpperCase();
+    return aliases[normalized] ?? normalized;
+  };
+  const away = code(value["awayTeam"]);
+  const home = code(value["homeTeam"]);
+  if (!teamsValid || !away || away === home) return false;
   // A provider may return HTTP 200 and mark a game final without usable scores.
   // Never publish an unscored final: wagers depend on a verified winner.
   const status = value["gameStatus"];
