@@ -6,6 +6,7 @@ import {
   isUsableNbaGame,
   groupUsableNbaGamesByPacificDay,
   hasVerifiedNbaSeasonGame,
+  shouldOverlayNbaGame,
 } from "../../supabase/functions/_shared/nba-feed-validation";
 
 describe("NBA feed envelopes", () => {
@@ -204,5 +205,24 @@ describe("NBA live scores across the UTC/Pacific date boundary", () => {
     expect(days.get("2026-10-26")).toHaveLength(1);
     expect(days.get("2026-10-27")).toHaveLength(1);
     expect(groupUsableNbaGamesByPacificDay([game], ["2026-10-27"]).size).toBe(0);
+  });
+});
+
+describe("NBA live overlay state ordering", () => {
+  const snapshot = (gameStatus: number, gameStatusText = "") => ({ gameStatus, gameStatusText });
+  it("allows new and progressing live updates", () => {
+    expect(shouldOverlayNbaGame(undefined, snapshot(1))).toBe(true);
+    expect(shouldOverlayNbaGame(snapshot(1), snapshot(2))).toBe(true);
+    expect(shouldOverlayNbaGame(snapshot(2), snapshot(3))).toBe(true);
+    expect(shouldOverlayNbaGame(snapshot(3), snapshot(3))).toBe(true);
+  });
+  it("rejects stale scheduled/live updates after a more advanced game state", () => {
+    expect(shouldOverlayNbaGame(snapshot(3), snapshot(1))).toBe(false);
+    expect(shouldOverlayNbaGame(snapshot(3), snapshot(2))).toBe(false);
+    expect(shouldOverlayNbaGame(snapshot(2), snapshot(1))).toBe(false);
+  });
+  it("still allows an explicit cancellation or postponement", () => {
+    expect(shouldOverlayNbaGame(snapshot(2), snapshot(1, "Postponed"))).toBe(true);
+    expect(shouldOverlayNbaGame(snapshot(2), snapshot(1, "Canceled"))).toBe(true);
   });
 });
