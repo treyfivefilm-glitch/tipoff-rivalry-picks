@@ -52,12 +52,12 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
   });
 
   async function claim(token: string) {
-    const [row] = await db<{ claimed: boolean }[]>`SELECT public.try_claim_nba_sync(${day}::date, ${token}::uuid, 180) AS claimed`;
-    return row?.claimed;
+    const [row] = await db`SELECT public.try_claim_nba_sync(${day}::date, ${token}::uuid, 180) AS claimed`;
+    return row?.['claimed'];
   }
   async function release(token: string) {
-    const [row] = await db<{ released: boolean }[]>`SELECT public.release_nba_sync(${day}::date, ${token}::uuid) AS released`;
-    return row?.released;
+    const [row] = await db`SELECT public.release_nba_sync(${day}::date, ${token}::uuid) AS released`;
+    return row?.['released'];
   }
 
   it("blocks a competing owner until the original owner releases", async () => {
@@ -79,18 +79,16 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
   });
 
   it("keeps the table and SECURITY DEFINER functions private", async () => {
-    const [grants] = await db<{
-      anonymous: boolean; authenticated: boolean; table_access: boolean; service: boolean;
-    }[]>`
+    const [grants] = await db`
       SELECT
         has_function_privilege('anon','public.try_claim_nba_sync(date,uuid,integer)','EXECUTE') AS anonymous,
         has_function_privilege('authenticated','public.release_nba_sync(date,uuid)','EXECUTE') AS authenticated,
         has_table_privilege('authenticated','public.nba_sync_leases','SELECT') AS table_access,
         has_function_privilege('service_role','public.try_claim_nba_sync(date,uuid,integer)','EXECUTE') AS service
     `;
-    expect(grants?.anonymous).toBe(false);
-    expect(grants?.authenticated).toBe(false);
-    expect(grants?.table_access).toBe(false);
-    expect(grants?.service).toBe(true);
+    expect(grants?.['anonymous']).toBe(false);
+    expect(grants?.['authenticated']).toBe(false);
+    expect(grants?.['table_access']).toBe(false);
+    expect(grants?.['service']).toBe(true);
   });
 });
