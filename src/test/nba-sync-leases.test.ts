@@ -122,11 +122,11 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
   it("rejects wrong-day and unscored final rows as one atomic batch", async () => {
     expect(await claim(owner)).toBe(true);
     for (const invalid of [
-      { ...sampleGame, start_utc: "2026-11-19T02:00:00Z" },
-      { ...sampleGame, home_score: null },
+      { ...sampleGame, id: "nba:test-wrong-day-20261117", start_utc: "2026-11-19T02:00:00Z" },
+      { ...sampleGame, id: "nba:test-unscored-final-20261117", home_score: null },
     ]) {
       await db`SAVEPOINT invalid_batch`;
-      await expect(commit(owner, [sampleGame, invalid])).rejects.toThrow();
+      await expect(commit(owner, [sampleGame, invalid])).rejects.toThrow(/Invalid NBA game row or day mismatch/);
       await db`ROLLBACK TO SAVEPOINT invalid_batch`;
     }
     expect(await db`SELECT id FROM public.games WHERE id=${sampleGame.id}`).toHaveLength(0);
