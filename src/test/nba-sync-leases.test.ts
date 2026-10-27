@@ -4,7 +4,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { randomUUID } from "node:crypto";
 import { isStagingDatabaseName, stagingDatabaseUrl } from "./staging-db";
 
-// Opt-in ONLY. Requires migration 0013 on a dedicated disposable staging DB.
+// Opt-in ONLY. Requires migrations 0013 and 0014 on a dedicated disposable staging DB.
 // Every lease fixture is rolled back; never run against production.
 const url = stagingDatabaseUrl(process.env);
 describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
@@ -78,17 +78,78 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(await release(contender)).toBe(true);
   });
 
+  const sampleGame = {
+    id: "nba:test-fenced-lease-20261117",
+    start_utc: "2026-11-18T02:00:00Z", // Nov 17 in Los Angeles
+    away_code: "LAL", away_name: "Los Angeles Lakers",
+    home_code: "GSW", home_name: "Golden State Warriors",
+    away_score: 103, home_score: 100,
+    state: "final", status_detail: "Final",
+  };
+  async function commit(token: string, rows: unknown[] = [sampleGame]) {
+    const [row] = await db`SELECT public.commit_nba_sync_day(
+      ${day}::date, ${token}::uuid, ${JSON.stringify(rows)}::jsonb
+    ) AS written`;
+    return row?.['written'];
+  }
+
+  it("atomically writes verified games and the day freshness under its lease", async () => {
+    expect(await claim(owner)).toBe(true);
+    expect(await commit(owner)).toBe(1);
+    const [game] = await db`SELECT state, away_score, home_score FROM public.games
+      WHERE id=${sampleGame.id}`;
+    expect(game).toMatchObject({ state: "final", away_score: 103, home_score: 100 });
+    const [fresh] = await db`SELECT game_count FROM public.sync_state WHERE day=${day}`;
+    expect(fresh?.['game_count']).toBe(1);
+  });
+
+  it("rejects stale owners without publishing any games or freshness", async () => {
+    expect(await claim(owner)).toBe(true);
+    expect(await claim(contender)).toBe(false);
+    await db`SAVEPOINT rejected_commit`;
+    await expect(commit(contender)).rejects.toThrow(/lease is missing or expired/);
+    await db`ROLLBACK TO SAVEPOINT rejected_commit`;
+    expect(await db`SELECT id FROM public.games WHERE id=${sampleGame.id}`).toHaveLength(0);
+    expect(await db`SELECT day FROM public.sync_state WHERE day=${day}`).toHaveLength(0);
+
+    await db`UPDATE public.nba_sync_leases SET expires_at = clock_timestamp() - interval '1 second'
+      WHERE day=${day}::date`;
+    await db`SAVEPOINT expired_commit`;
+    await expect(commit(owner)).rejects.toThrow(/lease is missing or expired/);
+    await db`ROLLBACK TO SAVEPOINT expired_commit`;
+  });
+
+  it("rejects wrong-day and unscored final rows as one atomic batch", async () => {
+    expect(await claim(owner)).toBe(true);
+    for (const invalid of [
+      { ...sampleGame, start_utc: "2026-11-19T02:00:00Z" },
+      { ...sampleGame, home_score: null },
+    ]) {
+      await db`SAVEPOINT invalid_batch`;
+      await expect(commit(owner, [sampleGame, invalid])).rejects.toThrow();
+      await db`ROLLBACK TO SAVEPOINT invalid_batch`;
+    }
+    expect(await db`SELECT id FROM public.games WHERE id=${sampleGame.id}`).toHaveLength(0);
+    expect(await db`SELECT day FROM public.sync_state WHERE day=${day}`).toHaveLength(0);
+  });
+
   it("keeps the table and SECURITY DEFINER functions private", async () => {
     const [grants] = await db`
       SELECT
         has_function_privilege('anon','public.try_claim_nba_sync(date,uuid,integer)','EXECUTE') AS anonymous,
         has_function_privilege('authenticated','public.release_nba_sync(date,uuid)','EXECUTE') AS authenticated,
         has_table_privilege('authenticated','public.nba_sync_leases','SELECT') AS table_access,
-        has_function_privilege('service_role','public.try_claim_nba_sync(date,uuid,integer)','EXECUTE') AS service
+        has_function_privilege('service_role','public.try_claim_nba_sync(date,uuid,integer)','EXECUTE') AS service,
+        has_function_privilege('anon','public.commit_nba_sync_day(date,uuid,jsonb)','EXECUTE') AS anon_commit,
+        has_function_privilege('authenticated','public.commit_nba_sync_day(date,uuid,jsonb)','EXECUTE') AS user_commit,
+        has_function_privilege('service_role','public.commit_nba_sync_day(date,uuid,jsonb)','EXECUTE') AS service_commit
     `;
     expect(grants?.['anonymous']).toBe(false);
     expect(grants?.['authenticated']).toBe(false);
     expect(grants?.['table_access']).toBe(false);
     expect(grants?.['service']).toBe(true);
+    expect(grants?.['anon_commit']).toBe(false);
+    expect(grants?.['user_commit']).toBe(false);
+    expect(grants?.['service_commit']).toBe(true);
   });
 });
