@@ -4,6 +4,7 @@ import { useBattle, errMsg } from "@/lib/battle-context";
 import { Button } from "@/components/ui/button";
 import { pacificDay, pacificTime } from "@/lib/time";
 import { RoomManagement } from "./RoomManagement";
+import { AccountSecurity } from "./AccountSecurity";
 
 const input = "h-11 w-full rounded-lg border border-input bg-background/60 px-3 outline-none focus:border-primary";
 
@@ -17,6 +18,7 @@ export function SettingsTab() {
 
   return (
     <div className="space-y-4">
+      <AccountSecurity />
       <section className="surface space-y-2 rounded-2xl p-4">
         <h2 className="font-display text-2xl">INVITE</h2>
         <p className="text-sm text-muted-foreground">Code <b className="font-display text-xl text-primary">{b.room.invite_code}</b> · max 2 players</p>
@@ -44,7 +46,7 @@ export function SettingsTab() {
         <h2 className="font-display text-2xl text-foreground">RULES & DATA</h2>
         <p>Pick before tipoff (Pacific time); picks lock on the server at tipoff. Your friend’s pick stays hidden until you both pick or the game starts.</p>
         <p>A bet only exists if you picked opposite teams and both agreed the same stake each. Winner +stake, loser −stake; canceled/postponed games are void.</p>
-        <p>Schedule & scores come from ESPN’s public, unofficial scoreboard feed, refreshed when you open a day or tap Refresh. It isn’t guaranteed — the owner can correct results.</p>
+        <p>Schedule and scores come from the NBA's public live-data feed. The app checks for updates while open; upstream delays are possible. Room owners can correct results.</p>
         <p>Tracking only. No real money moves through this app.</p>
       </section>
       <RoomManagement />
@@ -81,7 +83,7 @@ function ImportSection() {
     <section className="surface space-y-2 rounded-2xl p-4">
       <h2 className="font-display text-2xl">SCHEDULE DATA</h2>
       <p className="text-xs text-muted-foreground">
-        Load the full 2026–27 season from ESPN’s public, unofficial feed (one-time, about a minute). Days also sync automatically as you browse.
+        The 2026–27 NBA season was imported from the NBA's official public schedule. Refresh any dates that may have changed.
       </p>
       {pct !== null && (
         <div className="h-2 overflow-hidden rounded-full bg-background/60">
