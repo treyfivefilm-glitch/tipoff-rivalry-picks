@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { EyeOff, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { TeamBadge } from "./TeamBadge";
@@ -15,7 +15,18 @@ import { latestWagers } from '@/lib/wagers';
 
 export function GameCard({ g }: { g: BoardGame }) {
   const b = useBattle();
-  const locked = isLocked(g);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    const remaining = new Date(g.start_utc).getTime() - Date.now();
+    if (g.state !== "scheduled" || remaining <= 0) {
+      setClockNow(Date.now());
+      return;
+    }
+    // Re-render at the cutoff, even if the server's next realtime update is delayed.
+    const timer = window.setTimeout(() => setClockNow(Date.now()), remaining + 50);
+    return () => window.clearTimeout(timer);
+  }, [g.start_utc, g.state]);
+  const locked = isLocked(g, clockNow);
   const [busy, setBusy] = useState<string | null>(null);
   const winner = winnerOf(g);
 
