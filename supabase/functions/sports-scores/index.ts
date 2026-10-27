@@ -71,6 +71,14 @@ async function mlb(date:string):Promise<Game[]> {
 Deno.serve(async req=>{
  if(req.method==="OPTIONS")return respond({});
  if(req.method!=="POST")return respond({error:"Method not allowed"},405);
+ const bearer=req.headers.get("authorization")??"";
+ const endpoint=Deno.env.get("SUPABASE_URL");
+ const apiKey=Deno.env.get("SUPABASE_ANON_KEY");
+ if(!endpoint||!apiKey)return respond({error:"Backend not configured"},503);
+ if(!/^Bearer [^\s,]+$/.test(bearer))return respond({error:"Sign in required"},401);
+ const auth=await fetch(`${endpoint}/auth/v1/user`,{headers:{apikey:apiKey,Authorization:bearer}})
+   .catch(()=>null);
+ if(!auth?.ok)return respond({error:"Invalid session"},401);
  let payload:Record<string,unknown>;
  try{payload=await req.json() as Record<string,unknown>;}catch{return respond({error:"Invalid input"},400);}
  const sport=String(payload.sport??"").toUpperCase() as Sport;
