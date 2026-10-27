@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, Settings } from "lucide-react";
+import { ArrowLeft, Settings, Dribbble } from "lucide-react";
 import { useBattle } from "@/lib/battle-context";
 import { computeStandings } from "@/lib/rules";
 import { fmtMoney } from "@/lib/time";
@@ -28,11 +28,19 @@ export function Shell({ settingsLink, tabs, children }: { settingsLink: ReactNod
           </Link>
           {settingsLink}
         </div>
-        <div className="mt-1 min-w-0">
-          <p className="truncate font-cond text-xs uppercase tracking-[0.25em] text-muted-foreground">{b.room.name}</p>
-          <h1 className="font-display text-5xl leading-none text-primary drop-shadow">PICK BATTLE</h1>
+        <div className="mt-3 flex min-w-0 items-center gap-3">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-[#ff882e]/15 text-[#ff882e] ring-1 ring-[#ff882e]/35">
+            <Dribbble className="h-9 w-9" strokeWidth={2} />
+          </div>
+          <div className="min-w-0">
+            <h1 className="font-display text-5xl leading-[.84] tracking-wide text-foreground">
+              TIPOFF
+            </h1>
+            <p className="font-cond text-[10px] font-bold uppercase tracking-[.27em] text-[#ff882e]">RIVALRY PICKS</p>
+          </div>
         </div>
-        <div className="surface mt-4 grid grid-cols-[1fr_auto_1fr] items-center rounded-2xl px-4 py-3 animate-rise">
+        <p className="mt-3 truncate font-cond text-sm font-bold uppercase tracking-wider text-muted-foreground">{b.room.name}</p>
+        <div className="tipoff-card mt-3 grid grid-cols-[1fr_auto_1fr] items-center rounded-2xl px-4 py-3 animate-rise">
           <ScoreSide name={b.me.name} label="You" rec={`${s.h2h.w}-${s.h2h.l}`} sub={`Picks ${s.myPred.w}-${s.myPred.l}`} />
           <div className="px-3 text-center">
             <div className="font-display text-2xl text-muted-foreground">VS</div>
@@ -50,7 +58,7 @@ export function Shell({ settingsLink, tabs, children }: { settingsLink: ReactNod
         </div>
       </header>
       <main className="flex-1 px-4 pb-28 pt-4">{children}</main>
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/90 backdrop-blur-lg safe-bottom">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 shadow-[0_-10px_30px_rgba(0,0,0,.35)] backdrop-blur-lg safe-bottom">
         <div className="mx-auto grid max-w-md grid-cols-4">{tabs}</div>
       </nav>
     </div>

@@ -14,7 +14,7 @@ const throwIf = (r: { error: { message: string } | null }) => {
   if (r.error) throw new Error(r.error.message);
 };
 
-/** Live BattleApi backed by Lovable Cloud: RPCs for writes, get_board for reads,
+/** Live BattleApi backed by the independent Supabase project: RPCs for writes, get_board for reads,
  *  realtime on audit_events + 25s polling + refocus refresh. */
 export function LiveBattle({ roomId, children }: { roomId: string; children: ReactNode }) {
   const nav = useNavigate();
@@ -69,7 +69,6 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
       setPayments((ps ?? []) as Payment[]);
       const { data: ss } = await supabase.rpc("get_last_sync", { p_day: d });
       setLastSync(ss ?? null);
-      setError(null);
     },
     [roomId],
   );
@@ -81,7 +80,17 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
       missing.forEach((d) => syncedRef.current.add(d));
       setSyncing(true);
       sync({ data: { days: missing } })
-        .then(() => loadBoard(dayRef.current))
+        .then(async (result) => {
+          await loadBoard(dayRef.current);
+          if (result.errors.length) {
+            missing.forEach((d) => syncedRef.current.delete(d));
+            setError(`Schedule refresh: ${result.errors.slice(0, 2).join("; ")}`);
+          } else if (result.checked === 0 && result.updated === 0) {
+            setError("The schedule server did not check any dates. Please tap Refresh.");
+          } else {
+            setError(null);
+          }
+        })
         .catch((e) => { missing.forEach((d) => syncedRef.current.delete(d)); setError(e instanceof Error ? e.message : 'Schedule unavailable'); })
         .finally(() => setSyncing(false));
     },
@@ -97,10 +106,18 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
       try {
         await loadStatic();
         await loadBoard(d);
-        await sync({ data: { days: first } }).catch(() => setError('Schedule refresh unavailable. Saved games remain available.'));
-        first.forEach((x) => syncedRef.current.add(x));
+        let syncWarning: string | null = null;
+        try {
+          const result = await sync({ data: { days: first } });
+          if (result.errors.length) syncWarning = result.errors.slice(0, 2).join("; ");
+          else if (result.checked === 0 && result.updated === 0) syncWarning = "No schedule dates were checked";
+          if (!syncWarning) first.forEach((x) => syncedRef.current.add(x));
+        } catch (e) {
+          syncWarning = e instanceof Error ? e.message : "Schedule service unavailable";
+        }
         if (!alive) return;
         await loadBoard(d);
+        if (syncWarning) setError(`Schedule refresh: ${syncWarning}`);
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : "Failed to load room");
       } finally {
@@ -112,33 +129,56 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
     };
   }, [loadStatic, loadBoard, sync]);
 
-  // Cross-device freshness: realtime on the room's audit log, plus polling and refocus.
+  // Live-score freshness: fetch the NBA feed periodically, not just the
+  // previously stored database rows. Use a separate interval from realtime
+  // events so score updates cannot recursively trigger more provider fetches.
   useEffect(() => {
     if (loading) return;
-    const tick = () => {
-      if (departing.current) return;
-      loadBoard(dayRef.current).catch((e) => setError(e instanceof Error ? e.message : 'Refresh failed'));
-      loadStatic().catch(() => {});
+    let syncingLive = false;
+    const updateBoard = () => {
+      if (departing.current || document.visibilityState !== "visible") return;
+      loadBoard(dayRef.current).catch((e) => setError(e instanceof Error ? e.message : "Board refresh failed"));
     };
-    const iv = setInterval(tick, 25000);
+    const updateScores = async () => {
+      if (departing.current || syncingLive || document.visibilityState !== "visible") return;
+      syncingLive = true;
+      const today = todayPacific();
+      try {
+        const result = await sync({ data: { days: [addDays(today, -1), today, addDays(today, 1)] } });
+        await loadBoard(dayRef.current);
+        if (result.errors.length) setError(`Live scores: ${result.errors.slice(0, 2).join("; ")}`);
+        else setError(null);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Live score updates unavailable");
+      } finally {
+        syncingLive = false;
+      }
+    };
+    const boardInterval = window.setInterval(updateBoard, 25000);
+    const scoreInterval = window.setInterval(() => void updateScores(), 90000);
     const onVis = () => {
-      if (document.visibilityState === "visible") tick();
+      if (document.visibilityState === "visible") {
+        updateBoard();
+        void updateScores();
+        loadStatic().catch(() => {});
+      }
     };
     document.addEventListener("visibilitychange", onVis);
     const ch = supabase
       .channel(`room-${roomId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'games' }, tick)
+      .on("postgres_changes", { event: "*", schema: "public", table: "games" }, updateBoard)
       .on("postgres_changes", { event: "*", schema: "public", table: "audit_events", filter: `room_id=eq.${roomId}` }, () => {
-        tick();
+        updateBoard();
         loadStatic().catch(() => {});
       })
       .subscribe();
     return () => {
-      clearInterval(iv);
+      window.clearInterval(boardInterval);
+      window.clearInterval(scoreInterval);
       document.removeEventListener("visibilitychange", onVis);
       supabase.removeChannel(ch);
     };
-  }, [loading, loadBoard, loadStatic, roomId]);
+  }, [loading, loadBoard, loadStatic, roomId, sync]);
 
   const act = useCallback(
     async (fn: () => Promise<unknown>) => {
@@ -175,7 +215,11 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
           const d = dayRef.current;
           const result = await sync({ data: { days: [addDays(d, -1), d, addDays(d, 1)], force: force ?? false } });
           await loadBoard(d);
-          if (result.errors.length) setError('ESPN refresh unavailable for some dates. Saved games are shown.');
+          if (result.errors.length) setError(`Schedule refresh: ${result.errors.slice(0, 2).join("; ")}`);
+          else if (result.checked === 0 && result.updated === 0) setError("The schedule server did not check any dates.");
+          else setError(null);
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Schedule service unavailable");
         } finally {
           setSyncing(false);
         }

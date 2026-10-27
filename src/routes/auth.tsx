@@ -2,7 +2,6 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/auth")({
@@ -10,6 +9,10 @@ export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "Sign in · NBA Pick Battle" }, { name: "description", content: "Sign in to your private NBA Pick Battle room." }, { property: "og:title", content: "Sign in · NBA Pick Battle" }, { property: "og:description", content: "Sign in to your private pick battle." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
   component: AuthPage,
 });
+
+// Google is opt-in only after the standalone backend owns valid OAuth credentials.
+const googleEnabled = import.meta.env["VITE_ENABLE_GOOGLE_OAUTH"] === "true";
+const guestEnabled = import.meta.env["VITE_ENABLE_GUEST_LOGIN"] === "true";
 
 const input = "h-12 w-full rounded-xl border border-input bg-background/60 px-4 outline-none focus:border-primary";
 
@@ -40,36 +43,38 @@ function AuthPage() {
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
     if (error) toast.error(error.message); else toast.success("Reset link sent");
   }
-  async function google() {
-    if (busy) return;
+  async function guest() {
+    if (busy || !guestEnabled) return;
     setBusy(true);
     try {
-      // Lovable's managed OAuth broker is bound to Lovable-hosted domains.
-      // Standalone deployments (Vercel/custom domains) must use the
-      // Supabase OAuth endpoint instead of the preview-only broker.
-      const host = window.location.hostname;
-      const lovableHost = /(^|\\.)(lovable\\.app|lovableproject\\.com|lovableproject-dev\\.com|gpt-eng\\.com|gptengineer\\.run)$/.test(host);
-      if (lovableHost) {
-        if (redirect) sessionStorage.setItem("pb-redirect", redirect);
-        const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-        if (result.error) throw result.error;
-        if (!result.redirected) done();
-        return;
-      }
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+      done();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Guest sign-in failed");
+    } finally {
+      setBusy(false);
+    }
+  }
 
-      // This exact origin (or a matching preview wildcard) must be present
-      // in the backend's allowed redirect URLs. Never redirect to arbitrary hosts.
-      const redirectTo = window.location.origin + (redirect ?? "/rooms");
+  async function google() {
+    if (busy || !googleEnabled) return;
+    setBusy(true);
+    try {
+      // The standalone Supabase project must enable Google and allowlist this origin.
+      // No managed Lovable OAuth broker is involved.
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo, skipBrowserRedirect: true },
+        options: {
+          redirectTo: window.location.origin + (redirect ?? "/rooms"),
+          skipBrowserRedirect: true,
+        },
       });
       if (error) throw error;
-      if (!data.url) throw new Error("Google sign-in isn't available on this domain yet.");
+      if (!data.url) throw new Error("Google sign-in is not configured yet. Use email instead.");
       window.location.assign(data.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
-    } finally {
+      toast.error(error instanceof Error ? error.message : "Google sign-in failed");
       setBusy(false);
     }
   }
@@ -83,7 +88,17 @@ function AuthPage() {
         <input className={input} type="password" required minLength={6} placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} />
         <Button variant="gold" size="xl" className="w-full" disabled={busy}>{mode === "in" ? "Sign in" : "Sign up"}</Button>
       </form>
-      <Button variant="glass" size="xl" onClick={google}>Continue with Google</Button>
+      {guestEnabled && (
+        <div className="space-y-2">
+          <Button variant="glass" size="xl" className="w-full" onClick={guest} disabled={busy}>
+            Start playing as a guest
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Guest progress stays on this browser. Do not sign out or clear website data until you link a permanent account.
+          </p>
+        </div>
+      )}
+      {googleEnabled && <Button variant="glass" size="xl" onClick={google} disabled={busy}>Continue with Google</Button>}
       <div className="flex justify-between text-sm">
         <button className="text-primary" onClick={() => setMode(mode === "in" ? "up" : "in")}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>
         <button className="text-muted-foreground" onClick={forgot}>Forgot password</button>
