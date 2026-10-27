@@ -55,6 +55,15 @@ describe("unattended NBA worker pure preparation", () => {
     expect(prepareUnattendedNbaDay("2026-11-17", null, live([game(3, 104, 105)]), []).cacheable).toBe(true);
   });
 
+  it("does not publish or cache an impossible tied final during a schedule outage", () => {
+    const tiedFinal = game(3, 101, 101);
+    expect(prepareUnattendedNbaDay("2026-11-17", null, live([tiedFinal]), [])).toEqual({
+      rows: [], cacheable: false,
+    });
+    expect(prepareUnattendedNbaDay("2026-11-17", null, live([game(2, 101, 101)]), [])
+      .rows[0]).toMatchObject({ state: "live", away_score: 101, home_score: 101 });
+  });
+
   it("does not mark every day fresh when a schedule has only malformed game rows", () => {
     const malformedSeason = schedule([{ gameId: "broken", awayTeam: null }]);
     expect(prepareUnattendedNbaDay("2026-11-16", malformedSeason, null, [])).toEqual({
