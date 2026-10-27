@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { pacificDay, pacificTime, todayPacific } from "@/lib/time";
 import { TeamBadge } from "@/components/battle/TeamBadge";
+import { SportsPreview, type OtherSport } from "@/components/battle/SportsPreview";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -35,6 +36,7 @@ type TodayGame = {
 
 function Landing() {
   const [signedIn, setSignedIn] = useState(false);
+  const [selectedSport, setSport] = useState<"NBA" | OtherSport>("NBA");
   const [games, setGames] = useState<TodayGame[]>([]);
   const today = todayPacific();
 
@@ -75,24 +77,26 @@ function Landing() {
         <p className="font-cond text-xs uppercase tracking-[.19em] text-muted-foreground">Select your sport</p>
         <div className="mt-3 grid grid-cols-4 gap-2">
           {([
-            { label:"NBA", status: "LIVE", icon:"🏀", active:true },
-            { label:"NFL", status:"SOON", icon:"🏈", active:false },
-            { label:"MLB", status:"SOON", icon:"⚾", active:false },
-            { label:"NHL", status:"SOON", icon:"🏒", active:false },
+            { label:"NBA", status: "PICKS", icon:"🏀" },
+            { label:"NFL", status:"PREVIEW", icon:"🏈" },
+            { label:"MLB", status:"PREVIEW", icon:"⚾" },
+            { label:"NHL", status:"PREVIEW", icon:"🏒" },
           ] as const).map(sport => (
-            <div key={sport.label}
-              className={sport.active
+            <button type="button" key={sport.label} aria-pressed={sport.label === selectedSport}
+              onClick={() => setSport(sport.label)}
+              className={sport.label === selectedSport
                 ? "rounded-xl bg-gradient-to-br from-[#ff9637] to-[#ff6d18] px-1 py-4 text-center text-white shadow-lg"
                 : "rounded-xl border border-[#29496b] bg-[#112740] px-1 py-4 text-center"}>
               <span className="text-2xl" aria-hidden="true">{sport.icon}</span>
               <p className="mt-1 font-cond text-base font-bold">{sport.label}</p>
               <p className="font-cond text-[9px] font-bold">{sport.status}</p>
-            </div>
+            </button>
           ))}
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">NBA is available now. Other sports are planned, not active yet.</p>
+        <p className="mt-3 text-xs text-muted-foreground">NBA picks are active. NFL, MLB and NHL scores are read-only previews; picking is still being built.</p>
       </div>
 
+      {selectedSport !== "NBA" ? <SportsPreview key={selectedSport} sport={selectedSport} /> : <>
       <EntryLink signedIn={signedIn}
         className="tipoff-glow flex items-center gap-3 rounded-2xl border border-primary/40 bg-gradient-to-r from-[#0c3768] to-[#0b2446] p-4">
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary/20 text-primary">
@@ -146,6 +150,7 @@ function Landing() {
           </div>
         ))}
       </section>
+      </>}
 
       <div className="grid grid-cols-2 gap-3">
         <Link to="/rooms" className="tipoff-card flex items-center gap-2 rounded-xl p-4">
