@@ -1,0 +1,40 @@
+name: Upstream NBA feed availability
+on:
+  push:
+    branches: [feature/independent-backend-2026-10-26]
+    paths: [.github/workflows/nba-feed-probe.yml]
+  workflow_dispatch:
+jobs:
+  sources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Probe official public NBA feeds (no secrets)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url in \
+            'https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/liveData/scoreboard/todaysScoreboard_00.json' \
+            'https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/staticData/scheduleLeagueV2.json' \
+            'https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA/staticData/scheduleLeagueV2_1.json' \
+            'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json' \
+            'https://data.nba.com/data/10s/v2015/json/mobile_teams/nba/2026/scores/00_todays_scores.json' \
+            'https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json' \
+            'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=20261026'
+          do
+            echo "::group::URL: $url"
+            code=$(curl -L --retry 1 --connect-timeout 5 --max-time 15 -s -o /tmp/feed.json -w '%{http_code}' "$url" || true)
+            echo "HTTP=$code bytes=$(wc -c </tmp/feed.json)"
+            if [[ "$code" == "200" ]]; then
+              python3 - <<'PY'
+import json
+try:
+ d=json.load(open("/tmp/feed.json"))
+ print("keys:",list(d.keys())[:10])
+ print("scoreboard_date:",d.get("scoreboard",{}).get("gameDate"),"games:",len(d.get("scoreboard",{}).get("games",[])))
+ print("schedule_dates:",len(d.get("leagueSchedule",{}).get("gameDates",[])))
+except Exception as e:print("not JSON:",str(e)[:80])
+PY
+            fi
+            echo "::endgroup::"
+          done
