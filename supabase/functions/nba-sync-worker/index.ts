@@ -1,8 +1,8 @@
 // PREPARATION ONLY: no scheduler or credentials configured by this code.
 // Owner must approve activation and application of migrations 0013-0014.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
-import { authorizedNbaCron, prepareUnattendedNbaDay, unattendedNbaDays, unattendedNbaHttpStatus } from "../_shared/nba-unattended.ts";
+import { isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
+import { authorizedNbaCron, prepareUnattendedNbaDay, unattendedNbaDays, unattendedNbaHttpStatus, verifiedUnattendedNbaSchedule } from "../_shared/nba-unattended.ts";
 import type { ExistingNbaGame } from "../_shared/nba-unattended.ts";
 import { syncUtcBounds } from "../_shared/sync-days.ts";
 
@@ -72,7 +72,7 @@ Deno.serve(async request => {
     }
     if (claimed.length) {
       const [scheduleResult, liveResult] = await Promise.allSettled([provider(SCHEDULE), provider(LIVE)]);
-      const schedule = scheduleResult.status === "fulfilled" && isValidNbaSchedule(scheduleResult.value)
+      const schedule = scheduleResult.status === "fulfilled" && verifiedUnattendedNbaSchedule(scheduleResult.value)
         ? scheduleResult.value : null;
       const live = liveResult.status === "fulfilled" && isValidNbaScoreboard(liveResult.value)
         ? liveResult.value : null;
