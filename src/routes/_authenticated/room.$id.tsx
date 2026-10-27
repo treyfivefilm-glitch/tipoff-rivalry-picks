@@ -8,6 +8,7 @@ import { StandingsTab } from "@/components/battle/StandingsTab";
 import { HistoryTab } from "@/components/battle/HistoryTab";
 import { SettingsTab } from "@/components/battle/SettingsTab";
 import { WagerCenter, useWagerAttention } from "@/components/battle/WagerCenter";
+import { NotificationCenter } from "@/components/battle/NotificationCenter";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/room/$id")({
@@ -41,9 +42,12 @@ function RoomInner() {
   return (
     <Shell
       settingsLink={
-        <button type="button" aria-label="Settings" onClick={() => setTab(tab === "settings" ? "games" : "settings")}>
-          <SettingsIcon />
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationCenter onNavigate={setTab} />
+          <button type="button" aria-label="Settings" onClick={() => setTab(tab === "settings" ? "games" : "settings")}>
+            <SettingsIcon />
+          </button>
+        </div>
       }
       tabs={
         <>
