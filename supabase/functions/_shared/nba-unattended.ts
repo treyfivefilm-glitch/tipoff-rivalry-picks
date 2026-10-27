@@ -1,6 +1,6 @@
 // Pure preparation for owner-approved unattended NBA refresh.
 // Caller must hold a lease and commit via commit_nba_sync_day.
-import { isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard } from "./nba-feed-validation.ts";
+import { isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
 import { safeNbaPacificDay } from "./sync-days.ts";
 
 const START = "2026-10-20";
@@ -76,7 +76,8 @@ export function prepareUnattendedNbaDay(
     const tipoff = game.gameDateTimeUTC ?? game.gameTimeUTC;
     if (safeNbaPacificDay(tipoff) !== day) return;
     if (Date.parse(tipoff!) < Date.parse(START + "T00:00:00Z")) return;
-    games.set(game.gameId, game);
+    const previous = games.get(game.gameId);
+    if (shouldOverlayNbaGame(previous, game)) games.set(game.gameId, game);
     if (live) validLiveGames++;
   };
   if (seasonValid) {
