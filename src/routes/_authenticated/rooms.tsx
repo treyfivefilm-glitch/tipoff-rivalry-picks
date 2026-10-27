@@ -2,13 +2,14 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ChevronRight, Crown, Users } from "lucide-react";
+import { ChevronRight, Crown, Share2, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buildRoomCards, type RoomCard } from "@/lib/qol";
 import { cn } from "@/lib/utils";
 import { LeaguesHub } from "@/components/battle/LeaguesHub";
+import { battleInviteMessage, battleInviteUrl } from "@/lib/invites";
 
 export const Route = createFileRoute("/_authenticated/rooms")({
   head: () => ({
@@ -32,22 +33,47 @@ export function RoomCardView({ c }: { c: RoomCard }) {
     c.inviteState === "open" ? { t: "Waiting for friend · invite open", cls: "border-primary/50 text-primary" }
     : c.inviteState === "full" ? { t: "Full", cls: "border-win/50 text-win" }
     : { t: "Invites closed", cls: "border-border text-muted-foreground" };
+  const canShare = c.youOwn && c.inviteState === "open" && Boolean(c.inviteCode);
+  async function share() {
+    if (!canShare || !c.inviteCode) return;
+    try {
+      const url = battleInviteUrl(window.location.origin, c.inviteCode);
+      const message = battleInviteMessage(c.name);
+      if (navigator.share) {
+        await navigator.share({ title: "Join my TIPOFF battle", text: message, url });
+      } else {
+        await navigator.clipboard.writeText(`${message}\n${url}`);
+        toast.success("Invite message copied. Paste it into Messages.");
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") return;
+      toast.error("Couldn't share the invite. Open the room's Settings to copy its code.");
+    }
+  }
   return (
-    <Link to="/room/$id" params={{ id: c.id }} aria-label={`Open room ${c.name}`}
-      className="flex min-h-16 items-center justify-between gap-3 rounded-xl bg-background/40 px-4 py-3 transition-colors hover:bg-background/70">
-      <div className="min-w-0">
-        <p className="flex items-center gap-1.5 truncate font-semibold">
-          {c.youOwn && <Crown className="h-3.5 w-3.5 shrink-0 text-primary" aria-label="You own this room" />}
-          <span className="truncate">{c.name}</span>
-        </p>
-        <p className="truncate text-sm text-muted-foreground">{players || "No players listed"}</p>
-        <div className="mt-1 flex flex-wrap items-center gap-2 font-cond text-[11px]">
-          <span className="flex items-center gap-1 text-muted-foreground"><Users className="h-3 w-3" /> {Math.min(c.players, 2)}/2 players</span>
-          <span className={cn("rounded-full border px-2 py-0.5", badge.cls)}>{badge.t}</span>
+    <div className="rounded-xl bg-background/40 transition-colors hover:bg-background/70">
+      <Link to="/room/$id" params={{ id: c.id }} aria-label={`Open room ${c.name}`}
+        className="flex min-h-16 items-center justify-between gap-3 px-4 py-3">
+        <div className="min-w-0">
+          <p className="flex items-center gap-1.5 truncate font-semibold">
+            {c.youOwn && <Crown className="h-3.5 w-3.5 shrink-0 text-primary" aria-label="You own this room" />}
+            <span className="truncate">{c.name}</span>
+          </p>
+          <p className="truncate text-sm text-muted-foreground">{players || "No players listed"}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 font-cond text-[11px]">
+            <span className="flex items-center gap-1 text-muted-foreground"><Users className="h-3 w-3" /> {Math.min(c.players, 2)}/2 players</span>
+            <span className={cn("rounded-full border px-2 py-0.5", badge.cls)}>{badge.t}</span>
+          </div>
         </div>
-      </div>
-      <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-    </Link>
+        <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+      </Link>
+      {canShare && (
+        <button type="button" onClick={() => void share()}
+          className="flex min-h-11 w-full items-center justify-center gap-2 border-t border-border/60 px-4 font-cond text-sm font-bold text-primary">
+          <Share2 className="h-4 w-4" /> Share invite with a friend
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -58,7 +84,7 @@ function RoomsPage() {
     queryKey: ["my-rooms"],
     queryFn: async () => {
       const { data: u } = await supabase.auth.getUser();
-      const { data, error } = await supabase.from("rooms").select("id, name, owner_id, invites_closed").order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("rooms").select("id, name, owner_id, invites_closed, invite_code").order("created_at", { ascending: false });
       if (error) throw error;
       const ids = (data ?? []).map((r) => r.id);
       let members: { room_id: string; user_id: string; display_name: string }[] = [];
