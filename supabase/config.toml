@@ -1,1 +1,6 @@
 project_id = "rvkxufuvjumlwryoiyeb"
+
+# PREPARATION ONLY. The custom cron bearer is checked inside the disabled worker.
+# Deployment and enabling still require explicit owner approval.
+[functions.nba-sync-worker]
+verify_jwt = false
