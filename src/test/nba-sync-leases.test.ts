@@ -103,6 +103,18 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(fresh?.['game_count']).toBe(1);
   });
 
+  it("does not downgrade a verified final to a stale scheduled snapshot", async () => {
+    expect(await claim(owner)).toBe(true);
+    expect(await commit(owner)).toBe(1);
+    expect(await commit(owner, [{
+      ...sampleGame, state: "scheduled", status_detail: "Scheduled",
+      away_score: null, home_score: null,
+    }])).toBe(1);
+    const [game] = await db`SELECT state, away_score, home_score FROM public.games
+      WHERE id=${sampleGame.id}`;
+    expect(game).toMatchObject({ state: "final", away_score: 103, home_score: 100 });
+  });
+
   it("rejects stale owners without publishing any games or freshness", async () => {
     expect(await claim(owner)).toBe(true);
     expect(await claim(contender)).toBe(false);
