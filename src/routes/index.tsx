@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { CalendarDays, Dribbble, Trophy, Users, Zap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,14 @@ export const Route = createFileRoute("/")({
   }),
   component: Landing,
 });
+
+function EntryLink({ signedIn, className, children }: {
+  signedIn: boolean; className: string; children: ReactNode;
+}) {
+  return signedIn
+    ? <Link to="/rooms" className={className}>{children}</Link>
+    : <Link to="/auth" search={{ redirect: undefined }} className={className}>{children}</Link>;
+}
 
 type TodayGame = {
   id: string; start_utc: string; away_code: string; home_code: string;
@@ -45,7 +53,6 @@ function Landing() {
     return () => { live = false; };
   }, [today]);
 
-  const action = signedIn ? "/rooms" : "/auth";
   const liveCount = games.filter(g => g.state === "live").length;
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col gap-5 px-4 pb-10 pt-7">
@@ -59,10 +66,9 @@ function Landing() {
             <p className="mt-1 font-cond text-[11px] font-bold uppercase tracking-[.23em] text-[#ff882e]">RIVALRY PICKS</p>
           </div>
         </div>
-        <Link to={action === "/rooms" ? "/rooms" : "/auth"} search={action === "/auth" ? { redirect: undefined } : undefined}
-          className="rounded-full border border-border px-3 py-2 font-cond text-xs font-semibold text-primary">
+        <EntryLink signedIn={signedIn} className="rounded-full border border-border px-3 py-2 font-cond text-xs font-semibold text-primary">
           {signedIn ? "My Battles" : "Sign in"}
-        </Link>
+        </EntryLink>
       </header>
 
       <div className="tipoff-card rounded-2xl p-4">
@@ -87,7 +93,7 @@ function Landing() {
         <p className="mt-3 text-xs text-muted-foreground">NBA is available now. Other sports are planned, not active yet.</p>
       </div>
 
-      <Link to={action === "/rooms" ? "/rooms" : "/auth"} search={action === "/auth" ? { redirect: undefined } : undefined}
+      <EntryLink signedIn={signedIn}
         className="tipoff-glow flex items-center gap-3 rounded-2xl border border-primary/40 bg-gradient-to-r from-[#0c3768] to-[#0b2446] p-4">
         <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary/20 text-primary">
           <Zap className="h-6 w-6" fill="currentColor" />
@@ -97,7 +103,7 @@ function Landing() {
           <span className="mt-1 block text-xs text-muted-foreground">Choose winners in your private battle</span>
         </span>
         <span className="font-display text-2xl text-primary">›</span>
-      </Link>
+      </EntryLink>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
@@ -156,9 +162,9 @@ function Landing() {
         <CalendarDays className="h-4 w-4" /> Official NBA public data · may be delayed · no real-money transfers
       </p>
       <Button asChild variant="gold" size="xl" className="w-full">
-        <Link to={action === "/rooms" ? "/rooms" : "/auth"} search={action === "/auth" ? { redirect: undefined } : undefined}>
+        <EntryLink signedIn={signedIn} className="w-full">
           {signedIn ? "Open Your Battles" : "Start Playing"}
-        </Link>
+        </EntryLink>
       </Button>
     </div>
   );
