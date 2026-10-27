@@ -26,7 +26,7 @@ jobs:
             code=$(curl -L --retry 1 --connect-timeout 5 --max-time 15 -s -o /tmp/feed.json -w '%{http_code}' "$url" || true)
             echo "HTTP=$code bytes=$(wc -c </tmp/feed.json)"
             if [[ "$code" == "200" ]]; then
-              python3 -c 'import json; d=json.load(open("/tmp/feed.json")); print("keys",list(d.keys())[:8]); print("scoreboard_date",d.get("scoreboard",{}).get("gameDate"),"game_count",len(d.get("scoreboard",{}).get("games",[])),"schedule_dates",len(d.get("leagueSchedule",{}).get("gameDates",[])))' || true
+              python3 -c 'import json; d=json.load(open("/tmp/feed.json")); print("keys",list(d.keys())[:8]); print("scoreboard_date",d.get("scoreboard",{}).get("gameDate"),"game_count",len(d.get("scoreboard",{}).get("games",[])),"schedule_dates",len(d.get("leagueSchedule",{}).get("gameDates",[]))); print("live_game_sample",[(k,v) for k,v in (d.get("scoreboard",{}).get("games",[{}])[0]).items() if k in ("gameId","gameCode","gameTimeUTC","gameStatus","gameStatusText","homeTeam","awayTeam")][:7]); print("schedule_sample",[(item.get("gameDate"),[(g.get("gameId"),g.get("gameDateTimeUTC"),g.get("awayTeam",{}).get("teamTricode"),g.get("homeTeam",{}).get("teamTricode"),g.get("gameStatus"),g.get("gameStatusText")) for g in item.get("games",[])[:2]]) for item in d.get("leagueSchedule",{}).get("gameDates",[]) if item.get("gameDate","").startswith("10/26/2026")])' || true
             fi
             echo "::endgroup::"
           done
