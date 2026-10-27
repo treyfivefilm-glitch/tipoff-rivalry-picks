@@ -8,6 +8,7 @@ import { RoomManagement } from "./RoomManagement";
 import { AccountSecurity } from "./AccountSecurity";
 import { PushSettings } from "./PushSettings";
 import { supabase } from "@/integrations/supabase/client";
+import { battleInviteMessage, battleInviteUrl } from "@/lib/invites";
 
 const input = "h-11 w-full rounded-lg border border-input bg-background/60 px-3 outline-none focus:border-primary";
 
@@ -16,11 +17,11 @@ export function SettingsTab() {
   const [name, setName] = useState(b.me.name);
   const [room, setRoom] = useState(b.room.name);
   const canInvite = !b.room.invites_closed && !b.friend;
-  const inviteUrl = () => new URL(`/join/${b.room.invite_code}`, window.location.origin).href;
+  const inviteUrl = () => battleInviteUrl(window.location.origin, b.room.invite_code);
   async function shareInvite() {
     if (!canInvite) return;
     const url = inviteUrl();
-    const text = `You're invited to ${b.room.name} on TIPOFF Rivalry Picks. Pick NBA winners with me!`;
+    const text = battleInviteMessage(b.room.name);
     try {
       if (navigator.share) {
         await navigator.share({ title: "Join my TIPOFF battle", text, url });
