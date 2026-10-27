@@ -12,6 +12,7 @@ export const Route = createFileRoute("/auth")({
 
 // Google is opt-in only after the standalone backend owns valid OAuth credentials.
 const googleEnabled = import.meta.env.VITE_ENABLE_GOOGLE_OAUTH === "true";
+const guestEnabled = import.meta.env.VITE_ENABLE_GUEST_LOGIN === "true";
 
 const input = "h-12 w-full rounded-xl border border-input bg-background/60 px-4 outline-none focus:border-primary";
 
@@ -42,6 +43,20 @@ function AuthPage() {
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
     if (error) toast.error(error.message); else toast.success("Reset link sent");
   }
+  async function guest() {
+    if (busy || !guestEnabled) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.signInAnonymously();
+      if (error) throw error;
+      done();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Guest sign-in failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function google() {
     if (busy || !googleEnabled) return;
     setBusy(true);
@@ -73,6 +88,16 @@ function AuthPage() {
         <input className={input} type="password" required minLength={6} placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} />
         <Button variant="gold" size="xl" className="w-full" disabled={busy}>{mode === "in" ? "Sign in" : "Sign up"}</Button>
       </form>
+      {guestEnabled && (
+        <div className="space-y-2">
+          <Button variant="glass" size="xl" className="w-full" onClick={guest} disabled={busy}>
+            Start playing as a guest
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Guest progress stays on this browser. Do not sign out or clear website data until you link a permanent account.
+          </p>
+        </div>
+      )}
       {googleEnabled && <Button variant="glass" size="xl" onClick={google} disabled={busy}>Continue with Google</Button>}
       <div className="flex justify-between text-sm">
         <button className="text-primary" onClick={() => setMode(mode === "in" ? "up" : "in")}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>
