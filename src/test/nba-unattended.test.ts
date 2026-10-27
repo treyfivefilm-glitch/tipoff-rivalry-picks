@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { authorizedNbaCron, prepareUnattendedNbaDay, unattendedNbaDays, unattendedNbaHttpStatus } from "../../supabase/functions/_shared/nba-unattended";
+import { authorizedNbaCron, prepareUnattendedNbaDay, unattendedNbaDays, unattendedNbaHttpStatus, verifiedUnattendedNbaSchedule } from "../../supabase/functions/_shared/nba-unattended";
 
 const game = (status = 1, awayScore: number | null = null, homeScore: number | null = null) => ({
   gameId: "0022600012", gameDateTimeUTC: "2026-11-18T03:00:00Z",
@@ -17,6 +17,26 @@ describe("unattended NBA worker pure preparation", () => {
     expect(unattendedNbaHttpStatus(0, ["Live scoreboard unavailable"])).toBe(503);
     expect(unattendedNbaHttpStatus(0, ["Season schedule unavailable"])).toBe(503);
     expect(unattendedNbaHttpStatus(1, [])).toBe(503);
+  });
+
+  it("treats a malformed but well-shaped full-season feed as a provider outage", () => {
+    // The worker must not report HTTP 200 just because the provider returned
+    // a JSON schedule envelope. A valid in-season matchup is required.
+    expect(verifiedUnattendedNbaSchedule(schedule([game()]))).toBe(true);
+    expect(verifiedUnattendedNbaSchedule(schedule([{ ...game(), gameId: "invalid" }]))).toBe(false);
+    expect(verifiedUnattendedNbaSchedule(schedule([{
+      ...game(), gameDateTimeUTC: "1900-01-01T00:00:00Z",
+    }]))).toBe(false);
+    expect(verifiedUnattendedNbaSchedule(schedule([{
+      ...game(), gameDateTimeUTC: "2027-05-02T02:00:00Z",
+    }]))).toBe(false);
+    expect(verifiedUnattendedNbaSchedule(schedule([{
+      ...game(), awayTeam: { ...game().awayTeam, teamTricode: "GS" },
+    }]))).toBe(false);
+    expect(verifiedUnattendedNbaSchedule(schedule([
+      { ...game(), gameId: "invalid" }, game(),
+    ]))).toBe(true);
+    expect(unattendedNbaHttpStatus(0, ["Season schedule unavailable"])).toBe(503);
   });
 
   it("selects Pacific yesterday/today/tomorrow within the season", () => {
