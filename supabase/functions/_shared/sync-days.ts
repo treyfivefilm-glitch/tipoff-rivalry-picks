@@ -28,5 +28,5 @@ export function syncUtcBounds(days: readonly string[]): { lower: string; upper: 
   const shift = (day: string, offset: number) =>
     new Date(Date.parse(`${day}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
   // Pad both ends for Pacific-day NBA tipoffs and postponed games.
-  return { lower: shift(ordered[0], -2), upper: shift(ordered[ordered.length - 1], 2) };
+  return { lower: shift(ordered[0]!, -2), upper: shift(ordered[ordered.length - 1]!, 2) };
 }
