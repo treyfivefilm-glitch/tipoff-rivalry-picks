@@ -55,6 +55,24 @@ describe("unattended NBA worker pure preparation", () => {
     expect(prepareUnattendedNbaDay("2026-11-17", null, live([game(3, 104, 105)]), []).cacheable).toBe(true);
   });
 
+  it("does not mark a day fresh from an impossible same-team live result", () => {
+    const impossible = {
+      ...game(3, 102, 99),
+      homeTeam: { ...game().homeTeam, teamTricode: "LAL" },
+    };
+    expect(prepareUnattendedNbaDay("2026-11-17", null, live([impossible]), [])).toEqual({
+      rows: [], cacheable: false,
+    });
+    const aliased = {
+      ...game(3, 102, 99),
+      awayTeam: { ...game().awayTeam, teamTricode: "GS" },
+      homeTeam: { ...game().homeTeam, teamTricode: "GSW" },
+    };
+    expect(prepareUnattendedNbaDay("2026-11-17", schedule([aliased]), null, [])).toEqual({
+      rows: [], cacheable: false,
+    });
+  });
+
   it("does not publish or cache an impossible tied final during a schedule outage", () => {
     const tiedFinal = game(3, 101, 101);
     expect(prepareUnattendedNbaDay("2026-11-17", null, live([tiedFinal]), [])).toEqual({
