@@ -56,6 +56,22 @@ export function isUsableNbaGame(value: unknown): boolean {
       team["teamTricode"].trim().length > 0 &&
       (team["teamName"] == null || typeof team["teamName"] === "string");
   });
+  // A provider may return HTTP 200 and mark a game final without usable scores.
+  // Never publish an unscored final: wagers depend on a verified winner.
+  const status = value["gameStatus"];
+  const scoreValid = (score: unknown): boolean => {
+    if (typeof score !== "number" && typeof score !== "string") return false;
+    if (typeof score === "string" && score.trim() === "") return false;
+    const number = Number(score);
+    return Number.isSafeInteger(number) && number >= 0;
+  };
+  const scores = [value["awayTeam"], value["homeTeam"]].map(team =>
+    record(team) ? team["score"] : undefined,
+  );
+  // Missing scores are normal before tipoff or at the start of live play.
+  // If the feed supplies a score, it must be a valid nonnegative integer.
+  if (scores.some(score => score != null && !scoreValid(score))) return false;
+  if (status === 3 && !scores.every(scoreValid)) return false;
   return typeof value["gameId"] === "string" && value["gameId"].trim().length > 0 &&
     typeof tipoff === "string" && Number.isFinite(Date.parse(tipoff)) &&
     (value["gameStatusText"] == null || typeof value["gameStatusText"] === "string") &&
