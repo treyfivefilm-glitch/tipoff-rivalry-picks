@@ -68,6 +68,22 @@ describe("unattended NBA worker pure preparation", () => {
     expect(liveFallback.rows[0]).toMatchObject({ state: "final", away_score: 105, home_score: 103 });
   });
 
+  it("rejects legacy 1900 placeholders and out-of-season games as season evidence", () => {
+    const placeholder = { ...game(), gameDateTimeUTC: "1900-01-01T00:00:00Z" };
+    const postseason = { ...game(), gameDateTimeUTC: "2027-05-02T02:00:00Z" };
+    const emptyDay = "2026-11-16";
+    expect(prepareUnattendedNbaDay(emptyDay, schedule([placeholder]), null, [])).toEqual({
+      rows: [], cacheable: false,
+    });
+    expect(prepareUnattendedNbaDay(emptyDay, schedule([postseason]), null, [])).toEqual({
+      rows: [], cacheable: false,
+    });
+    // A real in-season game is enough to verify an otherwise healthy feed.
+    expect(prepareUnattendedNbaDay(emptyDay, schedule([placeholder, game()]), null, [])).toEqual({
+      rows: [], cacheable: true,
+    });
+  });
+
   it("skips malformed schedule games without rejecting an otherwise valid season", () => {
     const mixedSeason = schedule([{ gameId: "broken", homeTeam: null }, game()]);
     expect(prepareUnattendedNbaDay("2026-11-16", mixedSeason, null, [])).toEqual({

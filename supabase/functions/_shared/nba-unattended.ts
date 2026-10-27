@@ -82,7 +82,15 @@ export function prepareUnattendedNbaDay(
   if (seasonValid) {
     const dates = (schedule as { leagueSchedule: { gameDates: Array<{ games: unknown[] }> } }).leagueSchedule.gameDates;
     for (const segment of dates) for (const game of segment.games) {
-      if (isUsableNbaGame(game)) validSeasonGames++;
+      // A syntactically usable 1900 placeholder (or an out-of-season game)
+      // cannot prove that the 2026-27 season feed is healthy. Without this,
+      // a malformed season could falsely mark all requested days as empty.
+      if (isUsableNbaGame(game)) {
+        const seasonGame = game as Game;
+        const tipoff = seasonGame.gameDateTimeUTC ?? seasonGame.gameTimeUTC;
+        const seasonDay = safeNbaPacificDay(tipoff);
+        if (seasonDay && seasonDay >= START && seasonDay <= END) validSeasonGames++;
+      }
       include(game, false);
     }
   }
