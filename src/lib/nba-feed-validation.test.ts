@@ -66,6 +66,15 @@ describe("NBA full-season evidence before marking days fresh", () => {
     expect(verified([valid])).toBe(true);
     expect(canCacheNbaDay(verified([valid]), undefined, "2026-11-16", 0)).toBe(true);
   });
+  it("rejects impossible same-team schedules, including provider aliases", () => {
+    expect(verified([{ ...valid, homeTeam: { teamTricode: "LAL", teamName: "Lakers" } }])).toBe(false);
+    expect(verified([{
+      ...valid,
+      awayTeam: { teamTricode: "GS", teamName: "Warriors" },
+      homeTeam: { teamTricode: "GSW", teamName: "Warriors" },
+    }])).toBe(false);
+    expect(verified([valid])).toBe(true);
+  });
   it("does not treat malformed-only or 1900 placeholder schedules as healthy", () => {
     expect(verified([{ gameId: "broken", awayTeam: null }])).toBe(false);
     expect(verified([{ ...valid, gameDateTimeUTC: "1900-01-01T00:00:00Z" }])).toBe(false);
