@@ -43,3 +43,22 @@ export function canCacheNbaDay(
   return seasonScheduleAvailable ||
     (liveDay === requestedDay && validGameRows > 0);
 }
+
+/** A malformed game inside an otherwise valid NBA feed must not crash the
+ * entire refresh or replace a healthy schedule entry with a broken live row.
+ */
+export function isUsableNbaGame(value: unknown): boolean {
+  if (!record(value)) return false;
+  const tipoff = value["gameDateTimeUTC"] ?? value["gameTimeUTC"];
+  const teamsValid = ["awayTeam", "homeTeam"].every(key => {
+    const team = value[key];
+    return record(team) && typeof team["teamTricode"] === "string" &&
+      team["teamTricode"].trim().length > 0 &&
+      (team["teamName"] == null || typeof team["teamName"] === "string");
+  });
+  return typeof value["gameId"] === "string" && value["gameId"].trim().length > 0 &&
+    typeof tipoff === "string" && Number.isFinite(Date.parse(tipoff)) &&
+    (value["gameStatusText"] == null || typeof value["gameStatusText"] === "string") &&
+    (value["gameStatus"] == null || typeof value["gameStatus"] === "number") &&
+    teamsValid;
+}

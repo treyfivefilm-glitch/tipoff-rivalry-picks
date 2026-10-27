@@ -30,3 +30,18 @@ export function syncUtcBounds(days: readonly string[]): { lower: string; upper: 
   // Pad both ends for Pacific-day NBA tipoffs and postponed games.
   return { lower: shift(ordered[0]!, -2), upper: shift(ordered[ordered.length - 1]!, 2) };
 }
+
+/** Return null for an invalid provider timestamp rather than throwing inside
+ * Intl.DateTimeFormat and aborting an otherwise healthy NBA score refresh.
+ */
+export function safeNbaPacificDay(value: unknown): string | null {
+  if (typeof value !== "string" && !(value instanceof Date)) return null;
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(date);
+  const get = (type: string) => parts.find(part => part.type === type)?.value;
+  const year = get("year"), month = get("month"), day = get("day");
+  return year && month && day ? `${year}-${month}-${day}` : null;
+}

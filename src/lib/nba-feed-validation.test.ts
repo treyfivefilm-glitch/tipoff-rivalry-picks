@@ -3,6 +3,7 @@ import {
   isValidNbaSchedule,
   isValidNbaScoreboard,
   canCacheNbaDay,
+  isUsableNbaGame,
 } from "../../supabase/functions/_shared/nba-feed-validation";
 
 describe("NBA feed envelopes", () => {
@@ -58,5 +59,31 @@ describe("NBA sync cache safety during partial feed outages", () => {
   });
   it("does not cache a different day from the live scoreboard", () => {
     expect(canCacheNbaDay(false, "2026-10-25", "2026-10-26", 2)).toBe(false);
+  });
+});
+
+
+describe("NBA individual game integrity", () => {
+  const game = {
+    gameId: "0022600001", gameDateTimeUTC: "2026-10-27T02:30:00Z",
+    gameStatus: 2, gameStatusText: "Q3",
+    awayTeam: { teamTricode: "LAL", teamName: "Lakers" },
+    homeTeam: { teamTricode: "GSW", teamName: "Warriors" },
+  };
+  it("accepts a well-formed game and optional status text", () => {
+    expect(isUsableNbaGame(game)).toBe(true);
+    expect(isUsableNbaGame({ ...game, gameStatusText: undefined })).toBe(true);
+  });
+  it("rejects broken games instead of letting them crash the refresh", () => {
+    expect(isUsableNbaGame(null)).toBe(false);
+    expect(isUsableNbaGame({ ...game, gameId: "" })).toBe(false);
+    expect(isUsableNbaGame({ ...game, awayTeam: null })).toBe(false);
+    expect(isUsableNbaGame({ ...game, homeTeam: { teamTricode: "" } })).toBe(false);
+    expect(isUsableNbaGame({ ...game, gameDateTimeUTC: "not-a-date" })).toBe(false);
+    expect(isUsableNbaGame({ ...game, gameStatusText: { broken: true } })).toBe(false);
+  });
+  it("accepts the legacy tipoff field when the canonical one is absent", () => {
+    const { gameDateTimeUTC: _canonical, ...legacy } = game;
+    expect(isUsableNbaGame({ ...legacy, gameTimeUTC: game.gameDateTimeUTC })).toBe(true);
   });
 });

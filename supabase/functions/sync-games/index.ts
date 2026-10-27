@@ -1,8 +1,8 @@
 // Official NBA schedule + live scores, independent of ESPN / Lovable.
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { normalizeSyncDays, syncUtcBounds } from "../_shared/sync-days.ts";
-import { canCacheNbaDay, isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
+import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
+import { canCacheNbaDay, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -150,10 +150,10 @@ Deno.serve(async (req) => {
     if (scheduleResult.status === "fulfilled") {
       for (const segment of scheduleResult.value.leagueSchedule?.gameDates ?? []) {
         for (const game of segment.games ?? []) {
+          if (!isUsableNbaGame(game)) continue;
           const tipoff = game.gameDateTimeUTC ?? game.gameTimeUTC;
-          if (!tipoff) continue;
-          const day = pacificDay(tipoff);
-          if (!due.includes(day)) continue;
+          const day = safeNbaPacificDay(tipoff);
+          if (!day || !due.includes(day)) continue;
           const current = gamesByDay.get(day) ?? [];
           current.push(game);
           gamesByDay.set(day,current);
@@ -166,6 +166,8 @@ Deno.serve(async (req) => {
       const current = gamesByDay.get(liveDay) ?? [];
       const keys = new Set(current.map(g => g.gameId));
       for (const game of live.games ?? []) {
+        // Never let a malformed live row overwrite a valid season schedule row.
+        if (!isUsableNbaGame(game)) continue;
         if (keys.has(game.gameId)) {
           const index = current.findIndex(x => x.gameId === game.gameId);
           if (index >= 0) current[index] = game;

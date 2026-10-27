@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeSyncDays, syncUtcBounds } from "../../supabase/functions/_shared/sync-days";
+import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../../supabase/functions/_shared/sync-days";
 
 const START = "2026-10-20";
 const END = "2027-04-12";
@@ -43,5 +43,18 @@ describe("NBA sync date selection", () => {
       lower: "2026-10-23", upper: "2026-10-29",
     });
     expect(() => syncUtcBounds([])).toThrow(/without days/);
+  });
+});
+
+
+describe("safe NBA Pacific tipoff dates", () => {
+  it("converts UTC tipoffs to their Pacific calendar day", () => {
+    expect(safeNbaPacificDay("2026-10-27T02:30:00Z")).toBe("2026-10-26");
+    expect(safeNbaPacificDay("2026-10-27T18:30:00Z")).toBe("2026-10-27");
+  });
+  it("returns null for invalid provider timestamps without throwing", () => {
+    expect(safeNbaPacificDay("not-a-date")).toBeNull();
+    expect(safeNbaPacificDay(undefined)).toBeNull();
+    expect(safeNbaPacificDay(new Date(Number.NaN))).toBeNull();
   });
 });
