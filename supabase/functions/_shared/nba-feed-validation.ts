@@ -81,6 +81,24 @@ export function isUsableNbaGame(value: unknown): boolean {
     teamsValid;
 }
 
+/** A structurally valid season envelope is not proof of a healthy schedule
+ * when all rows are malformed, legacy 1900 placeholders or outside the
+ * configured season. Only verified in-season games can establish an empty day.
+ */
+export function hasVerifiedNbaSeasonGame(
+  schedule: unknown, seasonStart: string, seasonEnd: string,
+): boolean {
+  if (!isValidNbaSchedule(schedule)) return false;
+  const dates = (schedule as { leagueSchedule: { gameDates: Array<{ games: unknown[] }> } })
+    .leagueSchedule.gameDates;
+  return dates.some(segment => segment.games.some(game => {
+    if (!isUsableNbaGame(game)) return false;
+    const value = game as { gameDateTimeUTC?: string; gameTimeUTC?: string };
+    const day = safeNbaPacificDay(value.gameDateTimeUTC ?? value.gameTimeUTC);
+    return day !== null && day >= seasonStart && day <= seasonEnd;
+  }));
+}
+
 /** The NBA's live scoreboard date can be UTC-next-day while tipoff is still
  * the previous day in Los Angeles. Group each validated game by its actual
  * Pacific tipoff day, not by scoreboard.gameDate, so West Coast scores refresh.
