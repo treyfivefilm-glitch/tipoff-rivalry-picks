@@ -26,15 +26,7 @@ jobs:
             code=$(curl -L --retry 1 --connect-timeout 5 --max-time 15 -s -o /tmp/feed.json -w '%{http_code}' "$url" || true)
             echo "HTTP=$code bytes=$(wc -c </tmp/feed.json)"
             if [[ "$code" == "200" ]]; then
-              python3 - <<'PY'
-import json
-try:
- d=json.load(open("/tmp/feed.json"))
- print("keys:",list(d.keys())[:10])
- print("scoreboard_date:",d.get("scoreboard",{}).get("gameDate"),"games:",len(d.get("scoreboard",{}).get("games",[])))
- print("schedule_dates:",len(d.get("leagueSchedule",{}).get("gameDates",[])))
-except Exception as e:print("not JSON:",str(e)[:80])
-PY
+              python3 -c 'import json; d=json.load(open("/tmp/feed.json")); print("keys",list(d.keys())[:8]); print("scoreboard_date",d.get("scoreboard",{}).get("gameDate"),"game_count",len(d.get("scoreboard",{}).get("games",[])),"schedule_dates",len(d.get("leagueSchedule",{}).get("gameDates",[])))' || true
             fi
             echo "::endgroup::"
           done
