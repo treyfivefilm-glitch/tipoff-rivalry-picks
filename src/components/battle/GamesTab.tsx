@@ -31,6 +31,9 @@ export function GamesTab() {
     return m;
   }, [b.games]);
   const list = byDay.get(b.day) ?? [];
+  const liveGames = list.filter((g) => g.state === "live").length;
+  const finalGames = list.filter((g) => g.state === "final").length;
+  const upcomingGames = list.filter((g) => g.state === "scheduled").length;
   const [filter, setFilter] = useState<GameFilter>("all");
   const counts = useMemo(() => filterCounts(list), [list]);
   const shown = useMemo(() => list.filter((g) => matchesFilter(g, filter)), [list, filter]);
@@ -83,9 +86,22 @@ export function GamesTab() {
         })}
       </div>
 
-      <div className="flex items-center justify-between font-cond text-[11px] text-muted-foreground">
+      <div className="grid grid-cols-3 gap-2" aria-label="Today's NBA scoreboard summary">
+        {([
+          { label: "LIVE", count: liveGames, cls: "text-loss border-loss/30" },
+          { label: "FINAL", count: finalGames, cls: "text-foreground border-border" },
+          { label: "UPCOMING", count: upcomingGames, cls: "text-primary border-primary/30" },
+        ] as const).map((item) => (
+          <div key={item.label} className={cn("rounded-xl border bg-card/60 px-3 py-2", item.cls)}>
+            <p className="font-cond text-[10px] font-bold tracking-wide">{item.label}</p>
+            <p className="font-display text-2xl tabular-nums">{item.count}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between gap-3 font-cond text-[11px] text-muted-foreground">
         <span>
-          {b.mode === "demo" ? "Schedule: shared league table (read-only)" : `Schedule & scores: ESPN public feed · ${timeAgo(b.lastSync)}`}
+          {b.mode === "demo" ? "Demo schedule" : `NBA official schedule & scores · ${timeAgo(b.lastSync)} · live updates every ~90s`}
         </span>
         {b.mode === "live" && (
           <button type="button" onClick={() => b.refresh(true)} className="flex items-center gap-1 text-primary" disabled={b.syncing}>
