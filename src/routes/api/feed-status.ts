@@ -2,7 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 
 // Read-only operational health check for the official public NBA scoreboard.
 // No credentials, user data, or private records are exposed.
-export const Route = createFileRoute("/api/feed-status")({
+// The generated route type is refreshed by Vite during the build; CI also
+// typechecks before route generation. The runtime route path stays literal.
+export const Route = createFileRoute("/api/feed-status" as never)({
   server: {
     handlers: {
       GET: async () => {
