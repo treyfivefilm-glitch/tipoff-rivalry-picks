@@ -7,6 +7,31 @@ interface OtherGame { id:string;start_utc:string;away_code:string;away_name:stri
   home_code:string;home_name:string;away_score:number|null;home_score:number|null;state:string;status_detail:string }
 interface ResponseData { sport:OtherSport;date:string;preview:boolean;source:string;games:OtherGame[];error?:string }
 
+type EspnTeam = { homeAway:string; score?:string; team:{ abbreviation:string; displayName:string } };
+type EspnEvent = { id:string; date:string; status:{type:{state:string;shortDetail:string}};
+  competitions:Array<{competitors:EspnTeam[]}> };
+async function nflFromBrowser(date:string):Promise<OtherGame[]> {
+  // ESPN supports direct browser scoreboard requests; its server-side CDN
+  // often blocks requests from Supabase's Edge runtime.
+  const response=await fetch(
+    `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${date.replaceAll("-","")}`,
+    {signal:AbortSignal.timeout(10000)}
+  );
+  if(!response.ok)throw new Error("NFL scoreboard temporarily unavailable");
+  const raw=await response.json() as {events?:EspnEvent[]};
+  return (raw.events??[]).flatMap(e=>{
+    const teams=e.competitions?.[0]?.competitors??[];
+    const away=teams.find(t=>t.homeAway==="away"),home=teams.find(t=>t.homeAway==="home");
+    if(!away||!home)return [];
+    const state=e.status?.type?.state==="post"?"final":e.status?.type?.state==="in"?"live":"scheduled";
+    const score=(value:string|undefined)=>value!==undefined&&Number.isFinite(Number(value))?Number(value):null;
+    return [{id:"nfl:"+e.id,start_utc:e.date,away_code:away.team.abbreviation,away_name:away.team.displayName,
+      home_code:home.team.abbreviation,home_name:home.team.displayName,
+      away_score:state==="scheduled"?null:score(away.score),home_score:state==="scheduled"?null:score(home.score),
+      state,status_detail:e.status.type.shortDetail}];
+  });
+}
+
 export function SportsPreview({ sport }: { sport: OtherSport }) {
   const [day,setDay]=useState(todayPacific);
   const [games,setGames]=useState<OtherGame[]>([]);
@@ -18,8 +43,13 @@ export function SportsPreview({ sport }: { sport: OtherSport }) {
     setLoading(true);
     setError(null);
     const load=async()=>{
+      if(sport==="NFL"){
+        const nfl=await nflFromBrowser(day);
+        if(active)setGames(nfl);
+        return;
+      }
       const {data:user}=await supabase.auth.getUser();
-      if(!user.user){setError("Sign in to preview these scores.");return;}
+      if(!user.user){setError("Sign in to preview MLB and NHL scores.");return;}
       const {data,error:upstream}=await supabase.functions.invoke("sports-scores",{
         body:{sport,date:day}
       });
@@ -65,6 +95,6 @@ export function SportsPreview({ sport }: { sport: OtherSport }) {
         </div>
       </article>
     ))}
-    <p className="text-xs text-muted-foreground">{sport} data is supplied by a third-party public feed and may be delayed or temporarily unavailable.</p>
+    <p className="text-xs text-muted-foreground">{sport} data is supplied by a public provider feed and may be delayed or temporarily unavailable. NFL uses ESPN’s unofficial browser API.</p>
   </section>;
 }
