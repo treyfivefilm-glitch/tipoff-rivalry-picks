@@ -3,6 +3,7 @@ import { filterCounts, GAME_FILTERS, matchesFilter, type GameFilter } from "@/li
 import { ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { useBattle } from "@/lib/battle-context";
 import { GameCard } from "./GameCard";
+import { QuickPicks } from "./QuickPicks";
 import { addDays, clampSeason, dayLabel, pacificDay, SEASON_END, SEASON_START, todayPacific, weekDays, weekLabel, weekNumber, weekStart } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -100,6 +101,8 @@ export function GamesTab() {
           Jump to Today
         </button>
       )}
+
+      {!b.loading && list.length > 0 && <QuickPicks games={list} />}
 
       {!b.loading && list.length > 0 && (
         <div role="group" aria-label="Filter games" className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4">
