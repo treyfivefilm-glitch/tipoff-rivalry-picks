@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { pacificDay, pacificTime } from "@/lib/time";
 import { RoomManagement } from "./RoomManagement";
 import { AccountSecurity } from "./AccountSecurity";
+import { PushSettings } from "./PushSettings";
 import { supabase } from "@/integrations/supabase/client";
 
 const input = "h-11 w-full rounded-lg border border-input bg-background/60 px-3 outline-none focus:border-primary";
@@ -20,6 +21,7 @@ export function SettingsTab() {
   return (
     <div className="space-y-4">
       <AccountSecurity />
+      <PushSettings />
       <section className="surface space-y-2 rounded-2xl p-4">
         <h2 className="font-display text-2xl">INVITE</h2>
         <p className="text-sm text-muted-foreground">Code <b className="font-display text-xl text-primary">{b.room.invite_code}</b> · max 2 players</p>
