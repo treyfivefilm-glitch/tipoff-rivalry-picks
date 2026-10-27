@@ -40,7 +40,7 @@ function AuthPage() {
     if (error) toast.error(error.message); else toast.success("Reset link sent");
   }
   // Enable this only after our own backend has its Google OAuth credentials.
-  const googleEnabled = import.meta.env.VITE_ENABLE_GOOGLE_OAUTH === "true";
+  const googleEnabled = import.meta.env["VITE_ENABLE_GOOGLE_OAUTH"] === "true";
   async function google() {
     if (busy || !googleEnabled) return;
     setBusy(true);
