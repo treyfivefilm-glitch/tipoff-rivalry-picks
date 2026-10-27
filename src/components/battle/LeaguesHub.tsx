@@ -9,7 +9,7 @@ interface League { id:string; name:string; invite_code:string; owner_id:string; 
 interface LeagueMember { league_id:string; user_id:string; display_name:string }
 interface LeagueStanding { user_id:string; display_name:string; correct_count:number; decided_count:number }
 interface Game { id:string; start_utc:string; away_code:string; home_code:string; away_name:string; home_name:string; state:string }
-interface LeaguePick { game_id:string; user_id:string; team_code:string }
+interface LeaguePick { league_id:string; game_id:string; user_id:string; team_code:string }
 
 const input = "min-h-12 w-full rounded-xl border border-input bg-background/60 px-4 outline-none focus:border-primary";
 const getErr = (err: unknown) => err instanceof Error ? err.message : String(err);
@@ -62,7 +62,7 @@ export function LeaguesHub() {
       setSelected(league);
       setStandings((st.data ?? []) as LeagueStanding[]);
       setGames((gs.data ?? []) as Game[]);
-      setPicks(((ps.data ?? []) as unknown as LeaguePick[]).filter(p => p.game_id));
+      setPicks(((ps.data ?? []) as unknown as LeaguePick[]).filter(p => p.league_id === league.id));
     } catch(e) { toast.error(getErr(e)); } finally { setBusy(false); }
   }
 
@@ -74,8 +74,6 @@ export function LeaguesHub() {
       if(error)throw error;
       await refresh();
       toast.success(fn==="create_league"?"League created":"Joined league");
-      const target=leagues.find(x => x.id === data);
-      if(target) void openLeague(target);
       setName("");setCode("");
     } catch(e){toast.error(getErr(e));} finally {setBusy(false);}
   }
@@ -90,7 +88,7 @@ export function LeaguesHub() {
       if(error) throw error;
       if(myId) setPicks(old => [
         ...old.filter(p => !(p.game_id===game.id && p.user_id===myId)),
-        {game_id:game.id,user_id:myId,team_code:team},
+        {league_id:selected.id,game_id:game.id,user_id:myId,team_code:team},
       ]);
       toast.success(`Picked ${team} · no wager placed`);
     } catch(e){toast.error(getErr(e));} finally {setBusy(false);}
