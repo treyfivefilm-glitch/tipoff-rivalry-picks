@@ -89,9 +89,13 @@ export function isUsableNbaGame(value: unknown): boolean {
   // Missing scores are normal before tipoff or at the start of live play.
   // If the feed supplies a score, it must be a valid nonnegative integer.
   if (scores.some(score => score != null && !scoreValid(score))) return false;
-  // NBA games cannot end in a tie. A malformed final must never settle a wager
-  // or count as evidence that the provider returned a verified result.
-  if (status === 3 && (!scores.every(scoreValid) ||
+  // A completed NBA game needs two different verified scores. The provider
+  // can also mark a postponed/canceled game status=3 without playing it:
+  // those are non-final outcomes and must remain visible without scores.
+  const detail = typeof value["gameStatusText"] === "string"
+    ? value["gameStatusText"].toLowerCase() : "";
+  const notPlayed = detail.includes("postpon") || detail.includes("cancel");
+  if (status === 3 && !notPlayed && (!scores.every(scoreValid) ||
     Number(scores[0]) === Number(scores[1]))) return false;
   // NBA game IDs are ten decimal digits (for example 0022600012). A
   // nonempty but malformed ID must not certify a provider feed as healthy or
