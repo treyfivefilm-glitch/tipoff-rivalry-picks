@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { buildRoomCards, type RoomCard } from "@/lib/qol";
 import { cn } from "@/lib/utils";
+import { LeaguesHub } from "@/components/battle/LeaguesHub";
 
 export const Route = createFileRoute("/_authenticated/rooms")({
   head: () => ({
@@ -72,6 +73,7 @@ function RoomsPage() {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [view, setView] = useState<"duels" | "leagues">("duels");
 
   async function run(fn: () => Promise<string>, ok: string) {
     setBusy(true);
@@ -94,6 +96,19 @@ function RoomsPage() {
 
   return (
     <div className="mx-auto max-w-md space-y-4 px-4 py-8">
+      <div className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-card/60 p-1">
+        <button type="button" onClick={() => setView("duels")} aria-pressed={view === "duels"}
+          className={cn("min-h-11 rounded-lg font-cond text-sm font-bold",
+            view === "duels" ? "bg-primary text-white" : "text-muted-foreground")}>
+          1-on-1 Battles
+        </button>
+        <button type="button" onClick={() => setView("leagues")} aria-pressed={view === "leagues"}
+          className={cn("min-h-11 rounded-lg font-cond text-sm font-bold",
+            view === "leagues" ? "bg-primary text-white" : "text-muted-foreground")}>
+          Friends Leagues
+        </button>
+      </div>
+      {view === "leagues" ? <LeaguesHub /> : <>
       <h1 className="font-display text-5xl text-primary">YOUR BATTLES</h1>
       <section className="surface space-y-2 rounded-2xl p-4" aria-busy={rooms.isLoading}>
         {rooms.isLoading && [0, 1].map((i) => <Skeleton key={i} className="h-20 rounded-xl bg-background/40" />)}
@@ -121,6 +136,7 @@ function RoomsPage() {
         </Button>
       </section>
       <p className="text-center font-cond text-xs text-muted-foreground">Rooms are private and capped at two players. Share your invite code from the room's Settings.</p>
+      </>}
     </div>
   );
 }
