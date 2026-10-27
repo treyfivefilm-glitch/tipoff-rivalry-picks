@@ -93,7 +93,10 @@ export function isUsableNbaGame(value: unknown): boolean {
   // or count as evidence that the provider returned a verified result.
   if (status === 3 && (!scores.every(scoreValid) ||
     Number(scores[0]) === Number(scores[1]))) return false;
-  return typeof value["gameId"] === "string" && value["gameId"].trim().length > 0 &&
+  // NBA game IDs are ten decimal digits (for example 0022600012). A
+  // nonempty but malformed ID must not certify a provider feed as healthy or
+  // create a phantom game that could later be picked or wagered on.
+  return typeof value["gameId"] === "string" && /^\d{10}$/.test(value["gameId"]) &&
     typeof tipoff === "string" && Number.isFinite(Date.parse(tipoff)) &&
     (value["gameStatusText"] == null || typeof value["gameStatusText"] === "string") &&
     teamsValid;
