@@ -145,6 +145,19 @@ describe("NBA individual game integrity", () => {
       homeTeam: { ...game.homeTeam, score: "104" },
     })).toBe(true);
   });
+  it("keeps unscored postponed or canceled games even when provider status is 3", () => {
+    for (const detail of ["Postponed", "Postponement", "Canceled", "Cancelled"]) {
+      expect(isUsableNbaGame({ ...game, gameStatus: 3, gameStatusText: detail })).toBe(true);
+    }
+    // A normal final without scores remains invalid, and a cancellation
+    // cannot be used to smuggle malformed scores into a trusted feed.
+    expect(isUsableNbaGame({ ...game, gameStatus: 3, gameStatusText: "Final" })).toBe(false);
+    expect(isUsableNbaGame({
+      ...game, gameStatus: 3, gameStatusText: "Postponed",
+      awayTeam: { ...game.awayTeam, score: -1 },
+    })).toBe(false);
+  });
+
   it("rejects impossible tied finals without discarding tied live scores", () => {
     const tied = {
       ...game, gameStatus: 3, gameStatusText: "Final",
