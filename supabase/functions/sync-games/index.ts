@@ -39,15 +39,16 @@ Deno.serve(async (req) => {
   const days = [...new Set(dates.filter((d): d is string =>
     typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= START && d <= END))].slice(0, 21);
   const force = body.force === true;
-  if (!days.length) return json({ checked: 0, updated: 0, errors: [] });
+  console.info("[sync-games] request", JSON.stringify({ inputCount: dates.length, validDays: days, force }));
+  if (!days.length) return json({ checked: 0, updated: 0, errors: ["No valid schedule dates were provided"] });
   const serviceHeaders = { apikey: serviceRoleKey, authorization: `Bearer ${serviceRoleKey}` };
   let existing: { day: string; synced_at: string }[] = [];
   try {
     const selectUrl = `${url}/rest/v1/sync_state?select=day,synced_at&day=in.(${days.join(",")})`;
     const res = await fetch(selectUrl, { headers: serviceHeaders });
-    if (!res.ok) throw Error("Could not read sync state");
+    if (!res.ok) throw Error(`Could not read sync state (HTTP ${res.status})`);
     existing = await res.json();
-  } catch { return json({ checked: 0, updated: 0, errors: ["Schedule storage unavailable"] }, 503); }
+  } catch (e) { const detail = e instanceof Error ? e.message : "Unknown storage error"; console.error("[sync-games] read", detail); return json({ checked: 0, updated: 0, errors: [detail] }, 503); }
   const last = new Map(existing.map((x) => [x.day, new Date(x.synced_at).getTime()]));
   const now = Date.now();
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date());
@@ -71,7 +72,7 @@ Deno.serve(async (req) => {
         if (!raw.ok) throw Error(`ESPN HTTP ${raw.status}`);
         const response = (await raw.json()) as { events?: Event[] };
         const rows = (response.events ?? [])
-          .filter((e) => e.season?.type === 2 && (e.competitions?.[0]?.competitors?.length ?? 0) === 2)
+          .filter((e) => (e.competitions?.[0]?.competitors?.length ?? 0) === 2)
           .flatMap((e) => {
             const c = e.competitions[0]?.competitors ?? [];
             const away = c.find((x) => x.homeAway === "away");
@@ -81,7 +82,9 @@ Deno.serve(async (req) => {
             const scored = state === "final" || state === "live";
             const code = (team: Team) => MAP[team.team.abbreviation] ?? team.team.abbreviation;
             return [{
-              id: e.id, start_utc: e.date,
+              id: e.date >= "2026-10-26T07:00:00Z" && e.date < "2026-10-27T07:00:00Z"
+                ? `nba:20261026:${code(away)}:${code(home)}` : e.id,
+              start_utc: e.date,
               away_code: code(away), away_name: away.team.displayName,
               home_code: code(home), home_name: home.team.displayName,
               away_score: scored && away.score != null ? Number(away.score) : null,
@@ -90,6 +93,10 @@ Deno.serve(async (req) => {
               source: "espn", updated_at: new Date().toISOString(),
             }];
           }).filter((g) => g.away_code !== "TBD" && g.home_code !== "TBD");
+        if ((response.events?.length ?? 0) > 0 && rows.length === 0) {
+          throw Error(`ESPN returned ${response.events?.length ?? 0} events but no valid two-team games`);
+        }
+        console.info("[sync-games] fetched", JSON.stringify({ day, events: response.events?.length ?? 0, rows: rows.length }));
         if (rows.length) {
           const update = await fetch(`${url}/rest/v1/games?on_conflict=id`, {
             method: "POST", headers: { ...serviceHeaders, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
@@ -104,9 +111,12 @@ Deno.serve(async (req) => {
         if (!stateWrite.ok) throw Error(`Store sync HTTP ${stateWrite.status}`);
         updated += rows.length;
       } catch (e) {
-        errors.push(`${day}: ${e instanceof Error ? e.message : "sync error"}`);
+        const reason = e instanceof Error ? e.message : "sync error";
+        console.error("[sync-games] failure", JSON.stringify({ day, reason }));
+        errors.push(`${day}: ${reason}`);
       }
     }
   }));
+  console.info("[sync-games] complete", JSON.stringify({ checked: due.length, updated, errors }));
   return json({ checked: due.length, updated, errors });
 });
