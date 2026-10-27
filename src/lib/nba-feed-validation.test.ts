@@ -116,6 +116,12 @@ describe("NBA individual game integrity", () => {
     expect(isUsableNbaGame(game)).toBe(true);
     expect(isUsableNbaGame({ ...game, gameStatusText: undefined })).toBe(true);
   });
+  it("rejects malformed NBA game IDs rather than certifying phantom games", () => {
+    for (const gameId of ["not-an-nba-id", "123", "0022600012x", " 0022600012", "0022600012 "]) {
+      expect(isUsableNbaGame({ ...game, gameId })).toBe(false);
+    }
+    expect(isUsableNbaGame({ ...game, gameId: "0022600012" })).toBe(true);
+  });
   it("rejects broken games instead of letting them crash the refresh", () => {
     expect(isUsableNbaGame(null)).toBe(false);
     expect(isUsableNbaGame({ ...game, gameId: "" })).toBe(false);
