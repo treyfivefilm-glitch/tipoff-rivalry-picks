@@ -35,6 +35,7 @@
   --color-win-foreground: var(--win-foreground);
   --color-loss: var(--loss);
   --color-gold: var(--gold);
+  --color-tipoff-orange: var(--tipoff-orange);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -49,8 +50,8 @@
   --card-raised: oklch(0.26 0.065 274);
   --popover: oklch(0.22 0.05 272);
   --popover-foreground: oklch(0.96 0.01 260);
-  --primary: oklch(0.87 0.135 85); /* #ffd066 */
-  --primary-foreground: oklch(0.18 0.03 268);
+  --primary: #1687ff; /* TIPOFF electric blue */
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.29 0.06 274);
   --secondary-foreground: oklch(0.94 0.01 260);
   --muted: oklch(0.25 0.045 272);
@@ -62,17 +63,18 @@
   --win: oklch(0.86 0.17 150);
   --win-foreground: oklch(0.2 0.05 160);
   --loss: oklch(0.7 0.16 20);
-  --gold: oklch(0.87 0.135 85);
+  --gold: #ff882e;
+  --tipoff-orange: #ff882e;
   --border: oklch(0.33 0.05 272);
   --input: oklch(0.33 0.05 272);
-  --ring: oklch(0.87 0.135 85);
+  --ring: #1687ff;
 
-  --gradient-hero: radial-gradient(120% 90% at 50% -10%, oklch(0.36 0.12 276 / 0.9), transparent 60%),
-    radial-gradient(60% 60% at 100% 0%, oklch(0.87 0.135 85 / 0.18), transparent 70%);
+  --gradient-hero: radial-gradient(110% 90% at 50% -10%, rgba(17, 85, 153, 0.38), transparent 64%),
+    radial-gradient(70% 60% at 100% 0%, rgba(255, 131, 41, 0.09), transparent 75%);
   --gradient-card: linear-gradient(160deg, oklch(0.25 0.06 274), oklch(0.2 0.045 270));
-  --gradient-gold: linear-gradient(135deg, oklch(0.9 0.13 90), oklch(0.8 0.15 70));
+  --gradient-gold: linear-gradient(125deg, #1e9cff, #0067ef);
   --shadow-card: 0 10px 30px -12px oklch(0 0 0 / 0.6), inset 0 1px 0 oklch(1 0 0 / 0.05);
-  --shadow-gold: 0 8px 24px -8px oklch(0.87 0.135 85 / 0.55);
+  --shadow-gold: 0 8px 24px -8px rgba(0, 119, 255, 0.46);
 }
 
 @layer base {
@@ -126,4 +128,14 @@
 @keyframes rise {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
+}
+
+/* Mobile app detailing inspired by the approved TIPOFF blue/orange screens. */
+@utility tipoff-card {
+  background: linear-gradient(155deg, rgba(22, 43, 69, 0.92), rgba(8, 18, 32, 0.95));
+  border: 1px solid rgba(73, 118, 166, 0.28);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
+}
+@utility tipoff-glow {
+  box-shadow: 0 0 0 1px rgba(42, 139, 255, 0.2), 0 8px 28px rgba(10, 111, 244, 0.19);
 }
