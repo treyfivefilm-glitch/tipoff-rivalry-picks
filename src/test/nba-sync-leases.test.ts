@@ -136,6 +136,7 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     for (const invalid of [
       { ...sampleGame, id: "nba:test-wrong-day-20261117", start_utc: "2026-11-19T02:00:00Z" },
       { ...sampleGame, id: "nba:test-unscored-final-20261117", home_score: null },
+      { ...sampleGame, id: "nba:test-tied-final-20261117", home_score: 103 },
     ]) {
       await db`SAVEPOINT invalid_batch`;
       await expect(commit(owner, [sampleGame, invalid])).rejects.toThrow(/Invalid NBA game row or day mismatch/);
