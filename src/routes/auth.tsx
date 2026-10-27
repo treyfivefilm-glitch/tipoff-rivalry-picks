@@ -41,9 +41,37 @@ function AuthPage() {
     if (error) toast.error(error.message); else toast.success("Reset link sent");
   }
   async function google() {
-    if (redirect) sessionStorage.setItem("pb-redirect", redirect);
-    const r = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-    if (r.error) toast.error(String(r.error)); else if (!r.redirected) done();
+    if (busy) return;
+    setBusy(true);
+    try {
+      // Lovable's managed OAuth broker is bound to Lovable-hosted domains.
+      // Standalone deployments (Vercel/custom domains) must use the
+      // Supabase OAuth endpoint instead of the preview-only broker.
+      const host = window.location.hostname;
+      const lovableHost = /(^|\\.)(lovable\\.app|lovableproject\\.com|lovableproject-dev\\.com|gpt-eng\\.com|gptengineer\\.run)$/.test(host);
+      if (lovableHost) {
+        if (redirect) sessionStorage.setItem("pb-redirect", redirect);
+        const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
+        if (result.error) throw result.error;
+        if (!result.redirected) done();
+        return;
+      }
+
+      // This exact origin (or a matching preview wildcard) must be present
+      // in the backend's allowed redirect URLs. Never redirect to arbitrary hosts.
+      const redirectTo = window.location.origin + (redirect ?? "/rooms");
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+      if (error) throw error;
+      if (!data.url) throw new Error("Google sign-in isn't available on this domain yet.");
+      window.location.assign(data.url);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

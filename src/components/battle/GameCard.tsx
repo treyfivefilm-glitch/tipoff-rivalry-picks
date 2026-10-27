@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { EyeOff, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { TeamBadge } from "./TeamBadge";
+import { TipoffCountdown } from "./TipoffCountdown";
 import { Button } from "@/components/ui/button";
 import { useBattle, errMsg } from "@/lib/battle-context";
 import { h2hResult, isLiveBet, isLocked, winnerOf, type BoardGame } from "@/lib/rules";
@@ -14,7 +15,18 @@ import { latestWagers } from '@/lib/wagers';
 
 export function GameCard({ g }: { g: BoardGame }) {
   const b = useBattle();
-  const locked = isLocked(g);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    const remaining = new Date(g.start_utc).getTime() - Date.now();
+    if (g.state !== "scheduled" || remaining <= 0) {
+      setClockNow(Date.now());
+      return;
+    }
+    // Re-render at the cutoff, even if the server's next realtime update is delayed.
+    const timer = window.setTimeout(() => setClockNow(Date.now()), remaining + 50);
+    return () => window.clearTimeout(timer);
+  }, [g.start_utc, g.state]);
+  const locked = isLocked(g, clockNow);
   const [busy, setBusy] = useState<string | null>(null);
   const winner = winnerOf(g);
 
@@ -32,8 +44,11 @@ export function GameCard({ g }: { g: BoardGame }) {
 
   return (
     <article className="surface overflow-hidden rounded-2xl animate-rise">
-      <div className="flex items-center justify-between px-4 pt-3 font-cond text-xs uppercase tracking-wider">
-        <span className="text-muted-foreground">{pacificTime(g.start_utc)}</span>
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-3 font-cond text-xs uppercase tracking-wider">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-muted-foreground">{pacificTime(g.start_utc)}</span>
+          <TipoffCountdown startUtc={g.start_utc} scheduled={g.state === "scheduled"} />
+        </div>
         <StatusPill g={g} />
       </div>
       <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2 p-3">
