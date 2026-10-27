@@ -128,6 +128,19 @@ describe("unattended NBA worker pure preparation", () => {
     });
   });
 
+  it("preserves an unplayed postponed or canceled game rather than dropping it as an unscored final", () => {
+    for (const [detail, state] of [
+      ["Postponed", "postponed"], ["Canceled", "canceled"],
+    ] as const) {
+      const unplayed = { ...game(3), gameStatusText: detail };
+      const result = prepareUnattendedNbaDay("2026-11-17", schedule([unplayed]), null, []);
+      expect(result.cacheable).toBe(true);
+      expect(result.rows[0]).toMatchObject({
+        state, away_score: null, home_score: null, status_detail: detail,
+      });
+    }
+  });
+
   it("does not publish or cache an impossible tied final during a schedule outage", () => {
     const tiedFinal = game(3, 101, 101);
     expect(prepareUnattendedNbaDay("2026-11-17", null, live([tiedFinal]), [])).toEqual({
