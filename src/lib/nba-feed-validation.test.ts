@@ -4,6 +4,7 @@ import {
   isValidNbaScoreboard,
   canCacheNbaDay,
   isUsableNbaGame,
+  groupUsableNbaGamesByPacificDay,
 } from "../../supabase/functions/_shared/nba-feed-validation";
 
 describe("NBA feed envelopes", () => {
@@ -113,5 +114,35 @@ describe("NBA individual game integrity", () => {
   it("accepts the legacy tipoff field when the canonical one is absent", () => {
     const { gameDateTimeUTC: _canonical, ...legacy } = game;
     expect(isUsableNbaGame({ ...legacy, gameTimeUTC: game.gameDateTimeUTC })).toBe(true);
+  });
+});
+
+
+describe("NBA live scores across the UTC/Pacific date boundary", () => {
+  const game = {
+    gameId: "0022600012", gameDateTimeUTC: "2026-10-27T02:30:00Z",
+    gameStatus: 2, gameStatusText: "Q4",
+    awayTeam: { teamTricode: "LAL", teamName: "Lakers", score: 101 },
+    homeTeam: { teamTricode: "GSW", teamName: "Warriors", score: 99 },
+  };
+
+  it("refreshes the previous Pacific day even when the scoreboard reports the next UTC date", () => {
+    // NBA scoreboard.gameDate may be 2026-10-27, but 02:30 UTC is 10/26 in LA.
+    const days = groupUsableNbaGamesByPacificDay([game], ["2026-10-26"]);
+    expect([...days.keys()]).toEqual(["2026-10-26"]);
+    expect(days.get("2026-10-26")?.[0]).toMatchObject({ gameStatus: 2, gameId: game.gameId });
+    expect(canCacheNbaDay(false, days.has("2026-10-26") ? "2026-10-26" : undefined,
+      "2026-10-26", days.get("2026-10-26")?.length ?? 0)).toBe(true);
+  });
+
+  it("keeps separate Pacific days separate and ignores malformed or unrequested games", () => {
+    const nextDay = { ...game, gameId: "0022600013", gameDateTimeUTC: "2026-10-27T20:00:00Z" };
+    const invalid = { ...game, gameId: "broken", awayTeam: null };
+    const days = groupUsableNbaGamesByPacificDay(
+      [game, nextDay, invalid], ["2026-10-26", "2026-10-27"],
+    );
+    expect(days.get("2026-10-26")).toHaveLength(1);
+    expect(days.get("2026-10-27")).toHaveLength(1);
+    expect(groupUsableNbaGamesByPacificDay([game], ["2026-10-27"]).size).toBe(0);
   });
 });
