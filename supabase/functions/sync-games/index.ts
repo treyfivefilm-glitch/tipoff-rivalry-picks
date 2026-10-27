@@ -1,6 +1,7 @@
 // Official NBA schedule + live scores, independent of ESPN / Lovable.
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { normalizeSyncDays, syncUtcBounds } from "../_shared/sync-days.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -15,7 +16,6 @@ const json = (payload: unknown, status = 200) => new Response(JSON.stringify(pay
 const pacificDay = (value: string | Date) => new Intl.DateTimeFormat("en-CA", {
   timeZone: ZONE, year: "numeric", month: "2-digit", day: "2-digit",
 }).format(typeof value === "string" ? new Date(value) : value);
-const utcDay = (day: string, diff: number) => new Date(Date.parse(day + "T00:00:00Z") + diff * 86400000).toISOString().slice(0, 10);
 
 type Team = { teamTricode: string; teamCity?: string; teamName: string; score?: number | string | null };
 type NbaGame = { gameId: string; gameCode?: string; gameStatus: number; gameStatusText: string;
@@ -95,9 +95,7 @@ Deno.serve(async (req) => {
 
   let payload: { days?: unknown; force?: unknown } = {};
   try { payload = await req.json(); } catch { return json({ error:"Invalid request body" },400); }
-  const days = [...new Set((Array.isArray(payload.days) ? payload.days : [])
-    .filter((x): x is string => typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x)
-      && x >= START && x <= END))].slice(0,21);
+  const days = normalizeSyncDays(payload.days, START, END);
   if (!days.length) return json({ checked:0, updated:0, errors:[] });
   const force = payload.force === true;
   const admin = { apikey:serviceKey, Authorization:`Bearer ${serviceKey}` };
@@ -168,8 +166,7 @@ Deno.serve(async (req) => {
       gamesByDay.set(liveDay,current);
     }
 
-    const lower = utcDay(due[0] ?? today, -2);
-    const upper = utcDay(due[due.length-1] ?? today,2);
+    const { lower, upper } = syncUtcBounds(due);
     const existing = await getTable<Stored[]>(
       `games?select=id,start_utc,away_code,home_code,away_score,home_score,state,status_detail` +
       `&start_utc=gte.${lower}T00:00:00Z&start_utc=lt.${upper}T00:00:00Z&limit=3000`);
