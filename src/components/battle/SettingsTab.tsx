@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { pacificDay, pacificTime } from "@/lib/time";
 import { RoomManagement } from "./RoomManagement";
 import { AccountSecurity } from "./AccountSecurity";
+import { supabase } from "@/integrations/supabase/client";
 
 const input = "h-11 w-full rounded-lg border border-input bg-background/60 px-3 outline-none focus:border-primary";
 
@@ -50,7 +51,19 @@ export function SettingsTab() {
         <p>Tracking only. No real money moves through this app.</p>
       </section>
       <RoomManagement />
-      {b.signOut && <Button variant="outline" className="w-full" onClick={() => b.signOut?.()}>Sign out</Button>}
+      {b.signOut && (
+        <Button variant="outline" className="w-full" onClick={async () => {
+          try {
+            const { data } = await supabase.auth.getUser();
+            if (data.user?.is_anonymous && !window.confirm(
+              "This guest account cannot be recovered after sign-out. You could lose access to this room and all its saved picks. Sign out anyway?"
+            )) return;
+            await b.signOut?.();
+          } catch (error) {
+            toast.error(errMsg(error));
+          }
+        }}>Sign out</Button>
+      )}
     </div>
   );
 }
