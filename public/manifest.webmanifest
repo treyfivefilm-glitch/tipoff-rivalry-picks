@@ -1,0 +1,19 @@
+{
+  "name": "TIPOFF Rivalry Picks",
+  "short_name": "TIPOFF",
+  "description": "NBA live scores, private rivalry picks, wagers and standings.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#07101e",
+  "theme_color": "#07101e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/tipoff-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
