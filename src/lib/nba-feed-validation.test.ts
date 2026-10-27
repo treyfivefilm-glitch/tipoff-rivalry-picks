@@ -123,6 +123,14 @@ describe("NBA individual game integrity", () => {
     expect(isUsableNbaGame({ ...game, gameDateTimeUTC: "not-a-date" })).toBe(false);
     expect(isUsableNbaGame({ ...game, gameStatusText: { broken: true } })).toBe(false);
   });
+  it("rejects missing, unknown, and fractional NBA statuses before trusting feed freshness", () => {
+    for (const status of [undefined, null, 0, -1, 4, 99, 1.5, "2"]) {
+      expect(isUsableNbaGame({ ...game, gameStatus: status })).toBe(false);
+    }
+    for (const status of [1, 2]) {
+      expect(isUsableNbaGame({ ...game, gameStatus: status })).toBe(true);
+    }
+  });
   it("accepts a verified final, including a legitimate zero score", () => {
     expect(isUsableNbaGame({
       ...game, gameStatus: 3, gameStatusText: "Final",
