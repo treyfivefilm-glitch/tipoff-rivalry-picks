@@ -69,6 +69,7 @@ export function prepareUnattendedNbaDay(
   const liveValid = isValidNbaScoreboard(scoreboard);
   const games = new Map<string, Game>();
   let validLiveGames = 0;
+  let validSeasonGames = 0;
   const include = (value: unknown, live: boolean) => {
     if (!isUsableNbaGame(value)) return;
     const game = value as Game;
@@ -80,7 +81,10 @@ export function prepareUnattendedNbaDay(
   };
   if (seasonValid) {
     const dates = (schedule as { leagueSchedule: { gameDates: Array<{ games: unknown[] }> } }).leagueSchedule.gameDates;
-    for (const segment of dates) for (const game of segment.games) include(game, false);
+    for (const segment of dates) for (const game of segment.games) {
+      if (isUsableNbaGame(game)) validSeasonGames++;
+      include(game, false);
+    }
   }
   if (liveValid) {
     const live = (scoreboard as { scoreboard: { games: unknown[] } }).scoreboard;
@@ -117,6 +121,9 @@ export function prepareUnattendedNbaDay(
     };
     rows.set(row.id, row);
   }
-  // Empty scoreboard cannot prove an empty day when the season feed is down.
-  return { rows: [...rows.values()], cacheable: seasonValid || (validLiveGames > 0 && rows.size > 0) };
+  // A well-formed schedule envelope with only malformed game rows is not a
+  // verified season. Otherwise it could falsely mark every day as refreshed.
+  // A legitimate no-game day remains cacheable when other season games validate.
+  const verifiedSeason = seasonValid && validSeasonGames > 0;
+  return { rows: [...rows.values()], cacheable: verifiedSeason || (validLiveGames > 0 && rows.size > 0) };
 }
