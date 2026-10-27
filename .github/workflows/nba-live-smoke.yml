@@ -1,0 +1,19 @@
+name: End-to-end NBA score smoke test
+on:
+  push:
+    branches: [feature/independent-backend-2026-10-26]
+    paths: [.github/workflows/nba-live-smoke.yml]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: https://dpujooxxocujnpygmtbf.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_n9kqzuPy7MwJE1sFrjaxOQ_Muhu83ie
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Verify Supabase authenticates and writes real NBA scores
+        run: bun scripts/nba-live-smoke.ts
