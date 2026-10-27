@@ -42,8 +42,10 @@ const state = (g: NbaGame) => {
   return "scheduled";
 };
 function rowFrom(g: NbaGame, existing?: Stored): Row | null {
-  const tipoff = g.gameTimeUTC ?? g.gameDateTimeUTC;
-  if (!tipoff || !Number.isFinite(Date.parse(tipoff))) return null;
+  // NBA season schedule uses gameTimeUTC=1900 as a legacy placeholder.
+  // gameDateTimeUTC is the canonical tipoff when present.
+  const tipoff = g.gameDateTimeUTC ?? g.gameTimeUTC;
+  if (!tipoff || !Number.isFinite(Date.parse(tipoff)) || Date.parse(tipoff) < Date.parse(START + "T00:00:00Z")) return null;
   const away = norm(g.awayTeam?.teamTricode ?? "");
   const home = norm(g.homeTeam?.teamTricode ?? "");
   if (!away || !home || away === home) return null;
@@ -122,8 +124,8 @@ Deno.serve(async (req) => {
       const previous = last.get(day);
       if (!previous) return true;
       const near = Math.abs(Date.parse(day) - Date.parse(today)) <= 2 * 86400000;
-      const ttl = near ? (force ? 45000 : 90000) : 6 * 3600000;
-      return Date.now() - previous > ttl;
+      const ttl = near ? 90000 : 6 * 3600000;
+      return force || Date.now() - previous > ttl;
     });
     if (!due.length) return json({ checked:0, updated:0, errors:[] });
     const errors: string[] = [];
