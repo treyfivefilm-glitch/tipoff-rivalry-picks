@@ -2,7 +2,7 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
-import { canCacheNbaDay, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
+import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -161,19 +161,13 @@ Deno.serve(async (req) => {
       }
     }
     const live = liveResult.status === "fulfilled" ? liveResult.value.scoreboard : undefined;
-    const liveDay = live?.gameDate;
-    if (live && liveDay && due.includes(liveDay)) {
-      const current = gamesByDay.get(liveDay) ?? [];
-      const keys = new Set(current.map(g => g.gameId));
-      for (const game of live.games ?? []) {
-        // Never let a malformed live row overwrite a valid season schedule row.
-        if (!isUsableNbaGame(game)) continue;
-        if (keys.has(game.gameId)) {
-          const index = current.findIndex(x => x.gameId === game.gameId);
-          if (index >= 0) current[index] = game;
-        } else current.push(game);
-      }
-      gamesByDay.set(liveDay,current);
+    // scoreboard.gameDate can be the next UTC day while the game is still on
+    // the previous Pacific day. Group by each game's actual Pacific tipoff.
+    const liveGamesByDay = groupUsableNbaGamesByPacificDay(live?.games ?? [], due);
+    for (const [day, liveGames] of liveGamesByDay) {
+      const byId = new Map((gamesByDay.get(day) ?? []).map(game => [game.gameId, game]));
+      for (const game of liveGames) byId.set(game.gameId, game);
+      gamesByDay.set(day, [...byId.values()]);
     }
 
     const { lower, upper } = syncUtcBounds(due);
@@ -197,7 +191,7 @@ Deno.serve(async (req) => {
       const rows = [...unique.values()];
       // A valid empty daily scoreboard cannot establish that a game day had
       // zero games while the full-season schedule provider is unavailable.
-      if (!canCacheNbaDay(scheduleResult.status === "fulfilled", liveDay, day, rows.length)) {
+      if (!canCacheNbaDay(scheduleResult.status === "fulfilled", liveGamesByDay.has(day) ? day : undefined, day, rows.length)) {
         errors.push(`${day}: no verified NBA games available to refresh`);
         continue;
       }
@@ -206,7 +200,7 @@ Deno.serve(async (req) => {
       updated+=rows.length;
       checked++;
     }
-    console.info("[nba-sync]",JSON.stringify({ days:due.length,checked,updated,liveDay,errors }));
+    console.info("[nba-sync]",JSON.stringify({ days:due.length,checked,updated,liveDays:[...liveGamesByDay.keys()],errors }));
     return json({ checked,updated,errors });
   } catch (e) {
     const msg=e instanceof Error?e.message:"NBA schedule refresh failed";
