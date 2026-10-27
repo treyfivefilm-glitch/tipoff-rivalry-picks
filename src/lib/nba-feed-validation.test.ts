@@ -82,6 +82,34 @@ describe("NBA individual game integrity", () => {
     expect(isUsableNbaGame({ ...game, gameDateTimeUTC: "not-a-date" })).toBe(false);
     expect(isUsableNbaGame({ ...game, gameStatusText: { broken: true } })).toBe(false);
   });
+  it("accepts a verified final, including a legitimate zero score", () => {
+    expect(isUsableNbaGame({
+      ...game, gameStatus: 3, gameStatusText: "Final",
+      awayTeam: { ...game.awayTeam, score: 0 },
+      homeTeam: { ...game.homeTeam, score: "104" },
+    })).toBe(true);
+  });
+  it("does not accept final results without both valid scores", () => {
+    const final = { ...game, gameStatus: 3, gameStatusText: "Final" };
+    expect(isUsableNbaGame(final)).toBe(false);
+    expect(isUsableNbaGame({
+      ...final, awayTeam: { ...game.awayTeam, score: 99 },
+      homeTeam: { ...game.homeTeam },
+    })).toBe(false);
+    for (const bad of ["", "abc", -1, "3.5", Infinity]) {
+      expect(isUsableNbaGame({
+        ...final, awayTeam: { ...game.awayTeam, score: bad },
+        homeTeam: { ...game.homeTeam, score: 102 },
+      })).toBe(false);
+    }
+  });
+  it("rejects invalid supplied scores but permits missing scheduled/live scores", () => {
+    expect(isUsableNbaGame({ ...game, gameStatus: 1 })).toBe(true);
+    expect(isUsableNbaGame(game)).toBe(true);
+    expect(isUsableNbaGame({
+      ...game, awayTeam: { ...game.awayTeam, score: "NaN" },
+    })).toBe(false);
+  });
   it("accepts the legacy tipoff field when the canonical one is absent", () => {
     const { gameDateTimeUTC: _canonical, ...legacy } = game;
     expect(isUsableNbaGame({ ...legacy, gameTimeUTC: game.gameDateTimeUTC })).toBe(true);
