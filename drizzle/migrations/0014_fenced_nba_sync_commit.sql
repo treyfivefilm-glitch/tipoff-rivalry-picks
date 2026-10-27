@@ -35,15 +35,16 @@ BEGIN
     RAISE EXCEPTION 'NBA sync lease is missing or expired';
   END IF;
 
-  -- Reject the entire batch on any malformed row. A bad day must not become
-  -- fresh or partially overwrite a verified result.
+  -- Reject the entire batch on any malformed row, including non-official
+  -- NBA game IDs. A bad day must not become fresh or partially overwrite
+  -- a verified result.
   IF EXISTS (
     SELECT 1 FROM jsonb_to_recordset(p_rows) AS g(
       id text, start_utc timestamptz, away_code text, away_name text,
       home_code text, home_name text, away_score integer, home_score integer,
       state text, status_detail text
     )
-    WHERE g.id IS NULL OR g.id NOT LIKE 'nba:%'
+    WHERE g.id IS NULL OR g.id !~ '^nba:[0-9]{10}$'
       OR g.start_utc IS NULL
       OR (g.start_utc AT TIME ZONE 'America/Los_Angeles')::date <> p_day
       OR NULLIF(trim(g.away_code), '') IS NULL

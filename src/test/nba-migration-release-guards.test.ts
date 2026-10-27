@@ -33,6 +33,7 @@ describe("NBA unattended database migration release guards", () => {
     expect(fenced).toMatch(/INSERT INTO public\.games/i);
     expect(fenced).toMatch(/INSERT INTO public\.sync_state/i);
     expect(fenced).toMatch(/g\.state = 'final'[\s\S]*?g\.away_score = g\.home_score/i);
+    expect(fenced).toContain("g.id !~ '^nba:[0-9]{10}$'");
     expect(fenced).toMatch(/current_game\.state = 'final' AND EXCLUDED\.state <> 'final'/i);
     expect(fenced).toMatch(/current_game\.state = 'live' AND EXCLUDED\.state = 'scheduled'/i);
   });
