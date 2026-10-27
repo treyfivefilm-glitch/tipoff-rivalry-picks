@@ -1,3 +1,5 @@
+import { safeNbaPacificDay } from "./sync-days.ts";
+
 /** NBA providers sometimes return HTTP 200 with an incomplete or error payload.
  * Do not mark a day freshly synced unless the response has the expected shape.
  * These checks intentionally validate the envelope; individual games are
@@ -77,4 +79,25 @@ export function isUsableNbaGame(value: unknown): boolean {
     (value["gameStatusText"] == null || typeof value["gameStatusText"] === "string") &&
     (value["gameStatus"] == null || typeof value["gameStatus"] === "number") &&
     teamsValid;
+}
+
+/** The NBA's live scoreboard date can be UTC-next-day while tipoff is still
+ * the previous day in Los Angeles. Group each validated game by its actual
+ * Pacific tipoff day, not by scoreboard.gameDate, so West Coast scores refresh.
+ */
+export function groupUsableNbaGamesByPacificDay<T>(
+  games: readonly T[], allowedDays: readonly string[],
+): Map<string, T[]> {
+  const allowed = new Set(allowedDays);
+  const grouped = new Map<string, T[]>();
+  for (const game of games) {
+    if (!isUsableNbaGame(game)) continue;
+    const value = game as { gameDateTimeUTC?: string; gameTimeUTC?: string };
+    const day = safeNbaPacificDay(value.gameDateTimeUTC ?? value.gameTimeUTC);
+    if (!day || !allowed.has(day)) continue;
+    const entries = grouped.get(day) ?? [];
+    entries.push(game);
+    grouped.set(day, entries);
+  }
+  return grouped;
 }
