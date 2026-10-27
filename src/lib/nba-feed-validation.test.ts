@@ -121,6 +121,18 @@ describe("NBA individual game integrity", () => {
       homeTeam: { ...game.homeTeam, score: "104" },
     })).toBe(true);
   });
+  it("rejects impossible tied finals without discarding tied live scores", () => {
+    const tied = {
+      ...game, gameStatus: 3, gameStatusText: "Final",
+      awayTeam: { ...game.awayTeam, score: 101 },
+      homeTeam: { ...game.homeTeam, score: "101" },
+    };
+    expect(isUsableNbaGame(tied)).toBe(false);
+    expect(isUsableNbaGame({ ...tied, gameStatus: 2, gameStatusText: "Q4" })).toBe(true);
+    expect(isUsableNbaGame({
+      ...tied, homeTeam: { ...game.homeTeam, score: 102 },
+    })).toBe(true);
+  });
   it("does not accept final results without both valid scores", () => {
     const final = { ...game, gameStatus: 3, gameStatusText: "Final" };
     expect(isUsableNbaGame(final)).toBe(false);
