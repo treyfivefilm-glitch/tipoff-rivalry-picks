@@ -7,6 +7,7 @@ import { BattleContext, type BattleApi, type Player, type RoomInfo, type WagerTe
 import type { BoardGame, Payment } from "./rules";
 import { SEASON_END, SEASON_START, addDays, clampSeason, todayPacific } from "./time";
 import { syncGames } from "./sync.functions";
+import { scheduleSyncWarning } from "./sync-status";
 import { useServerFn } from '@tanstack/react-start';
 import type { WagerVersion, ChallengeSubmission } from './wagers';
 
@@ -82,14 +83,9 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
       sync({ data: { days: missing } })
         .then(async (result) => {
           await loadBoard(dayRef.current);
-          if (result.errors.length) {
-            missing.forEach((d) => syncedRef.current.delete(d));
-            setError(`Schedule refresh: ${result.errors.slice(0, 2).join("; ")}`);
-          } else if (result.checked === 0 && result.updated === 0) {
-            setError("The schedule server did not check any dates. Please tap Refresh.");
-          } else {
-            setError(null);
-          }
+          const warning = scheduleSyncWarning(result);
+          if (warning) missing.forEach((d) => syncedRef.current.delete(d));
+          setError(warning);
         })
         .catch((e) => { missing.forEach((d) => syncedRef.current.delete(d)); setError(e instanceof Error ? e.message : 'Schedule unavailable'); })
         .finally(() => setSyncing(false));
@@ -109,15 +105,14 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
         let syncWarning: string | null = null;
         try {
           const result = await sync({ data: { days: first } });
-          if (result.errors.length) syncWarning = result.errors.slice(0, 2).join("; ");
-          else if (result.checked === 0 && result.updated === 0) syncWarning = "No schedule dates were checked";
+          syncWarning = scheduleSyncWarning(result);
           if (!syncWarning) first.forEach((x) => syncedRef.current.add(x));
         } catch (e) {
           syncWarning = e instanceof Error ? e.message : "Schedule service unavailable";
         }
         if (!alive) return;
         await loadBoard(d);
-        if (syncWarning) setError(`Schedule refresh: ${syncWarning}`);
+        if (syncWarning) setError(syncWarning);
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : "Failed to load room");
       } finally {
@@ -146,8 +141,7 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
       try {
         const result = await sync({ data: { days: [addDays(today, -1), today, addDays(today, 1)] } });
         await loadBoard(dayRef.current);
-        if (result.errors.length) setError(`Live scores: ${result.errors.slice(0, 2).join("; ")}`);
-        else setError(null);
+        setError(scheduleSyncWarning(result, "Live scores"));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Live score updates unavailable");
       } finally {
@@ -215,9 +209,7 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
           const d = dayRef.current;
           const result = await sync({ data: { days: [addDays(d, -1), d, addDays(d, 1)], force: force ?? false } });
           await loadBoard(d);
-          if (result.errors.length) setError(`Schedule refresh: ${result.errors.slice(0, 2).join("; ")}`);
-          else if (result.checked === 0 && result.updated === 0) setError("The schedule server did not check any dates.");
-          else setError(null);
+          setError(scheduleSyncWarning(result));
         } catch (e) {
           setError(e instanceof Error ? e.message : "Schedule service unavailable");
         } finally {
