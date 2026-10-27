@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { authorizedNbaCron, prepareUnattendedNbaDay, unattendedNbaDays, unattendedNbaHttpStatus, verifiedUnattendedNbaSchedule } from "../../supabase/functions/_shared/nba-unattended";
 
 const game = (status = 1, awayScore: number | null = null, homeScore: number | null = null) => ({
@@ -37,6 +38,13 @@ describe("unattended NBA worker pure preparation", () => {
       { ...game(), gameId: "invalid" }, game(),
     ]))).toBe(true);
     expect(unattendedNbaHttpStatus(0, ["Season schedule unavailable"])).toBe(503);
+  });
+
+  it("wires the verified-season gate into the disabled Edge worker", () => {
+    const worker = readFileSync(
+      new URL("../../supabase/functions/nba-sync-worker/index.ts", import.meta.url), "utf8",
+    );
+    expect(worker).toContain("verifiedUnattendedNbaSchedule(scheduleResult.value)");
   });
 
   it("selects Pacific yesterday/today/tomorrow within the season", () => {
