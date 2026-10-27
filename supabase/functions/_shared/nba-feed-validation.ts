@@ -73,7 +73,10 @@ export function isUsableNbaGame(value: unknown): boolean {
   // Missing scores are normal before tipoff or at the start of live play.
   // If the feed supplies a score, it must be a valid nonnegative integer.
   if (scores.some(score => score != null && !scoreValid(score))) return false;
-  if (status === 3 && !scores.every(scoreValid)) return false;
+  // NBA games cannot end in a tie. A malformed final must never settle a wager
+  // or count as evidence that the provider returned a verified result.
+  if (status === 3 && (!scores.every(scoreValid) ||
+    Number(scores[0]) === Number(scores[1]))) return false;
   return typeof value["gameId"] === "string" && value["gameId"].trim().length > 0 &&
     typeof tipoff === "string" && Number.isFinite(Date.parse(tipoff)) &&
     (value["gameStatusText"] == null || typeof value["gameStatusText"] === "string") &&
