@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { authorizedNbaCron, prepareUnattendedNbaDay, unattendedNbaDays } from "../../supabase/functions/_shared/nba-unattended";
+import { authorizedNbaCron, prepareUnattendedNbaDay, unattendedNbaDays, unattendedNbaHttpStatus } from "../../supabase/functions/_shared/nba-unattended";
 
 const game = (status = 1, awayScore: number | null = null, homeScore: number | null = null) => ({
   gameId: "0022600012", gameDateTimeUTC: "2026-11-18T03:00:00Z",
@@ -12,6 +12,13 @@ const schedule = (games: unknown[]) => ({ leagueSchedule: { gameDates: [{ gameDa
 const live = (games: unknown[]) => ({ scoreboard: { gameDate: "2026-11-18", games } });
 
 describe("unattended NBA worker pure preparation", () => {
+  it("reports partial NBA provider outages as degraded even when commits succeeded", () => {
+    expect(unattendedNbaHttpStatus(0, [])).toBe(200);
+    expect(unattendedNbaHttpStatus(0, ["Live scoreboard unavailable"])).toBe(503);
+    expect(unattendedNbaHttpStatus(0, ["Season schedule unavailable"])).toBe(503);
+    expect(unattendedNbaHttpStatus(1, [])).toBe(503);
+  });
+
   it("selects Pacific yesterday/today/tomorrow within the season", () => {
     expect(unattendedNbaDays(new Date("2026-10-20T02:00:00Z"))).toEqual(["2026-10-20"]);
     expect(unattendedNbaDays(new Date("2026-11-18T05:00:00Z"))).toEqual([

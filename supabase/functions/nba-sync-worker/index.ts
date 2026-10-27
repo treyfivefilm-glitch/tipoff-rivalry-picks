@@ -2,7 +2,7 @@
 // Owner must approve activation and application of migrations 0013-0014.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
-import { authorizedNbaCron, prepareUnattendedNbaDay, unattendedNbaDays } from "../_shared/nba-unattended.ts";
+import { authorizedNbaCron, prepareUnattendedNbaDay, unattendedNbaDays, unattendedNbaHttpStatus } from "../_shared/nba-unattended.ts";
 import type { ExistingNbaGame } from "../_shared/nba-unattended.ts";
 import { syncUtcBounds } from "../_shared/sync-days.ts";
 
@@ -118,5 +118,5 @@ Deno.serve(async request => {
     }
   }
   console.info("[nba-unattended]", JSON.stringify({ checked, updated, skipped, failed }));
-  return json({ checked, updated, skipped, errors }, failed ? 503 : 200);
+  return json({ checked, updated, skipped, failed, errors }, unattendedNbaHttpStatus(failed, errors));
 });

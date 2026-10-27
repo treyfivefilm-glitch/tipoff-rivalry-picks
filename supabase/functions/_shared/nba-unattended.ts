@@ -51,6 +51,14 @@ export async function authorizedNbaCron(header: string | null, secret: string | 
   return different === 0;
 }
 
+/** A partial NBA provider outage is not a successful unattended refresh,
+ * even when the other feed supplied usable rows. Surface degraded runs to
+ * scheduler/monitoring while retaining their valid committed results.
+ */
+export function unattendedNbaHttpStatus(failed: number, errors: readonly string[]): 200 | 503 {
+  return failed > 0 || errors.length > 0 ? 503 : 200;
+}
+
 function gameState(game: Game): string {
   const detail = (game.gameStatusText ?? "").toLowerCase();
   if (detail.includes("postpone")) return "postponed";
