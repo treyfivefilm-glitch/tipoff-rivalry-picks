@@ -2,7 +2,7 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
-import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
+import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -173,7 +173,9 @@ Deno.serve(async (req) => {
     const liveGamesByDay = groupUsableNbaGamesByPacificDay(live?.games ?? [], due);
     for (const [day, liveGames] of liveGamesByDay) {
       const byId = new Map((gamesByDay.get(day) ?? []).map(game => [game.gameId, game]));
-      for (const game of liveGames) byId.set(game.gameId, game);
+      for (const game of liveGames) {
+        if (shouldOverlayNbaGame(byId.get(game.gameId), game)) byId.set(game.gameId, game);
+      }
       gamesByDay.set(day, [...byId.values()]);
     }
 
