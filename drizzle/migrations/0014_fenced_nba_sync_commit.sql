@@ -54,7 +54,7 @@ BEGIN
       OR g.state IS NULL
       OR g.state NOT IN ('scheduled','live','final','postponed','canceled')
       OR g.away_score < 0 OR g.home_score < 0
-      OR (g.state = 'final' AND (g.away_score IS NULL OR g.home_score IS NULL))
+      OR (g.state = 'final' AND (g.away_score IS NULL OR g.home_score IS NULL OR g.away_score = g.home_score))
   ) THEN
     RAISE EXCEPTION 'Invalid NBA game row or day mismatch';
   END IF;
