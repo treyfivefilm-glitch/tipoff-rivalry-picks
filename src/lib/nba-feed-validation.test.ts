@@ -5,6 +5,7 @@ import {
   canCacheNbaDay,
   isUsableNbaGame,
   groupUsableNbaGamesByPacificDay,
+  hasVerifiedNbaSeasonGame,
 } from "../../supabase/functions/_shared/nba-feed-validation";
 
 describe("NBA feed envelopes", () => {
@@ -45,6 +46,36 @@ describe("NBA feed envelopes", () => {
   it("does not mistake a schedule response for a live scoreboard", () => {
     expect(isValidNbaScoreboard(schedule)).toBe(false);
     expect(isValidNbaSchedule(scoreboard)).toBe(false);
+  });
+});
+
+describe("NBA full-season evidence before marking days fresh", () => {
+  const valid = {
+    gameId: "0022600012", gameDateTimeUTC: "2026-11-18T03:00:00Z",
+    gameStatus: 1, gameStatusText: "7:00 PM ET",
+    awayTeam: { teamTricode: "LAL", teamName: "Lakers" },
+    homeTeam: { teamTricode: "GSW", teamName: "Warriors" },
+  };
+  const season = (games: unknown[]) => ({
+    leagueSchedule: { gameDates: [{ gameDate: "2026-11-17", games }] },
+  });
+  const verified = (games: unknown[]) =>
+    hasVerifiedNbaSeasonGame(season(games), "2026-10-20", "2027-04-12");
+
+  it("accepts valid in-season games and permits real zero-game dates", () => {
+    expect(verified([valid])).toBe(true);
+    expect(canCacheNbaDay(verified([valid]), undefined, "2026-11-16", 0)).toBe(true);
+  });
+  it("does not treat malformed-only or 1900 placeholder schedules as healthy", () => {
+    expect(verified([{ gameId: "broken", awayTeam: null }])).toBe(false);
+    expect(verified([{ ...valid, gameDateTimeUTC: "1900-01-01T00:00:00Z" }])).toBe(false);
+    expect(verified([{ ...valid, gameDateTimeUTC: "2027-05-02T02:00:00Z" }])).toBe(false);
+    expect(canCacheNbaDay(verified([{ gameId: "broken" }]), undefined, "2026-11-16", 0)).toBe(false);
+  });
+  it("tolerates isolated malformed rows and permits valid live-only fallback", () => {
+    expect(verified([{ gameId: "broken" }, valid])).toBe(true);
+    expect(canCacheNbaDay(verified([{ gameId: "broken" }]), "2026-11-17", "2026-11-17", 1)).toBe(true);
+    expect(canCacheNbaDay(verified([{ gameId: "broken" }]), undefined, "2026-11-16", 0)).toBe(false);
   });
 });
 
