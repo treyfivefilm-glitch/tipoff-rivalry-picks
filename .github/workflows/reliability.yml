@@ -36,7 +36,7 @@ jobs:
         run: rm -f .env .env.*
       - run: bun install --frozen-lockfile
       - name: TypeScript checks
-        run: bunx tsgo --noEmit
+        run: bunx tsc --noEmit
       - name: Unit tests (database integration deliberately disabled)
         run: bunx vitest run
       - name: Compile only (no deploy or migrations)
