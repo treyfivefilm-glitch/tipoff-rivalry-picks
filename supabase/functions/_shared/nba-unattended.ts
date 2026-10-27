@@ -1,6 +1,6 @@
 // Pure preparation for owner-approved unattended NBA refresh.
 // Caller must hold a lease and commit via commit_nba_sync_day.
-import { isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
+import { hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
 import { safeNbaPacificDay } from "./sync-days.ts";
 
 const START = "2026-10-20";
@@ -24,7 +24,7 @@ export type FencedNbaRow = {
   home_score: number | null; state: string; status_detail: string;
 };
 
-export function unattendedNbaDays(now: Date): string[] {
+/** A well-shaped NBA schedule is not necessarily a usable season feed.\n * Reject empty, malformed, placeholder-only or out-of-season schedules\n * before reporting the unattended worker as healthy.\n */\nexport function verifiedUnattendedNbaSchedule(payload: unknown): boolean {\n  return hasVerifiedNbaSeasonGame(payload, START, END);\n}\n\nexport function unattendedNbaDays(now: Date): string[] {
   const day = safeNbaPacificDay(now);
   if (!day) return [];
   const base = Date.parse(day + "T00:00:00Z");
