@@ -145,11 +145,13 @@ export function groupUsableNbaGamesByPacificDay<T>(
  * postponement/cancellation is allowed to supersede an earlier state.
  */
 export function shouldOverlayNbaGame(
-  previous: { gameStatus: number; gameStatusText?: string } | undefined,
-  incoming: { gameStatus: number; gameStatusText?: string },
+  previous: { gameStatus?: number; gameStatusText?: string } | undefined,
+  incoming: { gameStatus?: number; gameStatusText?: string },
 ): boolean {
   if (!previous) return true;
   const detail = (incoming.gameStatusText ?? "").toLowerCase();
   if (detail.includes("postpon") || detail.includes("cancel")) return true;
-  return incoming.gameStatus >= previous.gameStatus;
+  // Callers validate status values before overlay; optional typing accommodates
+  // the raw provider payload's shape without weakening runtime validation.
+  return (incoming.gameStatus ?? 1) >= (previous.gameStatus ?? 1);
 }
