@@ -82,6 +82,18 @@ describe("unattended NBA worker pure preparation", () => {
       .rows[0]).toMatchObject({ state: "live", away_score: 101, home_score: 101 });
   });
 
+  it("does not certify a season or live scoreboard with an unknown NBA status", () => {
+    const unknown = game(99, 101, 100);
+    expect(prepareUnattendedNbaDay("2026-11-16", schedule([unknown]), null, [])).toEqual({
+      rows: [], cacheable: false,
+    });
+    expect(prepareUnattendedNbaDay("2026-11-17", null, live([unknown]), [])).toEqual({
+      rows: [], cacheable: false,
+    });
+    expect(prepareUnattendedNbaDay("2026-11-17", schedule([game()]), live([unknown]), [])
+      .rows[0]).toMatchObject({ state: "scheduled" });
+  });
+
   it("does not mark every day fresh when a schedule has only malformed game rows", () => {
     const malformedSeason = schedule([{ gameId: "broken", awayTeam: null }]);
     expect(prepareUnattendedNbaDay("2026-11-16", malformedSeason, null, [])).toEqual({
