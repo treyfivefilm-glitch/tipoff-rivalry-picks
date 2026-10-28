@@ -153,6 +153,18 @@ export function groupUsableNbaGamesByPacificDay<T>(
 }
 
 
+/** Restrict legacy same-day matchup reuse to NBA rows. Early ESPN seed IDs
+ * can have attached picks/wagers and must remain eligible; unrelated sports
+ * and manual records must never be repurposed as NBA games.
+ */
+export function isStoredNbaMatchCandidate(stored: { id: string; source: string }): boolean {
+  const nbaId = stored.id.startsWith("nba:");
+  const espnId = stored.id.startsWith("espn:");
+  return (stored.source === "nba" && (nbaId || espnId)) ||
+    (stored.source === "nba_official_schedule" && nbaId) ||
+    (stored.source === "espn" && espnId);
+}
+
 /** Reject a stored game-ID collision unless both canonical team codes match. */
 export function matchesStoredNbaMatchup(
   stored: { away_code: string; home_code: string }, away: string, home: string,

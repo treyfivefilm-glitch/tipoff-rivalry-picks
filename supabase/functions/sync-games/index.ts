@@ -2,7 +2,7 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
-import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
+import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -23,7 +23,7 @@ type NbaGame = { gameId: string; gameCode?: string; gameStatus: number; gameStat
 type Schedule = { leagueSchedule?: { gameDates?: Array<{ gameDate: string; games: NbaGame[] }> } };
 type Scoreboard = { scoreboard?: { gameDate: string; games: NbaGame[] } };
 type Stored = { id: string; start_utc: string; away_code: string; home_code: string; away_score: number | null;
- home_score: number | null; state: string; status_detail: string | null };
+ home_score: number | null; state: string; status_detail: string | null; source: string };
 type Row = { id: string; start_utc: string; away_code: string; away_name: string;
  home_code: string; home_name: string; away_score: number | null; home_score: number | null;
  state: string; status_detail: string; source: string; updated_at: string };
@@ -191,9 +191,9 @@ Deno.serve(async (req) => {
 
     const { lower, upper } = syncUtcBounds(due);
     const existing = await getTable<Stored[]>(
-      `games?select=id,start_utc,away_code,home_code,away_score,home_score,state,status_detail` +
+      `games?select=id,start_utc,away_code,home_code,away_score,home_score,state,status_detail,source` +
       `&start_utc=gte.${lower}T00:00:00Z&start_utc=lt.${upper}T00:00:00Z&limit=3000`);
-    const byMatch = new Map(existing.map(g=>[
+    const byMatch = new Map(existing.filter(isStoredNbaMatchCandidate).map(g=>[
       `${pacificDay(g.start_utc)}:${norm(g.away_code)}:${norm(g.home_code)}`,g
     ]));
     const storedById = new Map(existing.filter(g => g.id.startsWith("nba:")).map(g => [g.id, g]));
@@ -206,7 +206,7 @@ Deno.serve(async (req) => {
         const away = norm(game.awayTeam?.teamTricode ?? "");
         const home = norm(game.homeTeam?.teamTricode ?? "");
         const sameId = storedById.get(`nba:${game.gameId}`);
-        if (sameId && !matchesStoredNbaMatchup(sameId, away, home)) {
+        if (sameId && (!isStoredNbaMatchCandidate(sameId) || !matchesStoredNbaMatchup(sameId, away, home))) {
           identityConflict = true;
           continue;
         }

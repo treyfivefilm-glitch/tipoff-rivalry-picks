@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   isValidNbaSchedule,
   isValidNbaScoreboard,
@@ -7,6 +8,7 @@ import {
   groupUsableNbaGamesByPacificDay,
   hasVerifiedNbaSeasonGame,
   matchesStoredNbaMatchup,
+  isStoredNbaMatchCandidate,
   shouldOverlayNbaGame,
 } from "../../supabase/functions/_shared/nba-feed-validation";
 
@@ -275,5 +277,37 @@ describe("NBA live overlay state ordering", () => {
     expect(shouldOverlayNbaGame(snapshot(3, "Final"), snapshot(3, "Canceled"))).toBe(false);
     expect(shouldOverlayNbaGame(snapshot(3, "Final"), snapshot(1, "Postponed"))).toBe(false);
     expect(shouldOverlayNbaGame(snapshot(3, "Final"), snapshot(3, "Final"))).toBe(true);
+  });
+});
+
+
+describe("stored NBA matchup reuse safety", () => {
+  it("preserves official and legacy ESPN NBA records without reusing other sports", () => {
+    for (const stored of [
+      { id: "nba:0022600012", source: "nba" },
+      { id: "nba:20261026:WAS:CHA", source: "nba_official_schedule" },
+      { id: "espn:401909088", source: "espn" },
+      { id: "espn:401909088", source: "nba" },
+    ]) {
+      expect(isStoredNbaMatchCandidate(stored)).toBe(true);
+    }
+    for (const stored of [
+      { id: "nfl:401909088", source: "nfl" },
+      { id: "espn:401909088", source: "nfl" },
+      { id: "nba:0022600012", source: "nfl" },
+      { id: "manual:123", source: "nba" },
+      { id: "espn:401909088", source: "nba_official_schedule" },
+    ]) {
+      expect(isStoredNbaMatchCandidate(stored)).toBe(false);
+    }
+  });
+
+  it("requires source-scoped matching and rejects foreign-source official ID collisions", () => {
+    const sync = readFileSync(
+      new URL("../../supabase/functions/sync-games/index.ts", import.meta.url), "utf8",
+    );
+    expect(sync).toContain("state,status_detail,source");
+    expect(sync).toContain("existing.filter(isStoredNbaMatchCandidate)");
+    expect(sync).toContain("!isStoredNbaMatchCandidate(sameId)");
   });
 });
