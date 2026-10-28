@@ -89,10 +89,11 @@ describe("unattended NBA worker pure preparation", () => {
   });
 
   it("does not replace a scheduled matchup with a different live-feed matchup under the same game ID", () => {
+    const scoredFinal = game(3, 110, 101);
     const conflicting = {
-      ...game(3, 110, 101),
-      awayTeam: { ...game().awayTeam, teamTricode: "BOS" },
-      homeTeam: { ...game().homeTeam, teamTricode: "NYK" },
+      ...scoredFinal,
+      awayTeam: { ...scoredFinal.awayTeam, teamTricode: "BOS" },
+      homeTeam: { ...scoredFinal.homeTeam, teamTricode: "NYK" },
     };
     const result = prepareUnattendedNbaDay(
       "2026-11-17", schedule([game()]), live([conflicting]), [],
