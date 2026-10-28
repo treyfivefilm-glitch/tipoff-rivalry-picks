@@ -304,7 +304,7 @@ describe("stored NBA matchup reuse safety", () => {
 
   it("requires source-scoped matching and rejects foreign-source official ID collisions", () => {
     const sync = readFileSync(
-      new URL("../../supabase/functions/sync-games/index.ts", import.meta.url), "utf8",
+      "supabase/functions/sync-games/index.ts", "utf8",
     );
     expect(sync).toContain("state,status_detail,source");
     expect(sync).toContain("existing.filter(isStoredNbaMatchCandidate)");
