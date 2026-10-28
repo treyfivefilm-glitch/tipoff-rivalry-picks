@@ -34,6 +34,15 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
     expect(upsert).toContain("public.nba_canonical_team_code(EXCLUDED.home_code)");
   });
 
+  it("rejects canonical same-team aliases before any fenced write", () => {
+    // The database must reject malformed RPC callers even if Edge validation
+    // was bypassed. GS and GSW identify the same team despite distinct text.
+    expect(migration).toContain(
+      "public.nba_canonical_team_code(g.away_code) = public.nba_canonical_team_code(g.home_code)",
+    );
+    expect(migration).not.toContain("OR g.away_code = g.home_code");
+  });
+
   it("raises on a collision before updating day freshness", () => {
     const guard = migration.indexOf("RAISE EXCEPTION 'NBA game ID matchup collision'");
     const freshness = migration.indexOf("INSERT INTO public.sync_state");
