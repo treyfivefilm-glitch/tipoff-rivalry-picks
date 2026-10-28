@@ -43,6 +43,23 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
     expect(migration).not.toContain("OR g.away_code = g.home_code");
   });
 
+  it("requires all 30 real NBA teams for both sides at the database boundary", () => {
+    // Static CI guard: SQL execution is still separately required in staging.
+    const expected = [
+      "ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN", "DET", "GSW",
+      "HOU", "IND", "LAC", "LAL", "MEM", "MIA", "MIL", "MIN", "NOP", "NYK",
+      "OKC", "ORL", "PHI", "PHX", "POR", "SAC", "SAS", "TOR", "UTA", "WAS",
+    ];
+    for (const side of ["away", "home"]) {
+      const guard = migration.match(new RegExp(
+        `public\\\\.nba_canonical_team_code\\\\(g\\\\.${side}_code\\\\) NOT IN \\\\(([\\\\s\\\\S]*?)\\\\)`,
+      ));
+      expect(guard, `${side} team-code SQL guard`).not.toBeNull();
+      const actual = [...(guard?.[1] ?? "").matchAll(/'([A-Z]{2,3})'/g)].map(match => match[1]);
+      expect(actual).toEqual(expected);
+    }
+  });
+
   it("raises on a collision before updating day freshness", () => {
     const guard = migration.indexOf("RAISE EXCEPTION 'NBA game ID matchup collision'");
     const freshness = migration.indexOf("INSERT INTO public.sync_state");

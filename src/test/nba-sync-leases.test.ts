@@ -182,6 +182,8 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
       { ...sampleGame, id: "nba:0022600013", start_utc: "2026-11-19T02:00:00Z" },
       { ...sampleGame, id: "nba:0022600014", home_score: null },
       { ...sampleGame, id: "nba:0022600015", home_score: 103 },
+      { ...sampleGame, id: "nba:0022600017", away_code: "XYZ" },
+      { ...sampleGame, id: "nba:0022600018", home_code: "FAKE" },
       { ...sampleGame, id: "nba:provider-error" },
       { ...sampleGame, id: "nba:0022600012x" },
     ]) {

@@ -73,6 +73,14 @@ BEGIN
       OR NULLIF(trim(g.home_code), '') IS NULL
       -- Compare canonical identities: GS and GSW are the same team.
       OR public.nba_canonical_team_code(g.away_code) = public.nba_canonical_team_code(g.home_code)
+      -- Defense in depth: the RPC must not trust even a misconfigured worker
+      -- to introduce phantom team codes into games used for wager settlement.
+      OR public.nba_canonical_team_code(g.away_code) NOT IN (
+        'ATL', 'BOS', 'BKN', 'CHA', 'CHI', 'CLE', 'DAL', 'DEN', 'DET', 'GSW', 'HOU', 'IND', 'LAC', 'LAL', 'MEM', 'MIA', 'MIL', 'MIN', 'NOP', 'NYK', 'OKC', 'ORL', 'PHI', 'PHX', 'POR', 'SAC', 'SAS', 'TOR', 'UTA', 'WAS'
+      )
+      OR public.nba_canonical_team_code(g.home_code) NOT IN (
+        'ATL', 'BOS', 'BKN', 'CHA', 'CHI', 'CLE', 'DAL', 'DEN', 'DET', 'GSW', 'HOU', 'IND', 'LAC', 'LAL', 'MEM', 'MIA', 'MIL', 'MIN', 'NOP', 'NYK', 'OKC', 'ORL', 'PHI', 'PHX', 'POR', 'SAC', 'SAS', 'TOR', 'UTA', 'WAS'
+      )
       OR NULLIF(trim(g.away_name), '') IS NULL
       OR NULLIF(trim(g.home_name), '') IS NULL
       OR g.state IS NULL
