@@ -307,6 +307,33 @@ describe("unattended NBA worker pure preparation", () => {
     });
   });
 
+  it("does not mark a day fresh when its own provider rows are malformed", () => {
+    const otherDay = {
+      ...game(), gameId: "0022600013", gameDateTimeUTC: "2026-11-19T03:00:00Z",
+    };
+    const badScheduleGame = {
+      ...game(), gameId: "0022600014",
+      homeTeam: { ...game().homeTeam, teamTricode: "XYZ" },
+    };
+    const mixed = schedule([otherDay, badScheduleGame]);
+    // A valid game elsewhere proves the season envelope is usable, but must
+    // not conceal a malformed matchup on the requested Pacific day.
+    expect(verifiedUnattendedNbaSchedule(mixed)).toBe(true);
+    expect(prepareUnattendedNbaDay("2026-11-17", mixed, null, []).cacheable).toBe(false);
+    expect(prepareUnattendedNbaDay("2026-11-18", mixed, null, []).cacheable).toBe(true);
+    expect(prepareUnattendedNbaDay("2026-11-16", mixed, null, []).cacheable).toBe(true);
+
+    const badLiveFinal = {
+      ...game(3, 109, 107), gameId: "0022600015",
+      awayTeam: { ...game().awayTeam, score: "not-a-score" },
+    };
+    const liveConflict = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game(), otherDay]), live([badLiveFinal]), [],
+    );
+    expect(liveConflict.rows).toHaveLength(1);
+    expect(liveConflict.cacheable).toBe(false);
+  });
+
   it("skips malformed schedule games without rejecting an otherwise valid season", () => {
     const mixedSeason = schedule([{ gameId: "broken", homeTeam: null }, game()]);
     expect(prepareUnattendedNbaDay("2026-11-16", mixedSeason, null, [])).toEqual({

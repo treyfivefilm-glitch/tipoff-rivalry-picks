@@ -86,8 +86,20 @@ export function prepareUnattendedNbaDay(
   let validLiveGames = 0;
   let validSeasonGames = 0;
   let identityConflict = false;
+  let malformedDayGame = false;
   const include = (value: unknown, live: boolean) => {
-    if (!isUsableNbaGame(value)) return;
+    if (!isUsableNbaGame(value)) {
+      // A verified season elsewhere cannot certify this day when a provider
+      // supplied a broken game for it. Preserve the existing cache instead.
+      // Rows without a parseable tipoff cannot safely be assigned to a day.
+      if (value !== null && typeof value === "object") {
+        const raw = value as { gameDateTimeUTC?: unknown; gameTimeUTC?: unknown };
+        if (safeNbaPacificDay(raw.gameDateTimeUTC ?? raw.gameTimeUTC) === day) {
+          malformedDayGame = true;
+        }
+      }
+      return;
+    }
     const game = value as Game;
     const tipoff = game.gameDateTimeUTC ?? game.gameTimeUTC;
     if (safeNbaPacificDay(tipoff) !== day) return;
@@ -160,5 +172,5 @@ export function prepareUnattendedNbaDay(
   // verified season. Otherwise it could falsely mark every day as refreshed.
   // A legitimate no-game day remains cacheable when other season games validate.
   const verifiedSeason = seasonValid && validSeasonGames > 0;
-  return { rows: [...rows.values()], cacheable: !identityConflict && (verifiedSeason || (validLiveGames > 0 && rows.size > 0)) };
+  return { rows: [...rows.values()], cacheable: !malformedDayGame && !identityConflict && (verifiedSeason || (validLiveGames > 0 && rows.size > 0)) };
 }
