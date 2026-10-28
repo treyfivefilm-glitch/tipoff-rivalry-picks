@@ -107,6 +107,31 @@ describe("unattended NBA worker pure preparation", () => {
     });
   });
 
+  it("does not certify either Pacific day when season and live feeds disagree on a game ID's tipoff", () => {
+    const rescheduled = {
+      ...game(3, 109, 107), gameDateTimeUTC: "2026-11-19T03:00:00Z",
+    }; // Nov 18 Pacific, while the season feed says Nov 17.
+    const season = schedule([game()]);
+    const scoreboard = live([rescheduled]);
+    const originalDay = prepareUnattendedNbaDay("2026-11-17", season, scoreboard, []);
+    const newDay = prepareUnattendedNbaDay("2026-11-18", season, scoreboard, []);
+    expect(originalDay.rows).toHaveLength(1);
+    expect(newDay.rows).toHaveLength(1);
+    expect(originalDay.cacheable).toBe(false);
+    expect(newDay.cacheable).toBe(false);
+  });
+
+  it("rejects duplicate official IDs on different season days without blocking unrelated IDs", () => {
+    const shifted = { ...game(), gameDateTimeUTC: "2026-11-19T03:00:00Z" };
+    const duplicate = schedule([game(), shifted]);
+    expect(prepareUnattendedNbaDay("2026-11-17", duplicate, null, []).cacheable).toBe(false);
+    expect(prepareUnattendedNbaDay("2026-11-18", duplicate, null, []).cacheable).toBe(false);
+
+    const independent = schedule([game(), { ...shifted, gameId: "0022600013" }]);
+    expect(prepareUnattendedNbaDay("2026-11-17", independent, null, []).cacheable).toBe(true);
+    expect(prepareUnattendedNbaDay("2026-11-18", independent, null, []).cacheable).toBe(true);
+  });
+
   it("rejects duplicate conflicting schedule IDs even with another healthy game", () => {
     const original = game();
     const swapped = {

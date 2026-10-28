@@ -87,6 +87,11 @@ export function prepareUnattendedNbaDay(
   let validSeasonGames = 0;
   let identityConflict = false;
   let malformedDayGame = false;
+  // A rescheduled game can briefly have different tipoff dates in the
+  // season and live feeds. Never certify either day until they agree:
+  // otherwise sequential per-day commits can move the same game ID twice.
+  const officialGameDays = new Map<string, string>();
+  const conflictingGameDays = new Set<string>();
   const include = (value: unknown, live: boolean) => {
     if (!isUsableNbaGame(value)) {
       // A verified season elsewhere cannot certify this day when a provider
@@ -102,7 +107,17 @@ export function prepareUnattendedNbaDay(
     }
     const game = value as Game;
     const tipoff = game.gameDateTimeUTC ?? game.gameTimeUTC;
-    if (safeNbaPacificDay(tipoff) !== day) return;
+    const gameDay = safeNbaPacificDay(tipoff);
+    if (gameDay && gameDay >= START && gameDay <= END) {
+      const previousDay = officialGameDays.get(game.gameId);
+      if (previousDay && previousDay !== gameDay) {
+        conflictingGameDays.add(previousDay);
+        conflictingGameDays.add(gameDay);
+      } else {
+        officialGameDays.set(game.gameId, gameDay);
+      }
+    }
+    if (gameDay !== day) return;
     if (Date.parse(tipoff!) < Date.parse(START + "T00:00:00Z")) return;
     const previous = games.get(game.gameId);
     if (hasConflictingNbaFeedMatchup(previous, game)) {
@@ -188,5 +203,6 @@ export function prepareUnattendedNbaDay(
   // verified season. Otherwise it could falsely mark every day as refreshed.
   // A legitimate no-game day remains cacheable when other season games validate.
   const verifiedSeason = seasonValid && validSeasonGames > 0;
-  return { rows: [...rows.values()], cacheable: !malformedDayGame && !identityConflict && (verifiedSeason || (validLiveGames > 0 && rows.size > 0)) };
+  return { rows: [...rows.values()], cacheable: !malformedDayGame && !identityConflict &&
+    !conflictingGameDays.has(day) && (verifiedSeason || (validLiveGames > 0 && rows.size > 0)) };
 }
