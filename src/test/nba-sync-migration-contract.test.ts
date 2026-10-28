@@ -10,6 +10,19 @@ const migration = readFileSync(
 );
 
 describe("unapplied fenced NBA commit migration safety contract", () => {
+  it("uses valid PostgreSQL dollar-quoted bodies for both functions", () => {
+    // A lone $ is not a valid PostgreSQL dollar-quote delimiter.
+    // This caught a syntax error that static security-contract tests missed.
+    expect(migration).not.toMatch(/\bAS \$\r?\n/);
+    expect(migration).not.toMatch(/\r?\n\$;\r?\n/);
+    expect(migration).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.nba_canonical_team_code\([\s\S]*?AS \$\$[\s\S]*?\$\$;/,
+    );
+    expect(migration).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.commit_nba_sync_day\([\s\S]*?AS \$\$[\s\S]*?\$\$;/,
+    );
+  });
+
   it("guards conflicting game IDs while holding the upsert row lock", () => {
     const upsert = migration.split("ON CONFLICT (id) DO UPDATE SET")[1]
       ?.split("INSERT INTO public.sync_state")[0];
