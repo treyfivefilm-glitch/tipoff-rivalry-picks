@@ -25,3 +25,14 @@ export async function ensureGuestSession(auth: {
 }
 
 export const GUEST_SESSION_WARNING = "Signing in or creating another account here could disconnect this browser from your guest rooms and wagers. Return to your rooms and use Profile to attach a permanent account before switching identities.";
+
+/** A failed server-side account check is not evidence that a visitor is signed out.
+ * Invitation pages must fail closed instead of offering a new guest identity.
+ */
+export async function verifiedInviteSession(auth: {
+  getUser: () => Promise<{ data: { user: unknown | null }; error: Error | null }>;
+}): Promise<boolean> {
+  const { data, error } = await auth.getUser();
+  if (error) throw error;
+  return Boolean(data.user);
+}
