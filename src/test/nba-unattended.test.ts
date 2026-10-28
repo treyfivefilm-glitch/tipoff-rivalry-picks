@@ -74,6 +74,19 @@ describe("unattended NBA worker pure preparation", () => {
     });
   });
 
+  it("canonicalizes mixed-case and padded provider team codes before saving", () => {
+    const variant = {
+      ...game(3, 109, 107),
+      awayTeam: { ...game().awayTeam, teamTricode: " lal " },
+      homeTeam: { ...game().homeTeam, teamTricode: " gs " },
+    };
+    const result = prepareUnattendedNbaDay("2026-11-17", null, live([variant]), []);
+    expect(result.cacheable).toBe(true);
+    expect(result.rows[0]).toMatchObject({
+      away_code: "LAL", home_code: "GSW", state: "final",
+    });
+  });
+
   it("does not replace a scheduled matchup with a different live-feed matchup under the same game ID", () => {
     const conflicting = {
       ...game(3, 110, 101),
