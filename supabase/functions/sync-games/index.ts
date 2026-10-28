@@ -196,7 +196,17 @@ Deno.serve(async (req) => {
     const byMatch = new Map(existing.filter(isStoredNbaMatchCandidate).map(g=>[
       `${pacificDay(g.start_utc)}:${norm(g.away_code)}:${norm(g.home_code)}`,g
     ]));
-    const storedById = new Map(existing.filter(g => g.id.startsWith("nba:")).map(g => [g.id, g]));
+    // The date-bounded read above is for legacy same-matchup reuse. An NBA
+    // game ID is globally unique, even if its tipoff was rescheduled outside
+    // that window. Check incoming IDs without a date filter so a malformed
+    // provider row cannot overwrite a different stored matchup or sport.
+    const incomingIds = [...new Set([...gamesByDay.values()].flatMap(games =>
+      games.map(game => `nba:${game.gameId}`)))];
+    const existingById = incomingIds.length ? await getTable<Stored[]>(
+      `games?select=id,start_utc,away_code,home_code,away_score,home_score,state,status_detail,source` +
+      `&id=in.(${incomingIds.map(encodeURIComponent).join(",")})&limit=3000`,
+    ) : [];
+    const storedById = new Map(existingById.map(g => [g.id, g]));
     let updated=0, checked=0;
     for (const day of due) {
       const list = gamesByDay.get(day);
