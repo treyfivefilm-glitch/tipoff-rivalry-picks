@@ -8,7 +8,7 @@ CREATE OR REPLACE FUNCTION public.nba_canonical_team_code(p_code text)
 RETURNS text
 LANGUAGE sql IMMUTABLE STRICT
 SET search_path = pg_catalog
-AS $
+AS $$
   SELECT CASE upper(btrim(p_code))
     WHEN 'NY' THEN 'NYK'
     WHEN 'SA' THEN 'SAS'
@@ -18,7 +18,7 @@ AS $
     WHEN 'WSH' THEN 'WAS'
     ELSE upper(btrim(p_code))
   END
-$;
+$$;
 REVOKE ALL ON FUNCTION public.nba_canonical_team_code(text)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.nba_canonical_team_code(text)
