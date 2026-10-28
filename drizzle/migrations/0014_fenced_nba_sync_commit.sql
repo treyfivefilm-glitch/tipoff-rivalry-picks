@@ -71,7 +71,8 @@ BEGIN
       OR (g.start_utc AT TIME ZONE 'America/Los_Angeles')::date <> p_day
       OR NULLIF(trim(g.away_code), '') IS NULL
       OR NULLIF(trim(g.home_code), '') IS NULL
-      OR g.away_code = g.home_code
+      -- Compare canonical identities: GS and GSW are the same team.
+      OR public.nba_canonical_team_code(g.away_code) = public.nba_canonical_team_code(g.home_code)
       OR NULLIF(trim(g.away_name), '') IS NULL
       OR NULLIF(trim(g.home_name), '') IS NULL
       OR g.state IS NULL
