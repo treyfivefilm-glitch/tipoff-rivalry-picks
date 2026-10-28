@@ -334,6 +334,48 @@ describe("unattended NBA worker pure preparation", () => {
     expect(liveConflict.cacheable).toBe(false);
   });
 
+  it("fails closed instead of duplicating historical ESPN games with attached picks", () => {
+    const legacy = {
+      id: "espn:401234567", source: "espn",
+      start_utc: "2026-11-18T03:00:00Z",
+      away_code: "LAL", home_code: "GS", away_score: null, home_score: null,
+      state: "scheduled", status_detail: "7:00 PM ET",
+    };
+    // Creating nba:0022600012 alongside this legacy game would detach picks
+    // and wagers from the score users see. Until the SQL RPC can reuse the
+    // original ID safely, reject freshness for the whole affected day.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([game(3, 109, 107)]), [legacy],
+    )).toEqual({ rows: [], cacheable: false });
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), null, [{ ...legacy, source: "nba" }],
+    )).toEqual({ rows: [], cacheable: false });
+    // An unrelated historical game must not block a different NBA matchup.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), null,
+      [{ ...legacy, away_code: "BOS", home_code: "NYK" }],
+    )).toMatchObject({ cacheable: true, rows: [{ id: "nba:0022600012" }] });
+  });
+
+  it("rejects a same-ID record owned by an unrelated source", () => {
+    const collision = {
+      id: "nba:0022600012", source: "nfl",
+      start_utc: "2026-11-18T03:00:00Z",
+      away_code: "LAL", home_code: "GSW", away_score: null, home_score: null,
+      state: "scheduled", status_detail: null,
+    };
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), null, [collision],
+    )).toEqual({ rows: [], cacheable: false });
+  });
+
+  it("reads source metadata before preparing unattended score writes", () => {
+    const worker = readFileSync(
+      new URL("../../supabase/functions/nba-sync-worker/index.ts", import.meta.url), "utf8",
+    );
+    expect(worker).toContain("state,status_detail,source");
+  });
+
   it("skips malformed schedule games without rejecting an otherwise valid season", () => {
     const mixedSeason = schedule([{ gameId: "broken", homeTeam: null }, game()]);
     expect(prepareUnattendedNbaDay("2026-11-16", mixedSeason, null, [])).toEqual({

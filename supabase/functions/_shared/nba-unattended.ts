@@ -1,6 +1,6 @@
 // Pure preparation for owner-approved unattended NBA refresh.
 // Caller must hold a lease and commit via commit_nba_sync_day.
-import { hasConflictingNbaFeedMatchup, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
+import { hasConflictingNbaFeedMatchup, hasVerifiedNbaSeasonGame, isStoredNbaMatchCandidate, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
 import { safeNbaPacificDay } from "./sync-days.ts";
 
 const START = "2026-10-20";
@@ -15,7 +15,7 @@ type Game = {
 export type ExistingNbaGame = {
   id: string; start_utc: string; away_code: string; home_code: string;
   away_score: number | null; home_score: number | null;
-  state: string; status_detail: string | null;
+  state: string; status_detail: string | null; source?: string;
 };
 export type FencedNbaRow = {
   id: string; start_utc: string; away_code: string; away_name: string;
@@ -132,9 +132,18 @@ export function prepareUnattendedNbaDay(
     for (const game of live.games) include(game, true);
   }
 
-  const byMatch = new Map(existing.filter(g => g.id.startsWith("nba:")).map(g => [
-    [safeNbaPacificDay(g.start_utc), norm(g.away_code), norm(g.home_code)].join(":"), g,
-  ]));
+  const matchupKey = (g: ExistingNbaGame) =>
+    [safeNbaPacificDay(g.start_utc), norm(g.away_code), norm(g.home_code)].join(":");
+  // Historical ESPN IDs may carry picks and wagers. The fenced SQL RPC
+  // currently accepts only official nba: IDs, so fail the whole day closed
+  // rather than create a duplicate NBA game with detached obligations.
+  // Remove this guard only alongside tested, atomic legacy-ID migration support.
+  const legacyMatchups = new Set(existing.filter(g =>
+    g.id.startsWith("espn:") && (g.source === "espn" || g.source === "nba"),
+  ).map(matchupKey));
+  const byMatch = new Map(existing.filter(g =>
+    g.id.startsWith("nba:") && (g.source == null || isStoredNbaMatchCandidate({ id: g.id, source: g.source })),
+  ).map(g => [matchupKey(g), g]));
   const byId = new Map(existing.filter(g => g.id.startsWith("nba:")).map(g => [g.id, g]));
   const rows = new Map<string, FencedNbaRow>();
   for (const game of games.values()) {
@@ -142,8 +151,15 @@ export function prepareUnattendedNbaDay(
     const home = norm(game.homeTeam.teamTricode);
     if (!away || !home || away === home) continue;
     const storedById = byId.get("nba:" + game.gameId);
-    if (storedById && !matchesStoredNbaMatchup(storedById, away, home)) {
-      // Do not certify a partial day when a provider ID contradicts stored teams.
+    if (storedById && (
+      (storedById.source != null && !isStoredNbaMatchCandidate({ id: storedById.id, source: storedById.source })) ||
+      !matchesStoredNbaMatchup(storedById, away, home)
+    )) {
+      // Do not certify a partial day when an ID belongs to another source or matchup.
+      identityConflict = true;
+      continue;
+    }
+    if (legacyMatchups.has([day, away, home].join(":"))) {
       identityConflict = true;
       continue;
     }

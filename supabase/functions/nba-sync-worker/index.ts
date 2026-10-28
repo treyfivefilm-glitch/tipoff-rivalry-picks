@@ -44,7 +44,7 @@ Deno.serve(async request => {
   };
   const readExisting = async (days: string[]): Promise<ExistingNbaGame[]> => {
     const bounds = syncUtcBounds(days);
-    const path = "/rest/v1/games?select=id,start_utc,away_code,home_code,away_score,home_score,state,status_detail" +
+    const path = "/rest/v1/games?select=id,start_utc,away_code,home_code,away_score,home_score,state,status_detail,source" +
       "&start_utc=gte." + bounds.lower + "T00:00:00Z&start_utc=lt." + bounds.upper + "T00:00:00Z&limit=3000";
     const response = await fetch(endpoint + path, { headers: admin });
     if (!response.ok) throw new Error("NBA sync database read failed (HTTP " + response.status + ")");
