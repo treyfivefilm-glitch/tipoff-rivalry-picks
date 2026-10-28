@@ -193,6 +193,18 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(await db`SELECT day FROM public.sync_state WHERE day=${day}`).toHaveLength(0);
   });
 
+  it("rejects same-team aliases before publishing games or freshness", async () => {
+    expect(await claim(owner)).toBe(true);
+    // Different tricode strings can still identify the same NBA team.
+    await db`SAVEPOINT same_team_alias`;
+    await expect(commit(owner, [{
+      ...sampleGame, away_code: "GS", home_code: "GSW",
+    }])).rejects.toThrow(/Invalid NBA game row or day mismatch/);
+    await db`ROLLBACK TO SAVEPOINT same_team_alias`;
+    expect(await db`SELECT id FROM public.games WHERE id=${sampleGame.id}`).toHaveLength(0);
+    expect(await db`SELECT day FROM public.sync_state WHERE day=${day}`).toHaveLength(0);
+  });
+
   it("keeps the table and SECURITY DEFINER functions private", async () => {
     const [grants] = await db`
       SELECT
