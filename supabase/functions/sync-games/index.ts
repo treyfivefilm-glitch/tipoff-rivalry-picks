@@ -2,15 +2,14 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
-import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
+import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
 const LIVE_URL = `${BASE}/liveData/scoreboard/todaysScoreboard_00.json`;
 const START = "2026-10-20", END = "2027-04-12";
 const ZONE = "America/Los_Angeles";
-const aliases: Record<string,string> = { NY:"NYK", SA:"SAS", GS:"GSW", NO:"NOP", UTAH:"UTA", WSH:"WAS", UTA:"UTA", BKN:"BKN" };
-const norm = (code: string) => aliases[code] ?? code;
+const norm = normalizeNbaTeamCode;
 const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), {
   status, headers: { "content-type":"application/json", "cache-control":"no-store" },
 });
