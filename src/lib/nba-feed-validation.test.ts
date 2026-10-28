@@ -246,6 +246,20 @@ describe("NBA live overlay state ordering", () => {
     expect(shouldOverlayNbaGame(snapshot(3, "Postponed"), snapshot(3, "Final"))).toBe(true);
     expect(shouldOverlayNbaGame(snapshot(3, "Canceled"), snapshot(3, "Postponed"))).toBe(true);
   });
+  it("rejects live feed game-ID collisions with different teams", () => {
+    const matchup = (status: number, away: string, home: string) => ({
+      gameStatus: status, gameStatusText: status === 3 ? "Final" : "Scheduled",
+      awayTeam: { teamTricode: away }, homeTeam: { teamTricode: home },
+    });
+    const scheduled = matchup(1, "LAL", "GS");
+    // Official aliases must not block a legitimate update.
+    expect(shouldOverlayNbaGame(scheduled, matchup(3, "LAL", "GSW"))).toBe(true);
+    // A mismatched or swapped matchup cannot overwrite the scheduled game.
+    expect(shouldOverlayNbaGame(scheduled, matchup(3, "BOS", "NYK"))).toBe(false);
+    expect(shouldOverlayNbaGame(scheduled, matchup(3, "GSW", "LAL"))).toBe(false);
+    expect(shouldOverlayNbaGame(scheduled, matchup(2, " lal ", " gsw "))).toBe(true);
+  });
+
   it("never replaces a verified final with a contradictory unplayed snapshot", () => {
     expect(shouldOverlayNbaGame(snapshot(3, "Final"), snapshot(3, "Canceled"))).toBe(false);
     expect(shouldOverlayNbaGame(snapshot(3, "Final"), snapshot(1, "Postponed"))).toBe(false);
