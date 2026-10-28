@@ -7,6 +7,7 @@ import {
   isUsableNbaGame,
   groupUsableNbaGamesByPacificDay,
   hasVerifiedNbaSeasonGame,
+  malformedNbaGamePacificDay,
   matchesStoredNbaMatchup,
   isStoredNbaMatchCandidate,
   shouldOverlayNbaGame,
@@ -200,6 +201,47 @@ describe("NBA individual game integrity", () => {
   });
 });
 
+
+describe("malformed same-day NBA provider freshness", () => {
+  const game = {
+    gameId: "0022600012", gameDateTimeUTC: "2026-11-18T03:00:00Z",
+    gameStatus: 3, gameStatusText: "Final",
+    awayTeam: { teamTricode: "LAL", teamName: "Lakers", score: 108 },
+    homeTeam: { teamTricode: "GSW", teamName: "Warriors", score: 103 },
+  };
+
+  it("attributes malformed final scores and unknown teams to the actual Pacific tipoff day", () => {
+    expect(malformedNbaGamePacificDay(game)).toBeNull();
+    expect(malformedNbaGamePacificDay({
+      ...game, awayTeam: { ...game.awayTeam, score: "invalid" },
+    })).toBe("2026-11-17");
+    expect(malformedNbaGamePacificDay({
+      ...game, homeTeam: { ...game.homeTeam, teamTricode: "XYZ" },
+    })).toBe("2026-11-17");
+    expect(malformedNbaGamePacificDay({
+      ...game, gameDateTimeUTC: "2026-11-18T20:00:00Z", gameId: "bad-id",
+    })).toBe("2026-11-18");
+  });
+
+  it("does not invent a day for a malformed row without a parseable tipoff", () => {
+    expect(malformedNbaGamePacificDay(null)).toBeNull();
+    expect(malformedNbaGamePacificDay({ gameId: "broken" })).toBeNull();
+    expect(malformedNbaGamePacificDay({
+      ...game, gameDateTimeUTC: "not-a-date",
+    })).toBeNull();
+  });
+
+  it("wires both schedule and live invalid-row checks before signed-in freshness writes", () => {
+    const source = readFileSync("supabase/functions/sync-games/index.ts", "utf8");
+    expect(source).toContain("const malformedDay = malformedNbaGamePacificDay(game);");
+    expect(source.match(/malformedNbaGamePacificDay\\(game\\)/g)).toHaveLength(2);
+    expect(source.match(/feedConflictDays\\.add\\(malformedDay\\)/g)).toHaveLength(2);
+    expect(source.indexOf("for (const game of live?.games ?? [])"))
+      .toBeLessThan(source.indexOf("const liveGamesByDay = groupUsableNbaGamesByPacificDay"));
+    expect(source.indexOf("if (identityConflict)"))
+      .toBeLessThan(source.indexOf('await save("sync_state"'));
+  });
+});
 
 describe("stored NBA game identity", () => {
   it("accepts team aliases but rejects swapped or unrelated matchups", () => {
