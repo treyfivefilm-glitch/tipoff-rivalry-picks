@@ -2,7 +2,7 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
-import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
+import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -153,6 +153,7 @@ Deno.serve(async (req) => {
       errors.push("Season schedule has no verified in-season NBA games");
     }
     const gamesByDay = new Map<string,NbaGame[]>();
+    const feedConflictDays = new Set<string>();
     if (scheduleResult.status === "fulfilled") {
       for (const segment of scheduleResult.value.leagueSchedule?.gameDates ?? []) {
         for (const game of segment.games ?? []) {
@@ -161,6 +162,11 @@ Deno.serve(async (req) => {
           const day = safeNbaPacificDay(tipoff);
           if (!day || !due.includes(day)) continue;
           const current = gamesByDay.get(day) ?? [];
+          const previous = current.find(candidate => candidate.gameId === game.gameId);
+          if (hasConflictingNbaFeedMatchup(previous, game)) {
+            feedConflictDays.add(day);
+            continue;
+          }
           current.push(game);
           gamesByDay.set(day,current);
         }
@@ -173,7 +179,12 @@ Deno.serve(async (req) => {
     for (const [day, liveGames] of liveGamesByDay) {
       const byId = new Map((gamesByDay.get(day) ?? []).map(game => [game.gameId, game]));
       for (const game of liveGames) {
-        if (shouldOverlayNbaGame(byId.get(game.gameId), game)) byId.set(game.gameId, game);
+        const previous = byId.get(game.gameId);
+        if (hasConflictingNbaFeedMatchup(previous, game)) {
+          feedConflictDays.add(day);
+          continue;
+        }
+        if (shouldOverlayNbaGame(previous, game)) byId.set(game.gameId, game);
       }
       gamesByDay.set(day, [...byId.values()]);
     }
@@ -190,7 +201,7 @@ Deno.serve(async (req) => {
     for (const day of due) {
       const list = gamesByDay.get(day);
       const unique = new Map<string,Row>();
-      let identityConflict = false;
+      let identityConflict = feedConflictDays.has(day);
       for (const game of list ?? []) {
         const away = norm(game.awayTeam?.teamTricode ?? "");
         const home = norm(game.homeTeam?.teamTricode ?? "");

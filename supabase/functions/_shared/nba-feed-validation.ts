@@ -164,6 +164,23 @@ export function matchesStoredNbaMatchup(
     beforeHome === normalizeNbaTeamCode(home);
 }
 
+/** A contradictory team identity under one official game ID must fail the
+ * entire day rather than silently certifying an incomplete provider refresh.
+ * Historical team aliases are equivalent, but swapped teams are not.
+ */
+export function hasConflictingNbaFeedMatchup(
+  previous: { awayTeam?: { teamTricode?: string }; homeTeam?: { teamTricode?: string } } | undefined,
+  incoming: { awayTeam?: { teamTricode?: string }; homeTeam?: { teamTricode?: string } },
+): boolean {
+  if (!previous?.awayTeam || !previous.homeTeam || !incoming.awayTeam || !incoming.homeTeam) return false;
+  const beforeAway = normalizeNbaTeamCode(previous.awayTeam.teamTricode);
+  const beforeHome = normalizeNbaTeamCode(previous.homeTeam.teamTricode);
+  const afterAway = normalizeNbaTeamCode(incoming.awayTeam.teamTricode);
+  const afterHome = normalizeNbaTeamCode(incoming.homeTeam.teamTricode);
+  return !!beforeAway && !!beforeHome && !!afterAway && !!afterHome &&
+    (beforeAway !== afterAway || beforeHome !== afterHome);
+}
+
 /** The live feed may temporarily lag behind the full-season schedule. Prefer
  * later NBA game states so a stale scheduled/live snapshot cannot erase a
  * verified final (or make a live game appear not to have started). A genuine
@@ -182,14 +199,7 @@ export function shouldOverlayNbaGame(
   if (!previous) return true;
   // A live row must not overwrite a scheduled matchup with different teams
   // under the same NBA game ID. This protects winner and wager identity.
-  if (previous.awayTeam && previous.homeTeam && incoming.awayTeam && incoming.homeTeam) {
-    const beforeAway = normalizeNbaTeamCode(previous.awayTeam.teamTricode);
-    const beforeHome = normalizeNbaTeamCode(previous.homeTeam.teamTricode);
-    const afterAway = normalizeNbaTeamCode(incoming.awayTeam.teamTricode);
-    const afterHome = normalizeNbaTeamCode(incoming.homeTeam.teamTricode);
-    if (beforeAway && beforeHome && afterAway && afterHome &&
-      (beforeAway !== afterAway || beforeHome !== afterHome)) return false;
-  }
+  if (hasConflictingNbaFeedMatchup(previous, incoming)) return false;
   const unplayed = (text: string | undefined) => {
     const detail = (text ?? "").toLowerCase();
     return detail.includes("postpon") || detail.includes("cancel");

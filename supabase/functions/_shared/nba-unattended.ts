@@ -1,6 +1,6 @@
 // Pure preparation for owner-approved unattended NBA refresh.
 // Caller must hold a lease and commit via commit_nba_sync_day.
-import { hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
+import { hasConflictingNbaFeedMatchup, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
 import { safeNbaPacificDay } from "./sync-days.ts";
 
 const START = "2026-10-20";
@@ -85,6 +85,7 @@ export function prepareUnattendedNbaDay(
   const games = new Map<string, Game>();
   let validLiveGames = 0;
   let validSeasonGames = 0;
+  let identityConflict = false;
   const include = (value: unknown, live: boolean) => {
     if (!isUsableNbaGame(value)) return;
     const game = value as Game;
@@ -92,6 +93,10 @@ export function prepareUnattendedNbaDay(
     if (safeNbaPacificDay(tipoff) !== day) return;
     if (Date.parse(tipoff!) < Date.parse(START + "T00:00:00Z")) return;
     const previous = games.get(game.gameId);
+    if (hasConflictingNbaFeedMatchup(previous, game)) {
+      identityConflict = true;
+      return;
+    }
     if (shouldOverlayNbaGame(previous, game)) games.set(game.gameId, game);
     if (live) validLiveGames++;
   };
@@ -120,7 +125,6 @@ export function prepareUnattendedNbaDay(
   ]));
   const byId = new Map(existing.filter(g => g.id.startsWith("nba:")).map(g => [g.id, g]));
   const rows = new Map<string, FencedNbaRow>();
-  let identityConflict = false;
   for (const game of games.values()) {
     const away = norm(game.awayTeam.teamTricode);
     const home = norm(game.homeTeam.teamTricode);

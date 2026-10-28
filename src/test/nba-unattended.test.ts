@@ -97,12 +97,36 @@ describe("unattended NBA worker pure preparation", () => {
     const result = prepareUnattendedNbaDay(
       "2026-11-17", schedule([game()]), live([conflicting]), [],
     );
-    expect(result.cacheable).toBe(true);
+    // Preserve the trustworthy scheduled row but never certify this day fresh.
+    expect(result.cacheable).toBe(false);
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0]).toMatchObject({
       id: "nba:0022600012", away_code: "LAL", home_code: "GSW",
       state: "scheduled", away_score: null, home_score: null,
     });
+  });
+
+  it("rejects duplicate conflicting schedule IDs even with another healthy game", () => {
+    const original = game();
+    const swapped = {
+      ...original,
+      awayTeam: original.homeTeam,
+      homeTeam: original.awayTeam,
+    };
+    const other = { ...game(), gameId: "0022600013" };
+    const result = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([original, swapped, other]), null, [],
+    );
+    expect(result.cacheable).toBe(false);
+    expect(result.rows).toHaveLength(2);
+  });
+
+  it("wires provider identity conflicts into signed-in day freshness checks", () => {
+    const source = readFileSync(
+      new URL("../../supabase/functions/sync-games/index.ts", import.meta.url), "utf8",
+    );
+    expect(source).toContain("feedConflictDays.add(day)");
+    expect(source).toContain("let identityConflict = feedConflictDays.has(day)");
   });
 
   it("rejects a provider game-ID collision against stored teams without marking the day fresh", () => {
