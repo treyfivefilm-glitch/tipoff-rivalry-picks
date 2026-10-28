@@ -59,6 +59,17 @@ export function normalizeNbaTeamCode(value: unknown): string {
   return aliases[code] ?? code;
 }
 
+/** This worker only handles the 30 NBA teams in the configured 2026-27
+ * regular season. An arbitrary nonempty tricode is not evidence of a real
+ * matchup and must not create games that can later be picked or wagered on.
+ * Provider aliases are normalized before this check.
+ */
+const NBA_TEAM_CODES = new Set([
+  "ATL", "BOS", "BKN", "CHA", "CHI", "CLE", "DAL", "DEN", "DET", "GSW",
+  "HOU", "IND", "LAC", "LAL", "MEM", "MIA", "MIL", "MIN", "NOP", "NYK",
+  "OKC", "ORL", "PHI", "PHX", "POR", "SAC", "SAS", "TOR", "UTA", "WAS",
+]);
+
 /** A malformed game inside an otherwise valid NBA feed must not crash the
  * entire refresh or replace a healthy schedule entry with a broken live row.
  */
@@ -77,7 +88,7 @@ export function isUsableNbaGame(value: unknown): boolean {
     record(team) ? normalizeNbaTeamCode(team["teamTricode"]) : "";
   const away = code(value["awayTeam"]);
   const home = code(value["homeTeam"]);
-  if (!teamsValid || !away || away === home) return false;
+  if (!teamsValid || !NBA_TEAM_CODES.has(away) || !NBA_TEAM_CODES.has(home) || away === home) return false;
   // A provider may return HTTP 200 and mark a game final without usable scores.
   // Never publish an unscored final: wagers depend on a verified winner.
   const status = value["gameStatus"];
