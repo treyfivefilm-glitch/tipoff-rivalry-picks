@@ -49,6 +49,19 @@ export function canCacheNbaDay(
 /** A malformed game inside an otherwise valid NBA feed must not crash the
  * entire refresh or replace a healthy schedule entry with a broken live row.
  */
+/** Normalize provider aliases before comparing matchup identities.
+ * A scoreboard row with the same game ID but different teams is not a
+ * trustworthy update, even if its status and scores look valid.
+ */
+export function normalizeNbaTeamCode(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const code = value.trim().toUpperCase();
+  const aliases: Record<string, string> = {
+    NY: "NYK", SA: "SAS", GS: "GSW", NO: "NOP", UTAH: "UTA", WSH: "WAS",
+  };
+  return aliases[code] ?? code;
+}
+
 export function isUsableNbaGame(value: unknown): boolean {
   if (!record(value)) return false;
   const tipoff = value["gameDateTimeUTC"] ?? value["gameTimeUTC"];
@@ -60,14 +73,8 @@ export function isUsableNbaGame(value: unknown): boolean {
   });
   // A corrupted same-team matchup must not establish that a season or live
   // scoreboard is healthy. Normalize the provider's short NBA aliases first.
-  const aliases: Record<string, string> = {
-    NY: "NYK", SA: "SAS", GS: "GSW", NO: "NOP", UTAH: "UTA", WSH: "WAS",
-  };
-  const code = (team: unknown): string => {
-    if (!record(team) || typeof team["teamTricode"] !== "string") return "";
-    const normalized = team["teamTricode"].trim().toUpperCase();
-    return aliases[normalized] ?? normalized;
-  };
+  const code = (team: unknown): string =>
+    record(team) ? normalizeNbaTeamCode(team["teamTricode"]) : "";
   const away = code(value["awayTeam"]);
   const home = code(value["homeTeam"]);
   if (!teamsValid || !away || away === home) return false;
@@ -152,10 +159,26 @@ export function groupUsableNbaGamesByPacificDay<T>(
  * postponement/cancellation is allowed to supersede an earlier state.
  */
 export function shouldOverlayNbaGame(
-  previous: { gameStatus?: number; gameStatusText?: string } | undefined,
-  incoming: { gameStatus?: number; gameStatusText?: string },
+  previous: {
+    gameStatus?: number; gameStatusText?: string;
+    awayTeam?: { teamTricode?: string }; homeTeam?: { teamTricode?: string };
+  } | undefined,
+  incoming: {
+    gameStatus?: number; gameStatusText?: string;
+    awayTeam?: { teamTricode?: string }; homeTeam?: { teamTricode?: string };
+  },
 ): boolean {
   if (!previous) return true;
+  // A live row must not overwrite a scheduled matchup with different teams
+  // under the same NBA game ID. This protects winner and wager identity.
+  if (previous.awayTeam && previous.homeTeam && incoming.awayTeam && incoming.homeTeam) {
+    const beforeAway = normalizeNbaTeamCode(previous.awayTeam.teamTricode);
+    const beforeHome = normalizeNbaTeamCode(previous.homeTeam.teamTricode);
+    const afterAway = normalizeNbaTeamCode(incoming.awayTeam.teamTricode);
+    const afterHome = normalizeNbaTeamCode(incoming.homeTeam.teamTricode);
+    if (beforeAway && beforeHome && afterAway && afterHome &&
+      (beforeAway !== afterAway || beforeHome !== afterHome)) return false;
+  }
   const unplayed = (text: string | undefined) => {
     const detail = (text ?? "").toLowerCase();
     return detail.includes("postpon") || detail.includes("cancel");
