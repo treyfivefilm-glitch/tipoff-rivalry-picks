@@ -1,12 +1,11 @@
 // Pure preparation for owner-approved unattended NBA refresh.
 // Caller must hold a lease and commit via commit_nba_sync_day.
-import { hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
+import { hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, normalizeNbaTeamCode, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
 import { safeNbaPacificDay } from "./sync-days.ts";
 
 const START = "2026-10-20";
 const END = "2027-04-12";
-const aliases: Record<string, string> = { NY: "NYK", SA: "SAS", GS: "GSW", NO: "NOP", UTAH: "UTA", WSH: "WAS" };
-const norm = (code: string) => aliases[code] ?? code;
+const norm = normalizeNbaTeamCode;
 
 type Team = { teamTricode: string; teamCity?: string; teamName?: string; score?: number | string | null };
 type Game = {
