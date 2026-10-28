@@ -75,10 +75,11 @@ describe("unattended NBA worker pure preparation", () => {
   });
 
   it("canonicalizes mixed-case and padded provider team codes before saving", () => {
+    const scored = game(3, 109, 107);
     const variant = {
-      ...game(3, 109, 107),
-      awayTeam: { ...game().awayTeam, teamTricode: " lal " },
-      homeTeam: { ...game().homeTeam, teamTricode: " gs " },
+      ...scored,
+      awayTeam: { ...scored.awayTeam, teamTricode: " lal " },
+      homeTeam: { ...scored.homeTeam, teamTricode: " gs " },
     };
     const result = prepareUnattendedNbaDay("2026-11-17", null, live([variant]), []);
     expect(result.cacheable).toBe(true);
