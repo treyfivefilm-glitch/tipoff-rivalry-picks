@@ -302,6 +302,28 @@ describe("stored NBA matchup reuse safety", () => {
     }
   });
 
+  it("checks official game IDs globally before upserting a rescheduled or conflicting game", () => {
+    // The date-window read alone misses a game whose stored tipoff is months
+    // away. A provider-reused ID must still be compared against that row.
+    const storedOutsideWindow = {
+      id: "nba:0022600012", source: "nba",
+      start_utc: "2027-02-01T03:00:00Z",
+      away_code: "BOS", home_code: "NYK",
+    };
+    expect(isStoredNbaMatchCandidate(storedOutsideWindow)).toBe(true);
+    expect(matchesStoredNbaMatchup(storedOutsideWindow, "LAL", "GSW")).toBe(false);
+
+    const sync = readFileSync("supabase/functions/sync-games/index.ts", "utf8");
+    const globalLookup = sync.slice(
+      sync.indexOf("const incomingIds ="), sync.indexOf("const storedById ="),
+    );
+    expect(globalLookup).toContain("games.map(game => `nba:${game.gameId}`)");
+    expect(globalLookup).toContain("&id=in.(");
+    expect(globalLookup).not.toContain("start_utc=gte");
+    expect(sync).toContain("const storedById = new Map(existingById.map");
+    expect(sync).toContain("!matchesStoredNbaMatchup(sameId, away, home)");
+  });
+
   it("requires source-scoped matching and rejects foreign-source official ID collisions", () => {
     const sync = readFileSync(
       "supabase/functions/sync-games/index.ts", "utf8",
