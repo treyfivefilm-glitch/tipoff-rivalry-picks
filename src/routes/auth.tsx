@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { describeAuthFailure, RESET_REQUEST_NOTICE, type AuthFeedback } from "@/lib/auth-feedback";
-import { hasGuestSession, GUEST_SESSION_WARNING } from "@/lib/guest-session-guard";
+import { hasGuestSession, hasAccountSession, GUEST_SESSION_WARNING } from "@/lib/guest-session-guard";
 
 export const Route = createFileRoute("/auth")({
   validateSearch: (s: Record<string, unknown>) => ({ redirect: typeof s["redirect"] === "string" && s["redirect"].startsWith("/") && !s["redirect"].startsWith("//") ? s["redirect"] : undefined }),
@@ -80,7 +80,7 @@ function AuthPage() {
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError) throw sessionError;
-      if (hasGuestSession(session)) { done(); return; }
+      if (hasAccountSession(session)) { done(); return; }
       const { error } = await supabase.auth.signInAnonymously();
       if (error) throw error;
       done();

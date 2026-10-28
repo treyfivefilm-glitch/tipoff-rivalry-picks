@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GUEST_SESSION_WARNING, hasGuestSession } from "./guest-session-guard";
+import { GUEST_SESSION_WARNING, hasAccountSession, hasGuestSession } from "./guest-session-guard";
 
 describe("guest account protection on email sign-in", () => {
   it("blocks switching away from an existing guest session", () => {
@@ -10,6 +10,12 @@ describe("guest account protection on email sign-in", () => {
     expect(hasGuestSession(undefined)).toBe(false);
     expect(hasGuestSession({ user: null })).toBe(false);
     expect(hasGuestSession({ user: { is_anonymous: false } })).toBe(false);
+  });
+  it("reuses any existing session instead of creating another guest identity", () => {
+    expect(hasAccountSession({ user: { is_anonymous: true } })).toBe(true);
+    expect(hasAccountSession({ user: { is_anonymous: false } })).toBe(true);
+    expect(hasAccountSession({ user: null })).toBe(false);
+    expect(hasAccountSession(null)).toBe(false);
   });
   it("explains how to preserve rooms and wagers", () => {
     expect(GUEST_SESSION_WARNING).toContain("rooms and wagers");
