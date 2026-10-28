@@ -52,7 +52,7 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
     ];
     for (const side of ["away", "home"]) {
       const guard = migration.match(new RegExp(
-        `public\\\\.nba_canonical_team_code\\\\(g\\\\.${side}_code\\\\) NOT IN \\\\(([\\\\s\\\\S]*?)\\\\)`,
+        `public\\.nba_canonical_team_code\\(g\\.${side}_code\\) NOT IN \\(([\\s\\S]*?)\\)`,
       ));
       expect(guard, `${side} team-code SQL guard`).not.toBeNull();
       const actual = [...(guard?.[1] ?? "").matchAll(/'([A-Z]{2,3})'/g)].map(match => match[1]);
