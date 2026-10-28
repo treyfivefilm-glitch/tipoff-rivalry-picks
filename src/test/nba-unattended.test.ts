@@ -132,6 +132,37 @@ describe("unattended NBA worker pure preparation", () => {
     expect(prepareUnattendedNbaDay("2026-11-18", independent, null, []).cacheable).toBe(true);
   });
 
+  it("does not certify two official IDs for the same NBA matchup across feeds", () => {
+    const alternateId = { ...game(3, 109, 107), gameId: "0022600099" };
+    const result = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([alternateId]), [],
+    );
+    expect(result.cacheable).toBe(false);
+    expect(result.rows.map(row => row.id).sort()).toEqual([
+      "nba:0022600012", "nba:0022600099",
+    ]);
+    // A different matchup with a distinct official ID is still legitimate.
+    const otherMatchup = {
+      ...alternateId,
+      awayTeam: { ...alternateId.awayTeam, teamTricode: "BOS" },
+      homeTeam: { ...alternateId.homeTeam, teamTricode: "NYK" },
+    };
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([otherMatchup]), [],
+    ).cacheable).toBe(true);
+  });
+
+  it("rejects duplicate matchup IDs within the season schedule itself", () => {
+    const alternateId = { ...game(), gameId: "0022600099" };
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game(), alternateId]), null, [],
+    ).cacheable).toBe(false);
+    // The collision must not falsely invalidate an unrelated Pacific day.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-16", schedule([game(), alternateId]), null, [],
+    ).cacheable).toBe(true);
+  });
+
   it("rejects duplicate conflicting schedule IDs even with another healthy game", () => {
     const original = game();
     const swapped = {
