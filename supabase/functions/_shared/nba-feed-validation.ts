@@ -153,6 +153,17 @@ export function groupUsableNbaGamesByPacificDay<T>(
 }
 
 
+/** Reject a stored game-ID collision unless both canonical team codes match. */
+export function matchesStoredNbaMatchup(
+  stored: { away_code: string; home_code: string }, away: string, home: string,
+): boolean {
+  const beforeAway = normalizeNbaTeamCode(stored.away_code);
+  const beforeHome = normalizeNbaTeamCode(stored.home_code);
+  return !!beforeAway && !!beforeHome &&
+    beforeAway === normalizeNbaTeamCode(away) &&
+    beforeHome === normalizeNbaTeamCode(home);
+}
+
 /** The live feed may temporarily lag behind the full-season schedule. Prefer
  * later NBA game states so a stale scheduled/live snapshot cannot erase a
  * verified final (or make a live game appear not to have started). A genuine

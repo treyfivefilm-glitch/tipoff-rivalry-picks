@@ -1,6 +1,6 @@
 // Pure preparation for owner-approved unattended NBA refresh.
 // Caller must hold a lease and commit via commit_nba_sync_day.
-import { hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, normalizeNbaTeamCode, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
+import { hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
 import { safeNbaPacificDay } from "./sync-days.ts";
 
 const START = "2026-10-20";
@@ -120,11 +120,18 @@ export function prepareUnattendedNbaDay(
   ]));
   const byId = new Map(existing.filter(g => g.id.startsWith("nba:")).map(g => [g.id, g]));
   const rows = new Map<string, FencedNbaRow>();
+  let identityConflict = false;
   for (const game of games.values()) {
     const away = norm(game.awayTeam.teamTricode);
     const home = norm(game.homeTeam.teamTricode);
     if (!away || !home || away === home) continue;
-    const prior = byId.get("nba:" + game.gameId) ?? byMatch.get([day, away, home].join(":"));
+    const storedById = byId.get("nba:" + game.gameId);
+    if (storedById && !matchesStoredNbaMatchup(storedById, away, home)) {
+      // Do not certify a partial day when a provider ID contradicts stored teams.
+      identityConflict = true;
+      continue;
+    }
+    const prior = storedById ?? byMatch.get([day, away, home].join(":"));
     const incoming = gameState(game);
     const preserve = prior && (
       (prior.state === "final" && incoming !== "final") ||
@@ -149,5 +156,5 @@ export function prepareUnattendedNbaDay(
   // verified season. Otherwise it could falsely mark every day as refreshed.
   // A legitimate no-game day remains cacheable when other season games validate.
   const verifiedSeason = seasonValid && validSeasonGames > 0;
-  return { rows: [...rows.values()], cacheable: verifiedSeason || (validLiveGames > 0 && rows.size > 0) };
+  return { rows: [...rows.values()], cacheable: !identityConflict && (verifiedSeason || (validLiveGames > 0 && rows.size > 0)) };
 }

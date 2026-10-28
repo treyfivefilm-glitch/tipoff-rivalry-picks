@@ -105,6 +105,40 @@ describe("unattended NBA worker pure preparation", () => {
     });
   });
 
+  it("rejects a provider game-ID collision against stored teams without marking the day fresh", () => {
+    const prior = {
+      id: "nba:0022600012", start_utc: "2026-11-18T03:00:00Z",
+      away_code: "BOS", home_code: "NYK", away_score: 110, home_score: 107,
+      state: "final", status_detail: "Final",
+    };
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game(3, 109, 107)]), live([game(3, 109, 107)]), [prior],
+    )).toEqual({ rows: [], cacheable: false });
+  });
+
+  it("allows matching stored game IDs with official team aliases", () => {
+    const prior = {
+      id: "nba:0022600012", start_utc: "2026-11-18T03:00:00Z",
+      away_code: "LAL", home_code: "GS", away_score: null, home_score: null,
+      state: "scheduled", status_detail: "7:00 PM ET",
+    };
+    const result = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([game(3, 109, 107)]), [prior],
+    );
+    expect(result.cacheable).toBe(true);
+    expect(result.rows[0]).toMatchObject({
+      id: prior.id, away_code: "LAL", home_code: "GSW", state: "final",
+    });
+  });
+
+  it("wires the same identity guard into signed-in NBA refresh", () => {
+    const source = readFileSync(
+      new URL("../../supabase/functions/sync-games/index.ts", import.meta.url), "utf8",
+    );
+    expect(source).toContain("matchesStoredNbaMatchup(sameId, away, home)");
+    expect(source).toContain("if (identityConflict)");
+  });
+
   it("does not downgrade a verified schedule final when the live scoreboard lags", () => {
     const result = prepareUnattendedNbaDay(
       "2026-11-17", schedule([game(3, 110, 107)]), live([game(1)]), [],

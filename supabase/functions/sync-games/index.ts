@@ -2,7 +2,7 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
-import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
+import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -185,18 +185,29 @@ Deno.serve(async (req) => {
     const byMatch = new Map(existing.map(g=>[
       `${pacificDay(g.start_utc)}:${norm(g.away_code)}:${norm(g.home_code)}`,g
     ]));
+    const storedById = new Map(existing.filter(g => g.id.startsWith("nba:")).map(g => [g.id, g]));
     let updated=0, checked=0;
     for (const day of due) {
       const list = gamesByDay.get(day);
-       const unique = new Map<string,Row>();
+      const unique = new Map<string,Row>();
+      let identityConflict = false;
       for (const game of list ?? []) {
         const away = norm(game.awayTeam?.teamTricode ?? "");
         const home = norm(game.homeTeam?.teamTricode ?? "");
-        const match = byMatch.get(`${day}:${away}:${home}`);
+        const sameId = storedById.get(`nba:${game.gameId}`);
+        if (sameId && !matchesStoredNbaMatchup(sameId, away, home)) {
+          identityConflict = true;
+          continue;
+        }
+        const match = sameId ?? byMatch.get(`${day}:${away}:${home}`);
         const row = rowFrom(game,match);
         if (row) unique.set(row.id,row);
       }
       const rows = [...unique.values()];
+      if (identityConflict) {
+        errors.push(`${day}: NBA game identity conflict`);
+        continue;
+      }
       // A valid empty daily scoreboard cannot establish that a game day had
       // zero games while the full-season schedule provider is unavailable.
       if (!canCacheNbaDay(verifiedSeason, liveGamesByDay.has(day) ? day : undefined, day, rows.length)) {

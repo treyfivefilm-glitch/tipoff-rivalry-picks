@@ -6,6 +6,7 @@ import {
   isUsableNbaGame,
   groupUsableNbaGamesByPacificDay,
   hasVerifiedNbaSeasonGame,
+  matchesStoredNbaMatchup,
   shouldOverlayNbaGame,
 } from "../../supabase/functions/_shared/nba-feed-validation";
 
@@ -197,6 +198,16 @@ describe("NBA individual game integrity", () => {
   });
 });
 
+
+describe("stored NBA game identity", () => {
+  it("accepts team aliases but rejects swapped or unrelated matchups", () => {
+    const stored = { away_code: "LAL", home_code: "GS" };
+    expect(matchesStoredNbaMatchup(stored, " lal ", "GSW")).toBe(true);
+    expect(matchesStoredNbaMatchup(stored, "GSW", "LAL")).toBe(false);
+    expect(matchesStoredNbaMatchup(stored, "BOS", "NYK")).toBe(false);
+    expect(matchesStoredNbaMatchup({ away_code: "", home_code: "GS" }, "LAL", "GSW")).toBe(false);
+  });
+});
 
 describe("NBA live scores across the UTC/Pacific date boundary", () => {
   const game = {
