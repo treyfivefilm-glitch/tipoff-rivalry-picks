@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { CheckCircle2, ChevronRight, Loader2, ShieldAlert, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { isValidInviteCode, normalizeInviteCode } from "@/lib/invites";
+import { ensureGuestSession } from "@/lib/guest-session-guard";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/join/$code")({
@@ -48,8 +49,9 @@ function JoinPage() {
     try {
       if (newGuest) {
         if (!guestEnabled) throw new Error("Guest sign-in isn't enabled. Sign in instead.");
-        const { error: signInError } = await supabase.auth.signInAnonymously();
-        if (signInError) throw signInError;
+        // A second tab may have signed in since the invitation first loaded.
+        // Reuse that identity rather than orphaning its rooms and wagers.
+        await ensureGuestSession(supabase.auth);
         setSignedIn(true);
       }
       const displayName = name.trim() || "Player 2";
