@@ -124,6 +124,15 @@ export function isUsableNbaGame(value: unknown): boolean {
     teamsValid;
 }
 
+/** A broken provider row with a parseable tipoff makes its Pacific day
+ * unsafe to certify as fresh. Invalid rows with no usable tipoff cannot be
+ * attributed to a specific day; never infer one from scoreboard.gameDate.
+ */
+export function malformedNbaGamePacificDay(value: unknown): string | null {
+  if (isUsableNbaGame(value) || !record(value)) return null;
+  return safeNbaPacificDay(value["gameDateTimeUTC"] ?? value["gameTimeUTC"]);
+}
+
 /** A structurally valid season envelope is not proof of a healthy schedule
  * when all rows are malformed, legacy 1900 placeholders or outside the
  * configured season. Only verified in-season games can establish an empty day.
