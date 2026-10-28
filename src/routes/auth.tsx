@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { describeAuthFailure, RESET_REQUEST_NOTICE, type AuthFeedback } from "@/lib/auth-feedback";
+import { hasGuestSession, GUEST_SESSION_WARNING } from "@/lib/guest-session-guard";
 
 export const Route = createFileRoute("/auth")({
   validateSearch: (s: Record<string, unknown>) => ({ redirect: typeof s["redirect"] === "string" && s["redirect"].startsWith("/") && !s["redirect"].startsWith("//") ? s["redirect"] : undefined }),
@@ -26,13 +27,22 @@ function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<AuthFeedback | null>(null);
   const [notice, setNotice] = useState("");
+  const [guestProtected, setGuestProtected] = useState(false);
   const done = () => nav({ href: redirect ?? "/rooms" });
 
   async function submit(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (busy) return;
-    setBusy(true); setFeedback(null); setNotice("");
+    setBusy(true); setFeedback(null); setNotice(""); setGuestProtected(false);
     try {
+      // A different login could replace this browser's guest session and hide its wagers.
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (hasGuestSession(session)) {
+        setGuestProtected(true);
+        setFeedback({ message: "Keep your current guest account", nextStep: GUEST_SESSION_WARNING, canReset: false });
+        return;
+      }
       if (mode === "in") {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pw });
         if (error) throw error;
@@ -68,6 +78,9 @@ function AuthPage() {
     if (busy || !guestEnabled) return;
     setBusy(true);
     try {
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (hasGuestSession(session)) { done(); return; }
       const { error } = await supabase.auth.signInAnonymously();
       if (error) throw error;
       done();
@@ -114,6 +127,7 @@ function AuthPage() {
           <p className="font-semibold">{feedback.message}</p>
           <p className="text-muted-foreground">{feedback.nextStep}</p>
           {feedback.canReset && <button type="button" className="font-semibold text-primary underline" disabled={busy} onClick={forgot}>Request password reset</button>}
+          {guestProtected && <a href="/rooms" className="inline-block font-semibold text-primary underline">Return to my rooms</a>}
         </div>
       )}
       {notice && <p role="status" className="rounded-xl border border-border bg-muted/50 p-3 text-sm">{notice}</p>}
@@ -129,7 +143,7 @@ function AuthPage() {
       )}
       {googleEnabled && <Button variant="glass" size="xl" onClick={google} disabled={busy}>Continue with Google</Button>}
       <div className="flex justify-between text-sm">
-        <button type="button" className="text-primary" disabled={busy} onClick={() => { setMode(mode === "in" ? "up" : "in"); setFeedback(null); setNotice(""); }}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>
+        <button type="button" className="text-primary" disabled={busy} onClick={() => { setMode(mode === "in" ? "up" : "in"); setFeedback(null); setNotice(""); setGuestProtected(false); }}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>
         <button type="button" className="text-muted-foreground" disabled={busy} onClick={forgot}>Forgot password</button>
       </div>
     </div>
