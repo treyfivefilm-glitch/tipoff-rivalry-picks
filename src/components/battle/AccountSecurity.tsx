@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, KeyRound, ShieldAlert, Link2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { verifyAccountMutation } from "@/lib/password-reset-guard";
 
 /** Makes account recovery and the temporary nature of guest sessions visible.
  * Supabase keeps the SAME user ID (and hence room/picks) when an anonymous
@@ -9,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
  */
 export function AccountSecurity() {
   const [guest, setGuest] = useState<boolean | null>(null);
+  const [accountId, setAccountId] = useState<string | null>(null);
   const [currentEmail, setCurrentEmail] = useState<string | null>(null);
   const [emailVerified, setEmailVerified] = useState(false);
   const [email, setEmail] = useState("");
@@ -21,8 +23,10 @@ export function AccountSecurity() {
   useEffect(() => {
     let active = true;
     const refresh = async () => {
-      const { data } = await supabase.auth.getUser();
+      const { data, error } = await supabase.auth.getUser();
       if (!active) return;
+      if (error) { setGuest(null); setAccountId(null); return; }
+      setAccountId(data.user?.id ?? null);
       setGuest(data.user?.is_anonymous ?? null);
       setCurrentEmail(data.user?.email ?? null);
       setEmailVerified(Boolean(data.user?.email_confirmed_at));
@@ -37,6 +41,7 @@ export function AccountSecurity() {
     if (!googleEnabled || busy) return;
     setBusy(true);
     try {
+      await verifyAccountMutation(supabase.auth, accountId, "link-google");
       // Link the identity to THIS account so all picks and rooms retain the
       // same user ID. Requires Google OAuth + manual linking in Supabase Auth.
       const { error } = await supabase.auth.linkIdentity({
@@ -56,7 +61,9 @@ export function AccountSecurity() {
       const { data, error } = await supabase.auth.getUser();
       if (error) throw error;
       const user = data.user;
-      setGuest(user?.is_anonymous ?? null);
+      if (!user) throw new Error("No active account. Sign in before changing recovery settings.");
+      setAccountId(user.id);
+      setGuest(user.is_anonymous ?? null);
       setCurrentEmail(user?.email ?? null);
       setEmailVerified(Boolean(user?.email_confirmed_at));
       setLinkedGoogle(Boolean(user?.identities?.some(x => x.provider === "google")));
@@ -70,6 +77,7 @@ export function AccountSecurity() {
     if (!email.trim()) return;
     setBusy(true);
     try {
+      await verifyAccountMutation(supabase.auth, accountId, "attach-email");
       const { error } = await supabase.auth.updateUser({ email: email.trim() }, {
         emailRedirectTo: window.location.origin + "/rooms",
       });
@@ -85,6 +93,7 @@ export function AccountSecurity() {
     if (password.length < 8) { toast.error("Use a password of at least 8 characters."); return; }
     setBusy(true);
     try {
+      await verifyAccountMutation(supabase.auth, accountId, "set-password");
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
       setPassword("");
