@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GUEST_SESSION_WARNING, ensureGuestSession, hasAccountSession, hasGuestSession, verifiedInviteSession } from "./guest-session-guard";
+import { GUEST_SESSION_WARNING, assertSameInviteAccount, ensureGuestSession, hasAccountSession, hasGuestSession, verifiedInviteAccountId } from "./guest-session-guard";
 
 describe("guest account protection on email sign-in", () => {
   it("blocks switching away from an existing guest session", () => {
@@ -50,24 +50,35 @@ describe("guest account protection on email sign-in", () => {
     })).rejects.toThrow("Guest registration unavailable");
   });
   it("recognizes a verified invitation account without creating a guest", async () => {
-    await expect(verifiedInviteSession({
+    await expect(verifiedInviteAccountId({
       getUser: async () => ({ data: { user: { id: "existing-player" } }, error: null }),
-    })).resolves.toBe(true);
+    })).resolves.toBe("existing-player");
   });
   it("allows guest entry only after a successful signed-out account check", async () => {
-    await expect(verifiedInviteSession({
+    await expect(verifiedInviteAccountId({
       getUser: async () => ({ data: { user: null }, error: null }),
-    })).resolves.toBe(false);
+    })).resolves.toBeNull();
   });
   it("fails closed when the invitation account check returns an auth error", async () => {
-    await expect(verifiedInviteSession({
+    await expect(verifiedInviteAccountId({
       getUser: async () => ({ data: { user: null }, error: new Error("Auth service unavailable") }),
     })).rejects.toThrow("Auth service unavailable");
   });
   it("fails closed when the invitation account check throws", async () => {
-    await expect(verifiedInviteSession({
+    await expect(verifiedInviteAccountId({
       getUser: async () => { throw new Error("Network offline"); },
     })).rejects.toThrow("Network offline");
+  });
+  it("refuses to join a room under an account that replaced the verified player", () => {
+    expect(() => assertSameInviteAccount("player-one", "player-one")).not.toThrow();
+    expect(() => assertSameInviteAccount("player-one", "player-two")).toThrow("account changed");
+    expect(() => assertSameInviteAccount("player-one", null)).toThrow("account changed");
+    expect(() => assertSameInviteAccount(null, "player-two")).toThrow("account changed");
+  });
+  it("treats malformed account responses as signed out rather than joining as an unknown ID", async () => {
+    await expect(verifiedInviteAccountId({
+      getUser: async () => ({ data: { user: { id: "" } }, error: null }),
+    })).resolves.toBeNull();
   });
   it("explains how to preserve rooms and wagers", () => {
     expect(GUEST_SESSION_WARNING).toContain("rooms and wagers");
