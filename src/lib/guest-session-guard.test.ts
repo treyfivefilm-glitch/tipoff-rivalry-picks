@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GUEST_SESSION_WARNING, ensureGuestSession, hasAccountSession, hasGuestSession } from "./guest-session-guard";
+import { GUEST_SESSION_WARNING, ensureGuestSession, hasAccountSession, hasGuestSession, verifiedInviteSession } from "./guest-session-guard";
 
 describe("guest account protection on email sign-in", () => {
   it("blocks switching away from an existing guest session", () => {
@@ -48,6 +48,26 @@ describe("guest account protection on email sign-in", () => {
       getSession: async () => ({ data: { session: null }, error: null }),
       signInAnonymously: async () => ({ error: new Error("Guest registration unavailable") }),
     })).rejects.toThrow("Guest registration unavailable");
+  });
+  it("recognizes a verified invitation account without creating a guest", async () => {
+    await expect(verifiedInviteSession({
+      getUser: async () => ({ data: { user: { id: "existing-player" } }, error: null }),
+    })).resolves.toBe(true);
+  });
+  it("allows guest entry only after a successful signed-out account check", async () => {
+    await expect(verifiedInviteSession({
+      getUser: async () => ({ data: { user: null }, error: null }),
+    })).resolves.toBe(false);
+  });
+  it("fails closed when the invitation account check returns an auth error", async () => {
+    await expect(verifiedInviteSession({
+      getUser: async () => ({ data: { user: null }, error: new Error("Auth service unavailable") }),
+    })).rejects.toThrow("Auth service unavailable");
+  });
+  it("fails closed when the invitation account check throws", async () => {
+    await expect(verifiedInviteSession({
+      getUser: async () => { throw new Error("Network offline"); },
+    })).rejects.toThrow("Network offline");
   });
   it("explains how to preserve rooms and wagers", () => {
     expect(GUEST_SESSION_WARNING).toContain("rooms and wagers");
