@@ -147,6 +147,18 @@ export function prepareUnattendedNbaDay(
     for (const game of live.games) include(game, true);
   }
 
+  // The season and live feeds can disagree about an official game ID even
+  // while showing the same teams and tipoff day. Accepting both IDs would
+  // create duplicate games and potentially separate existing picks/wagers
+  // from the result users see. Fail the whole day closed until feeds agree.
+  const officialMatchupIds = new Map<string, string>();
+  for (const game of games.values()) {
+    const matchup = [norm(game.awayTeam.teamTricode), norm(game.homeTeam.teamTricode)].join(":");
+    const previousId = officialMatchupIds.get(matchup);
+    if (previousId && previousId !== game.gameId) identityConflict = true;
+    else officialMatchupIds.set(matchup, game.gameId);
+  }
+
   const matchupKey = (g: ExistingNbaGame) =>
     [safeNbaPacificDay(g.start_utc), norm(g.away_code), norm(g.home_code)].join(":");
   // Historical ESPN IDs may carry picks and wagers. The fenced SQL RPC
