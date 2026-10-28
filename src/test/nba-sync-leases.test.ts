@@ -202,7 +202,10 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
         has_function_privilege('service_role','public.try_claim_nba_sync(date,uuid,integer)','EXECUTE') AS service,
         has_function_privilege('anon','public.commit_nba_sync_day(date,uuid,jsonb)','EXECUTE') AS anon_commit,
         has_function_privilege('authenticated','public.commit_nba_sync_day(date,uuid,jsonb)','EXECUTE') AS user_commit,
-        has_function_privilege('service_role','public.commit_nba_sync_day(date,uuid,jsonb)','EXECUTE') AS service_commit
+        has_function_privilege('service_role','public.commit_nba_sync_day(date,uuid,jsonb)','EXECUTE') AS service_commit,
+        has_function_privilege('anon','public.nba_canonical_team_code(text)','EXECUTE') AS anon_canonical,
+        has_function_privilege('authenticated','public.nba_canonical_team_code(text)','EXECUTE') AS user_canonical,
+        has_function_privilege('service_role','public.nba_canonical_team_code(text)','EXECUTE') AS service_canonical
     `;
     expect(grants?.['anonymous']).toBe(false);
     expect(grants?.['authenticated']).toBe(false);
@@ -211,5 +214,8 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(grants?.['anon_commit']).toBe(false);
     expect(grants?.['user_commit']).toBe(false);
     expect(grants?.['service_commit']).toBe(true);
+    expect(grants?.['anon_canonical']).toBe(false);
+    expect(grants?.['user_canonical']).toBe(false);
+    expect(grants?.['service_canonical']).toBe(true);
   });
 });
