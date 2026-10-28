@@ -240,8 +240,15 @@ describe("NBA live overlay state ordering", () => {
     expect(shouldOverlayNbaGame(snapshot(3), snapshot(2))).toBe(false);
     expect(shouldOverlayNbaGame(snapshot(2), snapshot(1))).toBe(false);
   });
-  it("still allows an explicit cancellation or postponement", () => {
+  it("still allows an explicit cancellation or postponement before a verified final", () => {
     expect(shouldOverlayNbaGame(snapshot(2), snapshot(1, "Postponed"))).toBe(true);
     expect(shouldOverlayNbaGame(snapshot(2), snapshot(1, "Canceled"))).toBe(true);
+    expect(shouldOverlayNbaGame(snapshot(3, "Postponed"), snapshot(3, "Final"))).toBe(true);
+    expect(shouldOverlayNbaGame(snapshot(3, "Canceled"), snapshot(3, "Postponed"))).toBe(true);
+  });
+  it("never replaces a verified final with a contradictory unplayed snapshot", () => {
+    expect(shouldOverlayNbaGame(snapshot(3, "Final"), snapshot(3, "Canceled"))).toBe(false);
+    expect(shouldOverlayNbaGame(snapshot(3, "Final"), snapshot(1, "Postponed"))).toBe(false);
+    expect(shouldOverlayNbaGame(snapshot(3, "Final"), snapshot(3, "Final"))).toBe(true);
   });
 });

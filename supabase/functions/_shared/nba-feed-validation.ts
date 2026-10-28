@@ -156,8 +156,16 @@ export function shouldOverlayNbaGame(
   incoming: { gameStatus?: number; gameStatusText?: string },
 ): boolean {
   if (!previous) return true;
-  const detail = (incoming.gameStatusText ?? "").toLowerCase();
-  if (detail.includes("postpon") || detail.includes("cancel")) return true;
+  const unplayed = (text: string | undefined) => {
+    const detail = (text ?? "").toLowerCase();
+    return detail.includes("postpon") || detail.includes("cancel");
+  };
+  if (unplayed(incoming.gameStatusText)) {
+    // A stale cancellation must not erase a verified final before the
+    // game reaches the database. An unplayed status may still replace
+    // scheduled/live games or another postponed/canceled snapshot.
+    return previous.gameStatus !== 3 || unplayed(previous.gameStatusText);
+  }
   // Callers validate status values before overlay; optional typing accommodates
   // the raw provider payload's shape without weakening runtime validation.
   return (incoming.gameStatus ?? 1) >= (previous.gameStatus ?? 1);

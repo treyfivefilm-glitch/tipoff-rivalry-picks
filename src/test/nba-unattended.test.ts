@@ -85,6 +85,19 @@ describe("unattended NBA worker pure preparation", () => {
     });
   });
 
+  it("preserves a verified schedule final against contradictory live cancellation", () => {
+    for (const detail of ["Canceled", "Postponed"]) {
+      const canceled = { ...game(3), gameStatusText: detail };
+      const result = prepareUnattendedNbaDay(
+        "2026-11-17", schedule([game(3, 110, 107)]), live([canceled]), [],
+      );
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]).toMatchObject({
+        state: "final", away_score: 110, home_score: 107, status_detail: "Final",
+      });
+    }
+  });
+
   it("does not rewind an in-progress schedule game to scheduled from a stale scoreboard", () => {
     const result = prepareUnattendedNbaDay(
       "2026-11-17", schedule([game(2, 80, 75)]), live([game(1)]), [],
