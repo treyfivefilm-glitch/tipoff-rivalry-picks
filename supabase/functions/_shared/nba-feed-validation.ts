@@ -46,9 +46,6 @@ export function canCacheNbaDay(
     (liveDay === requestedDay && validGameRows > 0);
 }
 
-/** A malformed game inside an otherwise valid NBA feed must not crash the
- * entire refresh or replace a healthy schedule entry with a broken live row.
- */
 /** Normalize provider aliases before comparing matchup identities.
  * A scoreboard row with the same game ID but different teams is not a
  * trustworthy update, even if its status and scores look valid.
@@ -62,6 +59,9 @@ export function normalizeNbaTeamCode(value: unknown): string {
   return aliases[code] ?? code;
 }
 
+/** A malformed game inside an otherwise valid NBA feed must not crash the
+ * entire refresh or replace a healthy schedule entry with a broken live row.
+ */
 export function isUsableNbaGame(value: unknown): boolean {
   if (!record(value)) return false;
   const tipoff = value["gameDateTimeUTC"] ?? value["gameTimeUTC"];
