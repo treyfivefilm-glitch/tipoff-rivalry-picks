@@ -115,6 +115,51 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(game).toMatchObject({ state: "final", away_score: 103, home_score: 100 });
   });
 
+  it("rejects a stored game-ID matchup collision without advancing freshness", async () => {
+    expect(await claim(owner)).toBe(true);
+    expect(await commit(owner)).toBe(1);
+    const [before] = await db`SELECT synced_at, game_count FROM public.sync_state WHERE day=${day}`;
+
+    const otherGame = {
+      ...sampleGame, id: "nba:0022600016",
+      away_code: "BOS", away_name: "Boston Celtics",
+      home_code: "NYK", home_name: "New York Knicks",
+    };
+    const collision = {
+      ...sampleGame,
+      away_code: "BOS", away_name: "Boston Celtics",
+      home_code: "NYK", home_name: "New York Knicks",
+      away_score: 120, home_score: 98,
+    };
+    await db`SAVEPOINT matchup_collision`;
+    await expect(commit(owner, [otherGame, collision]))
+      .rejects.toThrow(/NBA game ID matchup collision/);
+    await db`ROLLBACK TO SAVEPOINT matchup_collision`;
+
+    expect(await db`SELECT id FROM public.games WHERE id=${otherGame.id}`).toHaveLength(0);
+    const [original] = await db`SELECT away_code, home_code, state, away_score, home_score
+      FROM public.games WHERE id=${sampleGame.id}`;
+    expect(original).toMatchObject({
+      away_code: "LAL", home_code: "GSW", state: "final",
+      away_score: 103, home_score: 100,
+    });
+    const [after] = await db`SELECT synced_at, game_count FROM public.sync_state WHERE day=${day}`;
+    expect(after).toEqual(before);
+  });
+
+  it("accepts canonical team aliases for an existing NBA game ID", async () => {
+    expect(await claim(owner)).toBe(true);
+    expect(await commit(owner, [{ ...sampleGame, home_code: "GS" }])).toBe(1);
+    expect(await commit(owner, [{
+      ...sampleGame, away_score: 110, home_score: 107,
+    }])).toBe(1);
+    const [stored] = await db`SELECT away_code, home_code, away_score, home_score
+      FROM public.games WHERE id=${sampleGame.id}`;
+    expect(stored).toMatchObject({
+      away_code: "LAL", home_code: "GSW", away_score: 110, home_score: 107,
+    });
+  });
+
   it("rejects stale owners without publishing any games or freshness", async () => {
     expect(await claim(owner)).toBe(true);
     expect(await claim(contender)).toBe(false);
