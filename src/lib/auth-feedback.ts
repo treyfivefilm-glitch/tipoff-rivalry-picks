@@ -2,7 +2,8 @@ export type AuthOperation = "sign-in" | "sign-up" | "reset";
 export type AuthFeedback = { message: string; nextStep: string; canReset: boolean };
 
 function errorField(error: unknown, field: "code" | "status"): unknown {
-  return error && typeof error === "object" && field in error ? error[field] : undefined;
+  if (!error || typeof error !== "object") return undefined;
+  return (error as Record<string, unknown>)[field];
 }
 
 /** Explain account recovery without disclosing whether an email address is registered. */
