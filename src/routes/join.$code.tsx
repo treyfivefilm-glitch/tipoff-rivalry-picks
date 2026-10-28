@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { CheckCircle2, ChevronRight, Loader2, ShieldAlert, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { isValidInviteCode, normalizeInviteCode } from "@/lib/invites";
-import { ensureGuestSession } from "@/lib/guest-session-guard";
+import { ensureGuestSession, verifiedInviteSession } from "@/lib/guest-session-guard";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/join/$code")({
@@ -30,17 +30,22 @@ function JoinPage() {
   const valid = isValidInviteCode(code);
   const nav = useNavigate();
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [sessionRetry, setSessionRetry] = useState(0);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    void supabase.auth.getUser()
-      .then(({ data }) => { if (active) setSignedIn(Boolean(data.user)); })
-      .catch(() => { if (active) { setSignedIn(false); setError("We couldn't verify your session. Check your connection and try again."); } });
+    setSignedIn(null);
+    setError(null);
+    void verifiedInviteSession(supabase.auth)
+      .then(isSignedIn => { if (active) setSignedIn(isSignedIn); })
+      .catch(() => {
+        if (active) setError("We couldn't verify your account. Check your connection and retry before joining.");
+      });
     return () => { active = false; };
-  }, []);
+  }, [sessionRetry]);
 
   async function acceptInvite(newGuest = false) {
     if (!valid || busy) return;
@@ -53,6 +58,11 @@ function JoinPage() {
         // Reuse that identity rather than orphaning its rooms and wagers.
         await ensureGuestSession(supabase.auth);
         setSignedIn(true);
+      }
+      // The invitation may have been open while a session expired in another tab.
+      // Never submit a join under an unverified or missing identity.
+      if (!await verifiedInviteSession(supabase.auth)) {
+        throw new Error("Your session expired. Sign in again before joining this battle.");
       }
       const displayName = name.trim() || "Player 2";
       const { data, error: joinError } = await supabase.rpc("join_room", {
@@ -90,10 +100,16 @@ function JoinPage() {
           <p className="mt-1 font-display text-3xl tracking-[.18em] text-foreground">{code}</p>
         </div>
         {!valid && <p role="alert" className="text-sm text-loss">This invite link is invalid. Ask your friend to share a fresh battle link.</p>}
-        {valid && signedIn === null && (
+        {valid && signedIn === null && !error && (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Checking your account…
           </p>
+        )}
+        {valid && signedIn === null && error && (
+          <Button type="button" variant="outline" className="min-h-12 w-full"
+            onClick={() => setSessionRetry(previous => previous + 1)}>
+            Retry account check
+          </Button>
         )}
         {valid && signedIn !== null && (
           <div className="space-y-3">
