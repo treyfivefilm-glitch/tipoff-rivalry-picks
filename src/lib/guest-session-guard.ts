@@ -26,13 +26,23 @@ export async function ensureGuestSession(auth: {
 
 export const GUEST_SESSION_WARNING = "Signing in or creating another account here could disconnect this browser from your guest rooms and wagers. Return to your rooms and use Profile to attach a permanent account before switching identities.";
 
-/** A failed server-side account check is not evidence that a visitor is signed out.
- * Invitation pages must fail closed instead of offering a new guest identity.
+/** A failed account check is not evidence that a visitor is signed out.
+ * Keep the verified user ID so an invitation opened in another tab cannot
+ * silently join a room under a different player after an account switch.
  */
-export async function verifiedInviteSession(auth: {
-  getUser: () => Promise<{ data: { user: unknown | null }; error: Error | null }>;
-}): Promise<boolean> {
+export async function verifiedInviteAccountId(auth: {
+  getUser: () => Promise<{ data: { user: { id: string } | null }; error: Error | null }>;
+}): Promise<string | null> {
   const { data, error } = await auth.getUser();
   if (error) throw error;
-  return Boolean(data.user);
+  return data.user?.id || null;
+}
+
+/** Never accept an invitation as a different player from the one shown when
+ * the page was checked. Guests created in the current flow are checked afresh.
+ */
+export function assertSameInviteAccount(expectedId: string | null, currentId: string | null): void {
+  if (!expectedId || !currentId || expectedId !== currentId) {
+    throw new Error("Your account changed while this invitation was open. Retry account check before joining.");
+  }
 }
