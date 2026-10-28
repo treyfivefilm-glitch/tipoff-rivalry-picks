@@ -2,6 +2,28 @@
 -- Fences a day's game writes and sync_state update in ONE transaction.
 -- SELECT FOR UPDATE holds the lease row locked until commit, so a competing
 -- worker cannot reclaim the day between checking ownership and saving scores.
+-- Canonicalize historical NBA team aliases before comparing persisted game
+-- identities. The helper is private to the service-role-only sync RPC.
+CREATE OR REPLACE FUNCTION public.nba_canonical_team_code(p_code text)
+RETURNS text
+LANGUAGE sql IMMUTABLE STRICT
+SET search_path = pg_catalog
+AS $
+  SELECT CASE upper(btrim(p_code))
+    WHEN 'NY' THEN 'NYK'
+    WHEN 'SA' THEN 'SAS'
+    WHEN 'GS' THEN 'GSW'
+    WHEN 'NO' THEN 'NOP'
+    WHEN 'UTAH' THEN 'UTA'
+    WHEN 'WSH' THEN 'WAS'
+    ELSE upper(btrim(p_code))
+  END
+$;
+REVOKE ALL ON FUNCTION public.nba_canonical_team_code(text)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.nba_canonical_team_code(text)
+  TO service_role;
+
 CREATE OR REPLACE FUNCTION public.commit_nba_sync_day(
   p_day date,
   p_owner_token uuid,
@@ -79,10 +101,38 @@ BEGIN
     away_score = EXCLUDED.away_score, home_score = EXCLUDED.home_score,
     state = EXCLUDED.state, status_detail = EXCLUDED.status_detail,
     source = EXCLUDED.source, updated_at = EXCLUDED.updated_at
-  WHERE NOT (
-    (current_game.state = 'final' AND EXCLUDED.state <> 'final') OR
-    (current_game.state = 'live' AND EXCLUDED.state = 'scheduled')
-  );
+  -- The game ID is immutable for a matchup. The WHERE guard is checked
+  -- while holding the conflicting row lock, including if another writer
+  -- inserted that ID after the worker read its initial snapshot.
+  WHERE current_game.source = 'nba'
+    AND public.nba_canonical_team_code(current_game.away_code) =
+        public.nba_canonical_team_code(EXCLUDED.away_code)
+    AND public.nba_canonical_team_code(current_game.home_code) =
+        public.nba_canonical_team_code(EXCLUDED.home_code)
+    AND NOT (
+      (current_game.state = 'final' AND EXCLUDED.state <> 'final') OR
+      (current_game.state = 'live' AND EXCLUDED.state = 'scheduled')
+    );
+
+  -- A conflicting ON CONFLICT update was deliberately skipped. Fail the
+  -- whole transaction rather than certifying the day as freshly synced.
+  -- This post-write check also catches concurrent inserts that appeared
+  -- after the worker's initial read, while allowing harmless state downgrades
+  -- to be skipped and existing GS/GSW-style aliases to match.
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_to_recordset(p_rows) AS incoming(
+      id text, away_code text, home_code text
+    )
+    JOIN public.games AS persisted ON persisted.id = incoming.id
+    WHERE persisted.source IS DISTINCT FROM 'nba'
+       OR public.nba_canonical_team_code(persisted.away_code)
+          IS DISTINCT FROM public.nba_canonical_team_code(incoming.away_code)
+       OR public.nba_canonical_team_code(persisted.home_code)
+          IS DISTINCT FROM public.nba_canonical_team_code(incoming.home_code)
+  ) THEN
+    RAISE EXCEPTION 'NBA game ID matchup collision';
+  END IF;
 
   INSERT INTO public.sync_state(day, synced_at, game_count)
   VALUES (p_day::text, clock_timestamp(), v_count)
