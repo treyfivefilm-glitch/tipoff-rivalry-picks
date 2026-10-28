@@ -234,8 +234,8 @@ describe("malformed same-day NBA provider freshness", () => {
   it("wires both schedule and live invalid-row checks before signed-in freshness writes", () => {
     const source = readFileSync("supabase/functions/sync-games/index.ts", "utf8");
     expect(source).toContain("const malformedDay = malformedNbaGamePacificDay(game);");
-    expect(source.match(/malformedNbaGamePacificDay\\(game\\)/g)).toHaveLength(2);
-    expect(source.match(/feedConflictDays\\.add\\(malformedDay\\)/g)).toHaveLength(2);
+    expect(source.split("malformedNbaGamePacificDay(game)").length - 1).toBe(2);
+    expect(source.split("feedConflictDays.add(malformedDay)").length - 1).toBe(2);
     expect(source.indexOf("for (const game of live?.games ?? [])"))
       .toBeLessThan(source.indexOf("const liveGamesByDay = groupUsableNbaGamesByPacificDay"));
     expect(source.indexOf("if (identityConflict)"))
