@@ -70,6 +70,8 @@ function JoinPage() {
       // Never submit a join under an unverified or missing identity.
       const currentPlayerId = await verifiedInviteAccountId(supabase.auth);
       if (!currentPlayerId) {
+        setSignedIn(null);
+        setVerifiedPlayerId(null);
         throw new Error("Your session expired. Sign in again before joining this battle.");
       }
       if (!newGuest) {
