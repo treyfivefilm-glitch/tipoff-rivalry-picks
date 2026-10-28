@@ -2,7 +2,7 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
-import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
+import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, malformedNbaGamePacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -157,7 +157,11 @@ Deno.serve(async (req) => {
     if (scheduleResult.status === "fulfilled") {
       for (const segment of scheduleResult.value.leagueSchedule?.gameDates ?? []) {
         for (const game of segment.games ?? []) {
-          if (!isUsableNbaGame(game)) continue;
+          if (!isUsableNbaGame(game)) {
+            const malformedDay = malformedNbaGamePacificDay(game);
+            if (malformedDay && due.includes(malformedDay)) feedConflictDays.add(malformedDay);
+            continue;
+          }
           const tipoff = game.gameDateTimeUTC ?? game.gameTimeUTC;
           const day = safeNbaPacificDay(tipoff);
           if (!day || !due.includes(day)) continue;
@@ -175,6 +179,13 @@ Deno.serve(async (req) => {
     const live = liveResult.status === "fulfilled" ? liveResult.value.scoreboard : undefined;
     // scoreboard.gameDate can be the next UTC day while the game is still on
     // the previous Pacific day. Group by each game's actual Pacific tipoff.
+    // Do not certify a day fresh when a same-day live result is malformed,
+    // even if the season schedule contains another valid game elsewhere.
+    // The live scoreboard's UTC date is not a safe substitute for tipoff.
+    for (const game of live?.games ?? []) {
+      const malformedDay = malformedNbaGamePacificDay(game);
+      if (malformedDay && due.includes(malformedDay)) feedConflictDays.add(malformedDay);
+    }
     const liveGamesByDay = groupUsableNbaGamesByPacificDay(live?.games ?? [], due);
     for (const [day, liveGames] of liveGamesByDay) {
       const byId = new Map((gamesByDay.get(day) ?? []).map(game => [game.gameId, game]));
