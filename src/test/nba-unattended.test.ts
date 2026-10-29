@@ -40,11 +40,16 @@ describe("unattended NBA worker pure preparation", () => {
     expect(unattendedNbaHttpStatus(0, ["Season schedule unavailable"])).toBe(503);
   });
 
-  it("wires the verified-season gate into the disabled Edge worker", () => {
+  it("wires the validated feed boundary into the disabled Edge worker", () => {
     const worker = readFileSync(
       new URL("../../supabase/functions/nba-sync-worker/index.ts", import.meta.url), "utf8",
     );
-    expect(worker).toContain("verifiedUnattendedNbaSchedule(scheduleResult.value)");
+    const feeds = readFileSync(
+      new URL("../../supabase/functions/_shared/nba-worker-feeds.ts", import.meta.url), "utf8",
+    );
+    expect(worker).toContain("await loadUnattendedNbaFeeds()");
+    expect(feeds).toContain("verifiedUnattendedNbaSchedule(scheduleResult.value)");
+    expect(feeds).toContain("isValidNbaScoreboard(liveResult.value)");
   });
 
   it("bounds every unattended worker backend request to avoid hanging leases", () => {
