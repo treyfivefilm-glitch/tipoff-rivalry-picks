@@ -4,6 +4,11 @@ import { createNbaWorkerBackend } from "../../supabase/functions/_shared/nba-wor
 
 const endpoint = "https://example.invalid";
 const key = "test-only-service-role-placeholder";
+const validStoredGame = {
+  id: "nba:0022600012", start_utc: "2026-11-18T03:00:00+00:00",
+  away_code: "LAL", home_code: "GSW", away_score: 0, home_score: 101,
+  state: "final", status_detail: "Final", source: "nba",
+};
 const reply = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 const mockFetch = (handler: (url: string, init?: RequestInit) => Promise<Response>): typeof fetch =>
@@ -65,6 +70,37 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
       reply(Array.from({ length: 3000 }, () => ({ id: "nba:0022600012" })))));
     await expect(backend.readExisting(["2026-11-17"]))
       .rejects.toThrow("incomplete games");
+  });
+
+
+  it("rejects malformed rows inside an HTTP 200 history array before reconciliation", async () => {
+    const invalidRows = [
+      null, {}, { ...validStoredGame, id: null },
+      { ...validStoredGame, start_utc: "not-a-timestamp" },
+      { ...validStoredGame, away_code: null },
+      { ...validStoredGame, home_code: "" },
+      { ...validStoredGame, away_score: "101" },
+      { ...validStoredGame, home_score: -1 },
+      { ...validStoredGame, state: null },
+      { ...validStoredGame, status_detail: {} },
+      { ...validStoredGame, source: 42 },
+    ];
+    for (const bad of invalidRows) {
+      const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+        reply([validStoredGame, bad])));
+      await expect(backend.readExisting(["2026-11-17"]))
+        .rejects.toThrow("malformed games");
+    }
+  });
+
+  it("accepts complete history rows with nullable scores, source and status", async () => {
+    const rows = [
+      validStoredGame,
+      { ...validStoredGame, id: "nba:0022600013", source: null,
+        away_score: null, home_score: null, state: "scheduled", status_detail: null },
+    ];
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(rows)));
+    expect(await backend.readExisting(["2026-11-17"])).toEqual(rows);
   });
 
   it("returns a valid empty game list without inventing prior games", async () => {

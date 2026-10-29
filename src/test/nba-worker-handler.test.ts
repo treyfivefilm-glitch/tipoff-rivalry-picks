@@ -22,7 +22,7 @@ const env = {
   SUPABASE_SERVICE_ROLE_KEY: "test-only-service-role-placeholder",
 };
 type Options = {
-  feedsDown?: boolean; historyDown?: boolean; commitDown?: string;
+  feedsDown?: boolean; historyDown?: boolean; historyMalformed?: boolean; commitDown?: string;
   releaseDown?: string; releaseDenied?: string; skipLease?: string;
 };
 function fixture(options: Options = {}) {
@@ -32,7 +32,8 @@ function fixture(options: Options = {}) {
     if (url.includes("todaysScoreboard")) return options.feedsDown ? reply({}, 503) : reply(live);
     if (url.includes("/rest/v1/games?")) {
       calls.push({ operation: "history", day: undefined });
-      return options.historyDown ? reply({ error: "offline" }, 503) : reply([]);
+      return options.historyDown ? reply({ error: "offline" }, 503) :
+        options.historyMalformed ? reply([{}]) : reply([]);
     }
     const operation = url.split("/rpc/")[1];
     if (!operation) throw new Error("Unexpected request URL");
@@ -112,6 +113,18 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
 
   it("reports a shared backend-history outage for every claimed day and releases leases", async () => {
     const { calls, post } = fixture({ historyDown: true });
+    const response = await post();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      checked: 0, updated: 0, failed: 3, errors: ["NBA refresh failed"],
+    });
+    expect(calls.some(call => call.operation === "commit_nba_sync_day")).toBe(false);
+    expect(calls.filter(call => call.operation === "release_nba_sync")).toHaveLength(3);
+  });
+
+
+  it("fails closed on a malformed successful game-history row and releases all leases", async () => {
+    const { calls, post } = fixture({ historyMalformed: true });
     const response = await post();
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({

@@ -15,7 +15,7 @@ type Game = {
 export type ExistingNbaGame = {
   id: string; start_utc: string; away_code: string; home_code: string;
   away_score: number | null; home_score: number | null;
-  state: string; status_detail: string | null; source?: string;
+  state: string; status_detail: string | null; source?: string | null;
 };
 export type FencedNbaRow = {
   id: string; start_utc: string; away_code: string; away_name: string;

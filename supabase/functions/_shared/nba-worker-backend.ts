@@ -5,6 +5,26 @@ import { syncUtcBounds } from "./sync-days.ts";
 
 export const NBA_BACKEND_REQUEST_TIMEOUT_MS = 10000;
 
+/** A successful HTTP 200 array is not sufficient: a malformed stored row
+ * can hide a picked game or bypass identity/score reconciliation. */
+export function isValidExistingNbaGame(value: unknown): value is ExistingNbaGame {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  const validScore = (score: unknown) => score === null ||
+    (typeof score === "number" && Number.isSafeInteger(score) && score >= 0);
+  return typeof row.id === "string" && row.id.trim().length > 0 &&
+    typeof row.start_utc === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(row.start_utc) &&
+    Number.isFinite(Date.parse(row.start_utc)) &&
+    typeof row.away_code === "string" && row.away_code.trim().length > 0 &&
+    typeof row.home_code === "string" && row.home_code.trim().length > 0 &&
+    typeof row.state === "string" && row.state.trim().length > 0 &&
+    (row.status_detail === null || typeof row.status_detail === "string") &&
+    (row.source == null || typeof row.source === "string") &&
+    validScore(row.away_score) && validScore(row.home_score);
+}
+
+
 export function createNbaWorkerBackend(
   endpoint: string,
   key: string,
@@ -56,7 +76,9 @@ export function createNbaWorkerBackend(
     const data: unknown = await response.json();
     // A malformed HTTP 200 must not be mistaken for an empty game history:
     // that could create duplicate official IDs or detach existing wagers.
-    if (!Array.isArray(data)) throw new Error("NBA sync database returned malformed games");
+    if (!Array.isArray(data) || !data.every(isValidExistingNbaGame)) {
+      throw new Error("NBA sync database returned malformed games");
+    }
     // PostgREST can return HTTP 206 when its row cap truncates a valid JSON
     // array. Missing older games could let an official ID be duplicated while
     // its original picks or wagers remain attached to the omitted record.
