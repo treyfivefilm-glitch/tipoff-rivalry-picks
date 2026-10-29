@@ -134,6 +134,25 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(await commit(owner, [{ ...sampleGame, away_score: 105, home_score: 100 }])).toBe(1);
   });
 
+  it("rejects a final winner reversal without changing scores or day freshness", async () => {
+    expect(await claim(owner)).toBe(true);
+    expect(await commit(owner)).toBe(1);
+    const [before] = await db`SELECT synced_at, game_count FROM public.sync_state WHERE day=${day}`;
+    await db`SAVEPOINT reversed_final_winner`;
+    // LAL won 103-100; an upward-only GSW correction to 104 would flip
+    // the winner and could invalidate already-settled wagers.
+    await expect(commit(owner, [{ ...sampleGame, home_score: 104 }]))
+      .rejects.toThrow(/NBA game ID matchup or day collision/);
+    await db`ROLLBACK TO SAVEPOINT reversed_final_winner`;
+    const [stored] = await db`SELECT state, away_score, home_score FROM public.games
+      WHERE id=${sampleGame.id}`;
+    expect(stored).toMatchObject({ state: "final", away_score: 103, home_score: 100 });
+    const [after] = await db`SELECT synced_at, game_count FROM public.sync_state WHERE day=${day}`;
+    expect(after).toEqual(before);
+    // Corrections that preserve the winner remain eligible.
+    expect(await commit(owner, [{ ...sampleGame, away_score: 105, home_score: 101 }])).toBe(1);
+  });
+
   it("rejects a stored game-ID matchup collision without advancing freshness", async () => {
     expect(await claim(owner)).toBe(true);
     expect(await commit(owner)).toBe(1);
