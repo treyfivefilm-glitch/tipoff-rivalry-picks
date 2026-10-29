@@ -112,7 +112,9 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Check Edge entrypoint and imports with Deno
-        run: deno check supabase/functions/nba-sync-worker/index.ts
+      - name: Typecheck isolated Edge handler with Deno
+        # The Supabase JSR entrypoint declaration references an unrelated npm
+        # package; checking the handler itself avoids implicit npm installs.
+        run: deno check supabase/functions/_shared/nba-worker-handler.ts
       - name: Execute isolated worker request flow in Deno
         run: deno test supabase/functions/nba-sync-worker/worker-runtime.test.ts
