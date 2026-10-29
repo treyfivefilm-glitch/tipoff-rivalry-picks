@@ -98,3 +98,40 @@ Deno.test("Edge handler fails closed on both NBA feeds failing and releases leas
   assert.equal(calls.filter(value => value.startsWith("commit_nba_sync_day:")).length, 0);
   assert.equal(calls.filter(value => value.startsWith("release_nba_sync:")).length, 3);
 });
+
+
+Deno.test("Edge handler serves real loopback HTTP with auth enforced before any backend call", async () => {
+  // Exercise Deno.serve + fetch, not just a direct handler invocation.
+  // The handler's NBA feeds and backend remain injected synthetic responses.
+  const { handler, calls } = setup();
+  const server = Deno.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    onListen: () => {},
+  }, handler);
+  try {
+    const url = `http://127.0.0.1:${server.addr.port}/`;
+    const get = await fetch(url);
+    assert.equal(get.status, 405);
+    const unauthorized = await fetch(url, {
+      method: "POST",
+      headers: { authorization: "Bearer incorrect" },
+    });
+    assert.equal(unauthorized.status, 401);
+    assert.deepEqual(calls, []);
+
+    const authorized = await fetch(url, {
+      method: "POST",
+      headers: { authorization: "Bearer " + secret },
+    });
+    assert.equal(authorized.status, 200);
+    assert.deepEqual(await authorized.json(), {
+      checked: 3, updated: 1, skipped: 0, failed: 0, errors: [],
+    });
+    assert.equal(calls.filter(value => value.startsWith("try_claim_nba_sync:")).length, 3);
+    assert.equal(calls.filter(value => value.startsWith("commit_nba_sync_day:")).length, 3);
+    assert.equal(calls.filter(value => value.startsWith("release_nba_sync:")).length, 3);
+  } finally {
+    await server.shutdown();
+  }
+});
