@@ -34,6 +34,20 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
     expect(upsert).toContain("public.nba_canonical_team_code(EXCLUDED.home_code)");
   });
 
+  it("refuses to move an existing game ID across Pacific days while certifying freshness", () => {
+    // A lease for one day cannot authorize rewriting an existing game from
+    // another day. This static guard supplements staging SQL execution.
+    const upsert = migration.split("ON CONFLICT (id) DO UPDATE SET")[1]
+      ?.split("INSERT INTO public.sync_state")[0];
+    expect(upsert).toContain(
+      "(current_game.start_utc AT TIME ZONE 'America/Los_Angeles')::date = p_day",
+    );
+    expect(upsert).toContain(
+      "(persisted.start_utc AT TIME ZONE 'America/Los_Angeles')::date IS DISTINCT FROM p_day",
+    );
+    expect(migration).toContain("NBA game ID matchup or day collision");
+  });
+
   it("rejects canonical same-team aliases before any fenced write", () => {
     // The database must reject malformed RPC callers even if Edge validation
     // was bypassed. GS and GSW identify the same team despite distinct text.
@@ -61,7 +75,7 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
   });
 
   it("raises on a collision before updating day freshness", () => {
-    const guard = migration.indexOf("RAISE EXCEPTION 'NBA game ID matchup collision'");
+    const guard = migration.indexOf("RAISE EXCEPTION 'NBA game ID matchup or day collision'");
     const freshness = migration.indexOf("INSERT INTO public.sync_state");
     expect(guard).toBeGreaterThan(0);
     expect(freshness).toBeGreaterThan(guard);

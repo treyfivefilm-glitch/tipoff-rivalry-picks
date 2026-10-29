@@ -133,7 +133,7 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     };
     await db`SAVEPOINT matchup_collision`;
     await expect(commit(owner, [otherGame, collision]))
-      .rejects.toThrow(/NBA game ID matchup collision/);
+      .rejects.toThrow(/NBA game ID matchup or day collision/);
     await db`ROLLBACK TO SAVEPOINT matchup_collision`;
 
     expect(await db`SELECT id FROM public.games WHERE id=${otherGame.id}`).toHaveLength(0);
@@ -143,6 +143,26 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
       away_code: "LAL", home_code: "GSW", state: "final",
       away_score: 103, home_score: 100,
     });
+    const [after] = await db`SELECT synced_at, game_count FROM public.sync_state WHERE day=${day}`;
+    expect(after).toEqual(before);
+  });
+
+  it("refuses a cross-Pacific-day game ID move without changing the stored game or freshness", async () => {
+    expect(await claim(owner)).toBe(true);
+    expect(await commit(owner)).toBe(1);
+    // Simulate an existing official game previously stored on Nov 16 Pacific.
+    // A Nov 17 lease must not move its identity or certify a stale day.
+    await db`UPDATE public.games SET start_utc='2026-11-17T02:00:00Z'
+      WHERE id=${sampleGame.id}`;
+    const [before] = await db`SELECT synced_at, game_count FROM public.sync_state WHERE day=${day}`;
+    await db`SAVEPOINT cross_day_collision`;
+    await expect(commit(owner, [{ ...sampleGame, away_score: 110, home_score: 107 }]))
+      .rejects.toThrow(/NBA game ID matchup or day collision/);
+    await db`ROLLBACK TO SAVEPOINT cross_day_collision`;
+    const [stored] = await db`SELECT start_utc, away_score, home_score FROM public.games
+      WHERE id=${sampleGame.id}`;
+    expect(new Date(String(stored?.['start_utc'])).toISOString()).toBe("2026-11-17T02:00:00.000Z");
+    expect(stored).toMatchObject({ away_score: 103, home_score: 100 });
     const [after] = await db`SELECT synced_at, game_count FROM public.sync_state WHERE day=${day}`;
     expect(after).toEqual(before);
   });

@@ -114,6 +114,10 @@ BEGIN
   -- while holding the conflicting row lock, including if another writer
   -- inserted that ID after the worker read its initial snapshot.
   WHERE current_game.source = 'nba'
+    -- A lease fences one Pacific day, not every day containing this game ID.
+    -- A cross-day reschedule must be reconciled explicitly rather than moving
+    -- a historical game and certifying two different days as fresh.
+    AND (current_game.start_utc AT TIME ZONE 'America/Los_Angeles')::date = p_day
     AND public.nba_canonical_team_code(current_game.away_code) =
         public.nba_canonical_team_code(EXCLUDED.away_code)
     AND public.nba_canonical_team_code(current_game.home_code) =
@@ -135,12 +139,13 @@ BEGIN
     )
     JOIN public.games AS persisted ON persisted.id = incoming.id
     WHERE persisted.source IS DISTINCT FROM 'nba'
+       OR (persisted.start_utc AT TIME ZONE 'America/Los_Angeles')::date IS DISTINCT FROM p_day
        OR public.nba_canonical_team_code(persisted.away_code)
           IS DISTINCT FROM public.nba_canonical_team_code(incoming.away_code)
        OR public.nba_canonical_team_code(persisted.home_code)
           IS DISTINCT FROM public.nba_canonical_team_code(incoming.home_code)
   ) THEN
-    RAISE EXCEPTION 'NBA game ID matchup collision';
+    RAISE EXCEPTION 'NBA game ID matchup or day collision';
   END IF;
 
   INSERT INTO public.sync_state(day, synced_at, game_count)
