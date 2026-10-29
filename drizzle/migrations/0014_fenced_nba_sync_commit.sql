@@ -128,6 +128,14 @@ BEGIN
     )
     -- The caller's initial read can be stale if another score writer advanced
     -- this game. Never rewind verified live/final points at the SQL boundary.
+    -- A final-score correction must not silently reverse the winning team,
+    -- even when both scores only increase. Settled wagers may rely on it.
+    AND NOT (
+      current_game.state = 'final' AND EXCLUDED.state = 'final'
+      AND current_game.away_score IS NOT NULL AND current_game.home_score IS NOT NULL
+      AND (current_game.away_score > current_game.home_score) <>
+          (EXCLUDED.away_score > EXCLUDED.home_score)
+    )
     AND NOT (
       current_game.state IN ('live','final') AND EXCLUDED.state IN ('live','final')
       AND (
@@ -156,6 +164,14 @@ BEGIN
           IS DISTINCT FROM public.nba_canonical_team_code(incoming.away_code)
        OR public.nba_canonical_team_code(persisted.home_code)
           IS DISTINCT FROM public.nba_canonical_team_code(incoming.home_code)
+       -- A rejected final winner reversal must also fail the whole
+       -- transaction; do not mark the day fresh with an unchanged old result.
+       OR (
+         persisted.state = 'final' AND incoming.state = 'final'
+         AND persisted.away_score IS NOT NULL AND persisted.home_score IS NOT NULL
+         AND (persisted.away_score > persisted.home_score) <>
+             (incoming.away_score > incoming.home_score)
+       )
        -- A skipped stale-score upsert must fail the whole transaction,
        -- including sync_state, rather than falsely certifying freshness.
        OR (
