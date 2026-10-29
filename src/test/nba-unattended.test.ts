@@ -47,6 +47,20 @@ describe("unattended NBA worker pure preparation", () => {
     expect(worker).toContain("verifiedUnattendedNbaSchedule(scheduleResult.value)");
   });
 
+  it("bounds every unattended worker backend request to avoid hanging leases", () => {
+    const worker = readFileSync(
+      new URL("../../supabase/functions/nba-sync-worker/index.ts", import.meta.url), "utf8",
+    );
+    // The provider fetch already has its own timeout. Both backend REST
+    // paths (lease/commit RPC and existing-game read) must be independently
+    // bounded so a stalled request cannot pin the worker indefinitely.
+    expect(worker).toContain("const BACKEND_REQUEST_TIMEOUT_MS = 10000;");
+    expect(worker.match(/signal: AbortSignal\.timeout\(BACKEND_REQUEST_TIMEOUT_MS\)/g))
+      .toHaveLength(2);
+    expect(worker).toContain("finally {");
+    expect(worker).toContain('await rpc<boolean>("release_nba_sync"');
+  });
+
   it("selects Pacific yesterday/today/tomorrow within the season", () => {
     expect(unattendedNbaDays(new Date("2026-10-20T02:00:00Z"))).toEqual(["2026-10-20"]);
     expect(unattendedNbaDays(new Date("2026-11-18T05:00:00Z"))).toEqual([
