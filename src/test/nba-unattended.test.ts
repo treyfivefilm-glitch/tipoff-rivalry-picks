@@ -297,6 +297,28 @@ describe("unattended NBA worker pure preparation", () => {
     });
   });
 
+  it("does not certify a first final when official feeds disagree on the winner", () => {
+    const scheduledFinal = game(3, 103, 100);
+    const oppositeWinner = game(3, 103, 104);
+    const result = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([scheduledFinal]), live([oppositeWinner]), [],
+    );
+    expect(result.cacheable).toBe(false);
+    expect(result.rows).toMatchObject([
+      { id: "nba:0022600012", state: "final", away_score: 103, home_score: 100 },
+    ]);
+  });
+
+  it("allows official final-score corrections that preserve the winning team", () => {
+    const result = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game(3, 103, 100)]), live([game(3, 105, 101)]), [],
+    );
+    expect(result.cacheable).toBe(true);
+    expect(result.rows).toMatchObject([
+      { id: "nba:0022600012", state: "final", away_score: 105, home_score: 101 },
+    ]);
+  });
+
   it("preserves a verified schedule final against contradictory live cancellation", () => {
     for (const detail of ["Canceled", "Postponed"]) {
       const canceled = { ...game(3), gameStatusText: detail };

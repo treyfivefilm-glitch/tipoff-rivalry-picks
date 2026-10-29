@@ -148,6 +148,21 @@ export function prepareUnattendedNbaDay(
       identityConflict = true;
       return;
     }
+    // A first-time final can arrive with contradictory winners in the
+    // season and live feeds, before any saved final exists to protect.
+    // Do not choose one feed arbitrarily and certify wager settlement.
+    if (previous && gameState(previous) === "final" && gameState(game) === "final") {
+      const beforeAway = score(previous.awayTeam.score);
+      const beforeHome = score(previous.homeTeam.score);
+      const afterAway = score(game.awayTeam.score);
+      const afterHome = score(game.homeTeam.score);
+      if (beforeAway !== null && beforeHome !== null &&
+          afterAway !== null && afterHome !== null &&
+          (beforeAway > beforeHome) !== (afterAway > afterHome)) {
+        identityConflict = true;
+        return;
+      }
+    }
     if (shouldOverlayNbaGame(previous, game)) games.set(game.gameId, game);
     if (live) validLiveGames++;
   };
