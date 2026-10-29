@@ -123,7 +123,7 @@ export function prepareUnattendedNbaDay(
         if (malformedDay === day) {
           malformedDayGame = true;
         } else if (malformedDay === null && typeof raw.gameId === "string" &&
-                   /^\\d{10}$/.test(raw.gameId)) {
+                   /^\d{10}$/.test(raw.gameId)) {
           unattributedMalformedIds.add(raw.gameId);
         }
       }
