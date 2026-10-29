@@ -343,6 +343,24 @@ describe("unattended NBA worker pure preparation", () => {
     )).toMatchObject({ cacheable: true, rows: [{ state: "live", away_score: 92, home_score: 86 }] });
   });
 
+  it("rejects a final-score correction that reverses an already verified winner", () => {
+    const prior = {
+      id: "nba:0022600012", source: "nba", start_utc: "2026-11-18T03:00:00Z",
+      away_code: "LAL", home_code: "GSW", away_score: 103, home_score: 100,
+      state: "final", status_detail: "Final",
+    };
+    // No score goes backwards, but the reported winner flips from LAL to GSW.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([game(3, 103, 104)]), [prior],
+    )).toEqual({ rows: [], cacheable: false });
+    // Increasing points without changing the winner remains a valid correction.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([game(3, 105, 101)]), [prior],
+    )).toMatchObject({
+      cacheable: true, rows: [{ state: "final", away_score: 105, home_score: 101 }],
+    });
+  });
+
   it("preserves a verified final when a stale schedule arrives", () => {
     const prior = {
       id: "nba:0022600012", start_utc: "2026-11-18T03:00:00Z",
