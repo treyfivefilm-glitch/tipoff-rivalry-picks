@@ -238,10 +238,11 @@ export function prepareUnattendedNbaDay(
   // A truncated season feed may omit an official NBA game already stored
   // for this Pacific day. Do not claim that day freshly verified while its
   // existing game (and possibly its picks/wagers) is unaccounted for.
-  // Historical ESPN rows are handled by the same-matchup collision guard
-  // above; unrelated legacy records must not block legitimate NBA updates.
+  // Historical ESPN and seeded NBA IDs are handled by the same-matchup
+  // collision guard above; unrelated legacy records must not block legitimate
+  // official NBA updates.
   const omittedStoredNbaGame = existing.some(stored =>
-    stored.id.startsWith("nba:") &&
+    officialId(stored.id) &&
     safeNbaPacificDay(stored.start_utc) === day &&
     !rows.has(stored.id) &&
     (stored.source == null ||
