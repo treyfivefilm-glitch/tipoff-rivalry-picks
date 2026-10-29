@@ -117,4 +117,4 @@ jobs:
         # package; checking the handler itself avoids implicit npm installs.
         run: deno check supabase/functions/_shared/nba-worker-handler.ts
       - name: Execute isolated worker request flow in Deno
-        run: deno test supabase/functions/nba-sync-worker/worker-runtime.test.ts
+        # Only permit loopback traffic for the local Deno HTTP server smoke test.\n        # All upstream NBA/backend calls remain synthetic injected mocks.\n        run: deno test --allow-net=127.0.0.1 supabase/functions/nba-sync-worker/worker-runtime.test.ts
