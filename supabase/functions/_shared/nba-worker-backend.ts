@@ -23,7 +23,23 @@ export function createNbaWorkerBackend(
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error("NBA sync RPC " + name + " failed (HTTP " + response.status + ")");
-    return await response.json() as T;
+    // A successful HTTP status is not proof that PostgREST returned the
+    // expected scalar. In particular, a truthy object must never be treated
+    // as an acquired lease, and a malformed commit count must not be reported
+    // as a successful score refresh.
+    const result: unknown = await response.json();
+    if (name === "try_claim_nba_sync" || name === "release_nba_sync") {
+      if (typeof result !== "boolean") {
+        throw new Error("NBA sync RPC " + name + " returned malformed result");
+      }
+    } else if (name === "commit_nba_sync_day") {
+      if (typeof result !== "number" || !Number.isSafeInteger(result) || result < 0 || result > 40) {
+        throw new Error("NBA sync RPC " + name + " returned malformed result");
+      }
+    } else {
+      throw new Error("Unexpected NBA sync RPC");
+    }
+    return result as T;
   };
 
   const readExisting = async (days: string[]): Promise<ExistingNbaGame[]> => {
