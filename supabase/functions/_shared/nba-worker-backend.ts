@@ -18,6 +18,11 @@ export function createNbaWorkerBackend(
   };
 
   const rpc = async <T,>(name: string, args: unknown): Promise<T> => {
+    // Never send privileged credentials to an arbitrary RPC path.
+    if (name !== "try_claim_nba_sync" && name !== "release_nba_sync" &&
+        name !== "commit_nba_sync_day") {
+      throw new Error("Unexpected NBA sync RPC");
+    }
     const response = await request(endpoint + "/rest/v1/rpc/" + name, {
       method: "POST", headers: admin, body: JSON.stringify(args),
       signal: AbortSignal.timeout(timeoutMs),
@@ -36,8 +41,6 @@ export function createNbaWorkerBackend(
       if (typeof result !== "number" || !Number.isSafeInteger(result) || result < 0 || result > 40) {
         throw new Error("NBA sync RPC " + name + " returned malformed result");
       }
-    } else {
-      throw new Error("Unexpected NBA sync RPC");
     }
     return result as T;
   };
