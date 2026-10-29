@@ -66,6 +66,7 @@ jobs:
     env:
       CI: 'true'
       RUN_STAGING_DB_TESTS: 'true'
+      RUN_DISPOSABLE_NBA_CONCURRENCY_TESTS: 'true'
       STAGING_TEST_DB_URL: 'postgres://postgres:postgres@127.0.0.1:5432/tipoff_test'
       PGPASSWORD: postgres
       SUPABASE_SERVICE_ROLE_KEY: ''
@@ -88,3 +89,5 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -f drizzle/migrations/0014_fenced_nba_sync_commit.sql
       - name: NBA worker SQL/RPC integration tests (disposable DB only)
         run: bunx vitest run src/test/nba-sync-leases.test.ts
+      - name: Concurrent NBA worker sessions (disposable DB only)
+        run: bunx vitest run src/test/nba-sync-concurrency.test.ts
