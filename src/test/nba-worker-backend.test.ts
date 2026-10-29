@@ -11,7 +11,7 @@ const mockFetch = (handler: (url: string, init?: RequestInit) => Promise<Respons
 
 describe("unattended NBA backend HTTP boundary (no network or database)", () => {
   it("uses bounded POST RPC requests with protected server credentials", async () => {
-    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
     const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async (url, init) => {
       calls.push({ url, init });
       return reply(true);
