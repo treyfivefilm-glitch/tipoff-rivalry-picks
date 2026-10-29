@@ -1,6 +1,16 @@
 // Real Deno-runtime smoke checks for the disabled NBA Edge handler.
 // Uses only synthetic fixtures and local mock HTTP: no network, DB or secrets.
-import assert from "node:assert/strict";
+// Local assertions avoid Node/npm dependencies in the isolated Deno job.
+const assert = {
+  equal(actual: unknown, expected: unknown) {
+    if (actual !== expected) throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+  },
+  deepEqual(actual: unknown, expected: unknown) {
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+    }
+  },
+};
 import { createUnattendedNbaHandler } from "../_shared/nba-worker-handler.ts";
 
 const secret = "test-only-deno-runtime-secret-at-least-32-characters";
