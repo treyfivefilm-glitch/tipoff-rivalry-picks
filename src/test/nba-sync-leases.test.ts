@@ -115,6 +115,25 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(game).toMatchObject({ state: "final", away_score: 103, home_score: 100 });
   });
 
+  it("rejects stale live-score updates without advancing day freshness", async () => {
+    expect(await claim(owner)).toBe(true);
+    const inProgress = { ...sampleGame, state: "live", status_detail: "Q4",
+      away_score: 95, home_score: 90 };
+    expect(await commit(owner, [inProgress])).toBe(1);
+    const [before] = await db`SELECT synced_at, game_count FROM public.sync_state WHERE day=${day}`;
+    await db`SAVEPOINT stale_live_score`;
+    await expect(commit(owner, [{ ...inProgress, away_score: 94, home_score: 91 }]))
+      .rejects.toThrow(/NBA game ID matchup or day collision/);
+    await db`ROLLBACK TO SAVEPOINT stale_live_score`;
+    const [stored] = await db`SELECT state, away_score, home_score FROM public.games
+      WHERE id=${sampleGame.id}`;
+    expect(stored).toMatchObject({ state: "live", away_score: 95, home_score: 90 });
+    const [after] = await db`SELECT synced_at, game_count FROM public.sync_state WHERE day=${day}`;
+    expect(after).toEqual(before);
+    // A newer final with increasing scores must still be accepted.
+    expect(await commit(owner, [{ ...sampleGame, away_score: 105, home_score: 100 }])).toBe(1);
+  });
+
   it("rejects a stored game-ID matchup collision without advancing freshness", async () => {
     expect(await claim(owner)).toBe(true);
     expect(await commit(owner)).toBe(1);
