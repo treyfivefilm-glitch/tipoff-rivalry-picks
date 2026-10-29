@@ -23,7 +23,7 @@ const env = {
 };
 type Options = {
   feedsDown?: boolean; historyDown?: boolean; commitDown?: string;
-  releaseDown?: string; skipLease?: string;
+  releaseDown?: string; releaseDenied?: string; skipLease?: string;
 };
 function fixture(options: Options = {}) {
   const calls: Array<{ operation: string; day: string | undefined; rows?: number | undefined }> = [];
@@ -42,7 +42,8 @@ function fixture(options: Options = {}) {
     calls.push({ operation, day: body.p_day, rows: body.p_rows?.length });
     if (operation === "try_claim_nba_sync") return reply(body.p_day !== options.skipLease);
     if (operation === "release_nba_sync") {
-      return body.p_day === options.releaseDown ? reply({}, 503) : reply(true);
+      if (body.p_day === options.releaseDown) return reply({}, 503);
+      return reply(body.p_day !== options.releaseDenied);
     }
     if (operation === "commit_nba_sync_day") {
       return body.p_day === options.commitDown ? reply({}, 503) : reply(body.p_rows?.length ?? 0);
@@ -133,6 +134,17 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
 
   it("surfaces lease cleanup failures instead of reporting a fully healthy run", async () => {
     const { calls, post } = fixture({ releaseDown: "2026-11-17" });
+    const response = await post();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      checked: 3, updated: 1, failed: 1,
+      errors: ["2026-11-17: lease release failed"],
+    });
+    expect(calls.filter(call => call.operation === "release_nba_sync")).toHaveLength(3);
+  });
+
+  it("reports a false lease-release reply as degraded instead of silently succeeding", async () => {
+    const { calls, post } = fixture({ releaseDenied: "2026-11-17" });
     const response = await post();
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({

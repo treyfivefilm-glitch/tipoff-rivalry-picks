@@ -100,7 +100,10 @@ export function createUnattendedNbaHandler(deps: NbaWorkerDependencies) {
     } finally {
       for (const day of claimed) {
         try {
-          await rpc<boolean>("release_nba_sync", { p_day: day, p_owner_token: token });
+          const released = await rpc<boolean>("release_nba_sync", { p_day: day, p_owner_token: token });
+          // A false reply means this token no longer owns the lease. Do not
+          // report a healthy run when cleanup could not be confirmed.
+          if (!released) throw new Error("NBA sync lease was not released");
         } catch {
           // Expiry makes a failed release recoverable, but monitoring must
           // still see a degraded run instead of a misleading HTTP 200.
