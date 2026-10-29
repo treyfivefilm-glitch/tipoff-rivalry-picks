@@ -200,9 +200,18 @@ export function prepareUnattendedNbaDay(
     (g.id.startsWith("nba:") && !officialId(g.id) &&
       (g.source == null || isStoredNbaMatchCandidate({ id: g.id, source: g.source }))),
   ).map(matchupKey));
-  const byMatch = new Map(existing.filter(g =>
-    officialId(g.id) && (g.source == null || isStoredNbaMatchCandidate({ id: g.id, source: g.source })),
-  ).map(g => [matchupKey(g), g]));
+  // A matchup may have several historical official IDs. Never silently
+  // attach a new provider ID to an older game's picks or wagers, regardless
+  // of which stored row happens to be returned first by the database.
+  const byMatch = new Map<string, ExistingNbaGame[]>();
+  for (const stored of existing) {
+    if (!officialId(stored.id) ||
+        (stored.source != null && !isStoredNbaMatchCandidate({ id: stored.id, source: stored.source }))) continue;
+    const key = matchupKey(stored);
+    const matches = byMatch.get(key) ?? [];
+    matches.push(stored);
+    byMatch.set(key, matches);
+  }
   const byId = new Map(existing.filter(g => officialId(g.id)).map(g => [g.id, g]));
   const rows = new Map<string, FencedNbaRow>();
   for (const game of games.values()) {
@@ -222,7 +231,15 @@ export function prepareUnattendedNbaDay(
       identityConflict = true;
       continue;
     }
-    const prior = storedById ?? byMatch.get([day, away, home].join(":"));
+    const providerId = "nba:" + game.gameId;
+    const storedMatchups = byMatch.get([day, away, home].join(":")) ?? [];
+    if (storedMatchups.some(stored => stored.id !== providerId)) {
+      // Different official IDs for the same day/matchup are not interchangeable:
+      // preserve the existing identity and fail freshness closed.
+      identityConflict = true;
+      continue;
+    }
+    const prior = storedById ?? storedMatchups[0];
     const incoming = gameState(game);
     const preserve = prior && (
       (prior.state === "final" && incoming !== "final") ||

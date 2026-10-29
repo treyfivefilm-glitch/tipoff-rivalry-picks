@@ -211,6 +211,30 @@ describe("unattended NBA worker pure preparation", () => {
     )).toEqual({ rows: [], cacheable: false });
   });
 
+  it("rejects a different stored official ID for the same NBA matchup", () => {
+    const prior = {
+      id: "nba:0022600099", source: "nba",
+      start_utc: "2026-11-18T03:00:00Z",
+      away_code: "LAL", home_code: "GSW", away_score: 111, home_score: 110,
+      state: "final", status_detail: "Final",
+    };
+    const incoming = game(3, 109, 107);
+    // A matching matchup is not permission to rewrite a distinct official
+    // game ID: it may already own player picks and settled wagers.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([incoming]), live([incoming]), [prior],
+    )).toEqual({ rows: [], cacheable: false });
+
+    // A duplicate persisted ID must also block freshness even when the
+    // correct official ID is present, regardless of database row ordering.
+    const current = { ...prior, id: "nba:0022600012" };
+    for (const stored of [[prior, current], [current, prior]]) {
+      expect(prepareUnattendedNbaDay(
+        "2026-11-17", schedule([incoming]), live([incoming]), stored,
+      )).toEqual({ rows: [], cacheable: false });
+    }
+  });
+
   it("allows matching stored game IDs with official team aliases", () => {
     const prior = {
       id: "nba:0022600012", start_utc: "2026-11-18T03:00:00Z",
