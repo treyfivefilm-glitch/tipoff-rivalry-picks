@@ -103,6 +103,10 @@ export function prepareUnattendedNbaDay(
   let validSeasonGames = 0;
   let identityConflict = false;
   let malformedDayGame = false;
+  // A malformed live row may omit its tipoff entirely. If its official ID
+  // matches a valid game on this day, do not certify the scheduled fallback
+  // as fresh while that game's live result is unusable.
+  const unattributedMalformedIds = new Set<string>();
   // A rescheduled game can briefly have different tipoff dates in the
   // season and live feeds. Never certify either day until they agree:
   // otherwise sequential per-day commits can move the same game ID twice.
@@ -114,9 +118,13 @@ export function prepareUnattendedNbaDay(
       // supplied a broken game for it. Preserve the existing cache instead.
       // Rows without a parseable tipoff cannot safely be assigned to a day.
       if (value !== null && typeof value === "object") {
-        const raw = value as { gameDateTimeUTC?: unknown; gameTimeUTC?: unknown };
-        if (safeNbaPacificDay(raw.gameDateTimeUTC ?? raw.gameTimeUTC) === day) {
+        const raw = value as { gameId?: unknown; gameDateTimeUTC?: unknown; gameTimeUTC?: unknown };
+        const malformedDay = safeNbaPacificDay(raw.gameDateTimeUTC ?? raw.gameTimeUTC);
+        if (malformedDay === day) {
           malformedDayGame = true;
+        } else if (malformedDay === null && typeof raw.gameId === "string" &&
+                   /^\\d{10}$/.test(raw.gameId)) {
+          unattributedMalformedIds.add(raw.gameId);
         }
       }
       return;
@@ -251,8 +259,9 @@ export function prepareUnattendedNbaDay(
   // A well-formed schedule envelope with only malformed game rows is not a
   // verified season. Otherwise it could falsely mark every day as refreshed.
   // A legitimate no-game day remains cacheable when other season games validate.
+  const unattributedCurrentGame = [...unattributedMalformedIds].some(id => games.has(id));
   const verifiedSeason = seasonValid && validSeasonGames > 0;
-  return { rows: [...rows.values()], cacheable: !omittedStoredNbaGame &&
+  return { rows: [...rows.values()], cacheable: !unattributedCurrentGame && !omittedStoredNbaGame &&
     !malformedDayGame && !identityConflict &&
     !conflictingGameDays.has(day) && (verifiedSeason || (validLiveGames > 0 && rows.size > 0)) };
 }

@@ -377,6 +377,23 @@ describe("unattended NBA worker pure preparation", () => {
     });
   });
 
+  it("does not certify a scheduled fallback when a same-ID live row loses its tipoff", () => {
+    const brokenLive = { ...game(3, 109, 107), gameDateTimeUTC: "not-a-date" };
+    const result = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([brokenLive]), [],
+    );
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({ id: "nba:0022600012", state: "scheduled" });
+    expect(result.cacheable).toBe(false);
+
+    // A malformed game with no date and a different ID cannot be assigned
+    // to this Pacific day; it must not poison an unrelated valid matchup.
+    const unrelated = { ...brokenLive, gameId: "0022600099" };
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([unrelated]), [],
+    ).cacheable).toBe(true);
+  });
+
   it("does not mark a day fresh when its own provider rows are malformed", () => {
     const otherDay = {
       ...game(), gameId: "0022600013", gameDateTimeUTC: "2026-11-19T03:00:00Z",
