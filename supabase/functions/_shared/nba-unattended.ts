@@ -254,10 +254,17 @@ export function prepareUnattendedNbaDay(
       (prior.state === "live" && (incoming === "live" || incoming === "final")) ||
       (prior.state === "final" && incoming === "final")
     );
-    if (scoredUpdate && (
+    // A later "final" with only increasing points can still reverse the
+    // winner (for example 103-100 becoming 103-104). That can contradict
+    // already-settled wagers, so require explicit reconciliation instead.
+    const reversedFinalWinner = prior?.state === "final" && incoming === "final" &&
+      prior.away_score !== null && prior.home_score !== null &&
+      incomingAway !== null && incomingHome !== null &&
+      (prior.away_score > prior.home_score) !== (incomingAway > incomingHome);
+    if (reversedFinalWinner || (scoredUpdate && (
       (incomingAway !== null && prior.away_score !== null && incomingAway < prior.away_score) ||
       (incomingHome !== null && prior.home_score !== null && incomingHome < prior.home_score)
-    )) {
+    ))) {
       identityConflict = true;
       continue;
     }
