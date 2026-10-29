@@ -82,6 +82,11 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
       { ...validStoredGame, away_score: "101" },
       { ...validStoredGame, home_score: -1 },
       { ...validStoredGame, state: null },
+      { ...validStoredGame, state: "unknown" },
+      { ...validStoredGame, state: "" },
+      { ...validStoredGame, away_score: null },
+      { ...validStoredGame, home_score: null },
+      { ...validStoredGame, home_score: 0 },
       { ...validStoredGame, status_detail: {} },
       { ...validStoredGame, source: 42 },
     ];
@@ -98,6 +103,17 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
       validStoredGame,
       { ...validStoredGame, id: "nba:0022600013", source: null,
         away_score: null, home_score: null, state: "scheduled", status_detail: null },
+    ];
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(rows)));
+    expect(await backend.readExisting(["2026-11-17"])).toEqual(rows);
+  });
+
+  it("keeps valid cross-sport final ties and unscored NBA postponements readable", async () => {
+    const rows = [
+      { ...validStoredGame, id: "nfl:tie-game", source: "espn",
+        away_score: 17, home_score: 17, state: "final" },
+      { ...validStoredGame, id: "nba:0022600014",
+        away_score: null, home_score: null, state: "postponed" },
     ];
     const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(rows)));
     expect(await backend.readExisting(["2026-11-17"])).toEqual(rows);

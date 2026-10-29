@@ -12,7 +12,22 @@ export function isValidExistingNbaGame(value: unknown): value is ExistingNbaGame
   const row = value as Record<string, unknown>;
   const validScore = (score: unknown) => score === null ||
     (typeof score === "number" && Number.isSafeInteger(score) && score >= 0);
-  return typeof row["id"] === "string" && row["id"].trim().length > 0 &&
+  // History includes other sports, so validate shared states but only apply
+  // NBA-specific final-score rules to official NBA IDs. A corrupt NBA final
+  // must not certify freshness or silently affect existing wager outcomes.
+  const validState = ["scheduled", "live", "final", "postponed", "canceled"].includes(
+    row["state"] as string,
+  );
+  const officialNba = typeof row["id"] === "string" &&
+    /^nba:[0-9]{10}$/.test(row["id"]) &&
+    (row["source"] == null || row["source"] === "nba" ||
+      row["source"] === "nba_official_schedule");
+  const validNbaFinal = !officialNba || row["state"] !== "final" ||
+    (typeof row["away_score"] === "number" &&
+      typeof row["home_score"] === "number" &&
+      row["away_score"] !== row["home_score"]);
+  return validState && validNbaFinal &&
+    typeof row["id"] === "string" && row["id"].trim().length > 0 &&
     typeof row["start_utc"] === "string" &&
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(row["start_utc"]) &&
     Number.isFinite(Date.parse(row["start_utc"])) &&
