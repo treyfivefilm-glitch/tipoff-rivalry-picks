@@ -76,9 +76,7 @@ export function createNbaWorkerBackend(
     const data: unknown = await response.json();
     // A malformed HTTP 200 must not be mistaken for an empty game history:
     // that could create duplicate official IDs or detach existing wagers.
-    if (!Array.isArray(data) || !data.every(isValidExistingNbaGame)) {
-      throw new Error("NBA sync database returned malformed games");
-    }
+    if (!Array.isArray(data)) throw new Error("NBA sync database returned malformed games");
     // PostgREST can return HTTP 206 when its row cap truncates a valid JSON
     // array. Missing older games could let an official ID be duplicated while
     // its original picks or wagers remain attached to the omitted record.
@@ -86,6 +84,9 @@ export function createNbaWorkerBackend(
     // Fail closed rather than certify freshness from incomplete history.
     if (response.status === 206 || data.length >= 3000) {
       throw new Error("NBA sync database returned incomplete games");
+    }
+    if (!data.every(isValidExistingNbaGame)) {
+      throw new Error("NBA sync database returned malformed games");
     }
     return data as ExistingNbaGame[];
   };
