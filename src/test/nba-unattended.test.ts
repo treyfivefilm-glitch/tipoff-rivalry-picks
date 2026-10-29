@@ -457,9 +457,9 @@ describe("unattended NBA worker pure preparation", () => {
     expect(result.rows).toHaveLength(1);
     expect(result.cacheable).toBe(false);
 
-    // Older ESPN rows may also have attached picks and wagers.
+    // The original NBA schedule source is also a protected official record.
     expect(prepareUnattendedNbaDay("2026-11-17", schedule([game()]), null, [
-      { ...stored, id: "espn:401234567", source: "espn" },
+      { ...stored, source: "nba_official_schedule" },
     ]).cacheable).toBe(false);
   });
 
@@ -473,6 +473,11 @@ describe("unattended NBA worker pure preparation", () => {
     const feed = schedule([game()]);
     expect(prepareUnattendedNbaDay("2026-11-17", feed, null, [
       { ...stored, id: "nfl:0022600044", source: "nfl" },
+    ]).cacheable).toBe(true);
+    // Unrelated legacy ESPN games are intentionally not treated as missing
+    // official NBA games; same-matchup ESPN collisions are guarded above.
+    expect(prepareUnattendedNbaDay("2026-11-17", feed, null, [
+      { ...stored, id: "espn:401234567", source: "espn" },
     ]).cacheable).toBe(true);
     expect(prepareUnattendedNbaDay("2026-11-17", feed, null, [
       { ...stored, start_utc: "2026-11-19T03:00:00Z" },

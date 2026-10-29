@@ -211,19 +211,18 @@ export function prepareUnattendedNbaDay(
     };
     rows.set(row.id, row);
   }
-  // A partially truncated but otherwise valid season feed can omit a game
-  // already stored for this Pacific day. Do not claim the day is freshly
-  // verified while leaving that game (and its picks/wagers) unaccounted for.
-  // Ignore unrelated sports and records on adjacent Pacific days.
-  const omittedStoredNbaGame = existing.some(stored => {
-    if (safeNbaPacificDay(stored.start_utc) !== day || rows.has(stored.id)) return false;
-    if (stored.id.startsWith("nba:")) {
-      return stored.source == null ||
-        isStoredNbaMatchCandidate({ id: stored.id, source: stored.source });
-    }
-    return stored.id.startsWith("espn:") &&
-      (stored.source === "espn" || stored.source === "nba");
-  });
+  // A truncated season feed may omit an official NBA game already stored
+  // for this Pacific day. Do not claim that day freshly verified while its
+  // existing game (and possibly its picks/wagers) is unaccounted for.
+  // Historical ESPN rows are handled by the same-matchup collision guard
+  // above; unrelated legacy records must not block legitimate NBA updates.
+  const omittedStoredNbaGame = existing.some(stored =>
+    stored.id.startsWith("nba:") &&
+    safeNbaPacificDay(stored.start_utc) === day &&
+    !rows.has(stored.id) &&
+    (stored.source == null ||
+      isStoredNbaMatchCandidate({ id: stored.id, source: stored.source })),
+  );
   // A well-formed schedule envelope with only malformed game rows is not a
   // verified season. Otherwise it could falsely mark every day as refreshed.
   // A legitimate no-game day remains cacheable when other season games validate.
