@@ -18,11 +18,11 @@ const mockFetch = (handler: (url: string, init?: RequestInit) => Promise<Respons
 
 describe("unattended NBA feed HTTP boundary (no network, credentials or database)", () => {
   it("accepts both verified feeds with independent abort signals", async () => {
-    const calls: Array<{ url: string; signal?: AbortSignal | null; accept?: string }> = [];
+    const calls: Array<{ url: string; signal: AbortSignal | null | undefined; accept: string | undefined }> = [];
     const fetcher = mockFetch(async (url, init) => {
       calls.push({
         url, signal: init?.signal,
-        accept: (init?.headers as Record<string, string> | undefined)?.accept,
+        accept: (init?.headers as Record<string, string> | undefined)?.["accept"],
       });
       return reply(url.includes("scheduleLeague") ? schedule : live);
     });
