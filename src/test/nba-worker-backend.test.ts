@@ -122,4 +122,15 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     await expect(backend.rpc<boolean>("release_nba_sync", {}))
       .rejects.toThrow("release_nba_sync returned malformed result");
   });
+
+  it("rejects unapproved privileged RPC names before making any HTTP request", async () => {
+    let calls = 0;
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => {
+      calls++;
+      return reply(true);
+    }));
+    await expect(backend.rpc<boolean>("unexpected_admin_rpc", {}))
+      .rejects.toThrow("Unexpected NBA sync RPC");
+    expect(calls).toBe(0);
+  });
 });
