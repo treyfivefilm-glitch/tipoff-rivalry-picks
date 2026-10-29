@@ -472,7 +472,7 @@ describe("unattended NBA worker pure preparation", () => {
     };
     const feed = schedule([game()]);
     expect(prepareUnattendedNbaDay("2026-11-17", feed, null, [
-      { ...stored, source: "nfl" },
+      { ...stored, id: "nfl:0022600044", source: "nfl" },
     ]).cacheable).toBe(true);
     expect(prepareUnattendedNbaDay("2026-11-17", feed, null, [
       { ...stored, start_utc: "2026-11-19T03:00:00Z" },
