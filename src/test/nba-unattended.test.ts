@@ -211,6 +211,27 @@ describe("unattended NBA worker pure preparation", () => {
     )).toEqual({ rows: [], cacheable: false });
   });
 
+  it("rejects an official game ID already stored on a different Pacific day", () => {
+    const stored = {
+      id: "nba:0022600012", source: "nba",
+      start_utc: "2026-11-19T03:00:00Z", // Pacific Nov 18, not Nov 17.
+      away_code: "LAL", home_code: "GSW",
+      away_score: null, home_score: null,
+      state: "scheduled", status_detail: null,
+    };
+    // A same-ID/team record is not safe to move across dates; the database
+    // also fences cross-day moves, but preparation should fail before RPC.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([game(3, 109, 107)]), [stored],
+    )).toEqual({ rows: [], cacheable: false });
+
+    // The same official ID on the correct Pacific day remains eligible.
+    const matchingDay = { ...stored, start_utc: "2026-11-18T03:00:00Z" };
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([game(3, 109, 107)]), [matchingDay],
+    )).toMatchObject({ cacheable: true, rows: [{ id: "nba:0022600012", state: "final" }] });
+  });
+
   it("rejects a different stored official ID for the same NBA matchup", () => {
     const prior = {
       id: "nba:0022600099", source: "nba",

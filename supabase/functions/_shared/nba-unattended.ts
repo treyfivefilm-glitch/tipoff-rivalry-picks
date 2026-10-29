@@ -221,7 +221,10 @@ export function prepareUnattendedNbaDay(
     const storedById = byId.get("nba:" + game.gameId);
     if (storedById && (
       (storedById.source != null && !isStoredNbaMatchCandidate({ id: storedById.id, source: storedById.source })) ||
-      !matchesStoredNbaMatchup(storedById, away, home)
+      !matchesStoredNbaMatchup(storedById, away, home) ||
+      // A matching ID/team pair from another Pacific day is still a collision.
+      // Reject before the SQL fence rather than attempt to move a picked game.
+      safeNbaPacificDay(storedById.start_utc) !== day
     )) {
       // Do not certify a partial day when an ID belongs to another source or matchup.
       identityConflict = true;
