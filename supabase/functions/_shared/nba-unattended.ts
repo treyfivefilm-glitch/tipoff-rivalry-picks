@@ -181,13 +181,21 @@ export function prepareUnattendedNbaDay(
   // currently accepts only official nba: IDs, so fail the whole day closed
   // rather than create a duplicate NBA game with detached obligations.
   // Remove this guard only alongside tested, atomic legacy-ID migration support.
+  // Historical ESPN and seeded nba:YYYYMMDD:TEAM:TEAM IDs can already
+  // carry picks or wagers. The fenced commit RPC only accepts nba: + a
+  // ten-digit official game ID, so reusing a legacy ID would fail its entire
+  // commit. Creating a second official ID would detach the old obligations.
+  // Fail the day closed until a separately approved atomic migration exists.
+  const officialId = (id: string) => /^nba:[0-9]{10}$/.test(id);
   const legacyMatchups = new Set(existing.filter(g =>
-    g.id.startsWith("espn:") && (g.source === "espn" || g.source === "nba"),
+    (g.id.startsWith("espn:") && (g.source === "espn" || g.source === "nba")) ||
+    (g.id.startsWith("nba:") && !officialId(g.id) &&
+      (g.source == null || isStoredNbaMatchCandidate({ id: g.id, source: g.source }))),
   ).map(matchupKey));
   const byMatch = new Map(existing.filter(g =>
-    g.id.startsWith("nba:") && (g.source == null || isStoredNbaMatchCandidate({ id: g.id, source: g.source })),
+    officialId(g.id) && (g.source == null || isStoredNbaMatchCandidate({ id: g.id, source: g.source })),
   ).map(g => [matchupKey(g), g]));
-  const byId = new Map(existing.filter(g => g.id.startsWith("nba:")).map(g => [g.id, g]));
+  const byId = new Map(existing.filter(g => officialId(g.id)).map(g => [g.id, g]));
   const rows = new Map<string, FencedNbaRow>();
   for (const game of games.values()) {
     const away = norm(game.awayTeam.teamTricode);
