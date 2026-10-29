@@ -41,3 +41,50 @@ jobs:
         run: bunx vitest run
       - name: Compile only (no deploy or migrations)
         run: bun run build
+
+  # Local disposable Postgres: tests real SQL/RPC behavior without Supabase
+  # credentials, network databases, production migrations, or paid services.
+  nba-db-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tipoff_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tipoff_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: 'true'
+      RUN_STAGING_DB_TESTS: 'true'
+      STAGING_TEST_DB_URL: 'postgres://postgres:postgres@127.0.0.1:5432/tipoff_test'
+      PGPASSWORD: postgres
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      SUPABASE_DB_URL: ''
+      LOVABLE_DB_MIGRATION_URL: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.12'
+      - name: Remove app connection files from the CI checkout only
+        run: rm -f .env .env.*
+      - run: bun install --frozen-lockfile
+      - name: Bootstrap disposable test schema and apply ONLY worker migrations
+        run: |
+          psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -f src/test/fixtures/nba-worker-ci-schema.sql
+          psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -f drizzle/migrations/0013_nba_sync_leases.sql
+          psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -f drizzle/migrations/0014_fenced_nba_sync_commit.sql
+      - name: NBA worker SQL/RPC integration tests (disposable DB only)
+        run: bunx vitest run src/test/nba-sync-leases.test.ts
