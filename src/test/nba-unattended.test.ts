@@ -536,7 +536,11 @@ describe("unattended NBA worker pure preparation", () => {
     const worker = readFileSync(
       new URL("../../supabase/functions/nba-sync-worker/index.ts", import.meta.url), "utf8",
     );
-    expect(worker).toContain("state,status_detail,source");
+    const backend = readFileSync(
+      new URL("../../supabase/functions/_shared/nba-worker-backend.ts", import.meta.url), "utf8",
+    );
+    expect(worker).toContain("createNbaWorkerBackend(endpoint, key)");
+    expect(backend).toContain("state,status_detail,source");
   });
 
   it("skips malformed schedule games without rejecting an otherwise valid season", () => {
