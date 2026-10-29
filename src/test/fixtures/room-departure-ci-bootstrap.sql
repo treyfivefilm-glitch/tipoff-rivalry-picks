@@ -25,3 +25,6 @@ RETURNS uuid LANGUAGE sql STABLE AS $$
 $$;
 GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION auth.uid() TO anon, authenticated, service_role;
+
+-- Supabase creates this publication; local Postgres does not.
+CREATE PUBLICATION supabase_realtime;
