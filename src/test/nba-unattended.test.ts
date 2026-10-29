@@ -312,6 +312,30 @@ describe("unattended NBA worker pure preparation", () => {
     });
   });
 
+  it("rejects stale live/final scores instead of rewinding existing results", () => {
+    const prior = {
+      id: "nba:0022600012", source: "nba", start_utc: "2026-11-18T03:00:00Z",
+      away_code: "LAL", home_code: "GSW", away_score: 90, home_score: 85,
+      state: "live", status_detail: "Q4",
+    };
+    // A live scoreboard can lag behind the database; neither a live nor a
+    // final update may silently reduce a team's verified score.
+    for (const stale of [game(2, 89, 85), game(3, 90, 84)]) {
+      expect(prepareUnattendedNbaDay(
+        "2026-11-17", schedule([game()]), live([stale]), [prior],
+      )).toEqual({ rows: [], cacheable: false });
+    }
+    // Even an existing final should not be silently rewritten downward.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([game(3, 109, 101)]),
+      [{ ...prior, state: "final", away_score: 110, home_score: 100 }],
+    )).toEqual({ rows: [], cacheable: false });
+    // Legitimate increasing live scores still advance normally.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([game(2, 92, 86)]), [prior],
+    )).toMatchObject({ cacheable: true, rows: [{ state: "live", away_score: 92, home_score: 86 }] });
+  });
+
   it("preserves a verified final when a stale schedule arrives", () => {
     const prior = {
       id: "nba:0022600012", start_utc: "2026-11-18T03:00:00Z",
