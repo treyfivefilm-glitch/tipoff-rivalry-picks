@@ -56,12 +56,14 @@ describe("unattended NBA worker pure preparation", () => {
     const worker = readFileSync(
       new URL("../../supabase/functions/nba-sync-worker/index.ts", import.meta.url), "utf8",
     );
-    // The provider fetch already has its own timeout. Both backend REST
-    // paths (lease/commit RPC and existing-game read) must be independently
-    // bounded so a stalled request cannot pin the worker indefinitely.
-    expect(worker).toContain("const BACKEND_REQUEST_TIMEOUT_MS = 10000;");
-    expect(worker.match(/signal: AbortSignal\.timeout\(BACKEND_REQUEST_TIMEOUT_MS\)/g))
-      .toHaveLength(2);
+    const backend = readFileSync(
+      new URL("../../supabase/functions/_shared/nba-worker-backend.ts", import.meta.url), "utf8",
+    );
+    // Feed timeouts are separate. Both backend REST paths must be bounded
+    // so a stalled request cannot hold the leased day indefinitely.
+    expect(worker).toContain("createNbaWorkerBackend(endpoint, key)");
+    expect(backend).toContain("export const NBA_BACKEND_REQUEST_TIMEOUT_MS = 10000;");
+    expect(backend.match(/signal: AbortSignal\\.timeout\\(timeoutMs\\)/g)).toHaveLength(2);
     expect(worker).toContain("finally {");
     expect(worker).toContain('await rpc<boolean>("release_nba_sync"');
   });
