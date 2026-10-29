@@ -88,7 +88,7 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
   };
   async function commit(token: string, rows: unknown[] = [sampleGame]) {
     const [row] = await db`SELECT public.commit_nba_sync_day(
-      ${day}::date, ${token}::uuid, ${JSON.stringify(rows)}::jsonb
+      ${day}::date, ${token}::uuid, ${connection!.json(rows)}::jsonb
     ) AS written`;
     return row?.['written'];
   }
