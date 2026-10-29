@@ -26,7 +26,7 @@ type Options = {
   releaseDown?: string; skipLease?: string;
 };
 function fixture(options: Options = {}) {
-  const calls: Array<{ operation: string; day: string | undefined; rows?: number }> = [];
+  const calls: Array<{ operation: string; day: string | undefined; rows?: number | undefined }> = [];
   const request = mockFetch(async (url, init) => {
     if (url.includes("scheduleLeagueV2")) return options.feedsDown ? reply({}, 503) : reply(schedule);
     if (url.includes("todaysScoreboard")) return options.feedsDown ? reply({}, 503) : reply(live);
