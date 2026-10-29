@@ -66,6 +66,22 @@ export function unattendedNbaHttpStatus(failed: number, errors: readonly string[
   return failed > 0 || errors.length > 0 ? 503 : 200;
 }
 
+/** A season schedule can stay "scheduled" after tipoff when the live feed
+ * is delayed or unavailable. Do not certify that day's cache as fresh until
+ * a verified live/final (or postponed/canceled) state replaces the placeholder.
+ * A short grace window allows normal provider/tipoff latency.
+ */
+export function hasOverdueScheduledNbaGame(rows: readonly FencedNbaRow[], now: Date): boolean {
+  const nowMs = now.getTime();
+  if (!Number.isFinite(nowMs)) return true;
+  const graceMs = 30 * 60 * 1000;
+  return rows.some(row => {
+    if (row.state !== "scheduled") return false;
+    const tipoffMs = Date.parse(row.start_utc);
+    return !Number.isFinite(tipoffMs) || nowMs > tipoffMs + graceMs;
+  });
+}
+
 function gameState(game: Game): string {
   const detail = (game.gameStatusText ?? "").toLowerCase();
   if (detail.includes("postpone")) return "postponed";

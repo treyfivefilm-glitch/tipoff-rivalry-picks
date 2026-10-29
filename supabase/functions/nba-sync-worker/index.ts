@@ -2,7 +2,7 @@
 // Owner must approve activation and application of migrations 0013-0014.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { isValidNbaScoreboard } from "../_shared/nba-feed-validation.ts";
-import { authorizedNbaCron, prepareUnattendedNbaDay, unattendedNbaDays, unattendedNbaHttpStatus, verifiedUnattendedNbaSchedule } from "../_shared/nba-unattended.ts";
+import { authorizedNbaCron, hasOverdueScheduledNbaGame, prepareUnattendedNbaDay, unattendedNbaDays, unattendedNbaHttpStatus, verifiedUnattendedNbaSchedule } from "../_shared/nba-unattended.ts";
 import type { ExistingNbaGame } from "../_shared/nba-unattended.ts";
 import { syncUtcBounds } from "../_shared/sync-days.ts";
 
@@ -88,6 +88,11 @@ Deno.serve(async request => {
             if (!batch.cacheable) {
               failed++;
               errors.push(day + ": no verified NBA feed");
+              continue;
+            }
+            if (hasOverdueScheduledNbaGame(batch.rows, new Date())) {
+              failed++;
+              errors.push(day + ": scheduled NBA game overdue without verified live/final status");
               continue;
             }
             const count = await rpc<number>("commit_nba_sync_day", {
