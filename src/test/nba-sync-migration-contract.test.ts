@@ -48,6 +48,20 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
     expect(migration).toContain("NBA game ID matchup or day collision");
   });
 
+  it("fences stale live/final score regressions before certifying freshness", () => {
+    // The initial worker read can be stale relative to a concurrent score
+    // writer. Both the locked upsert and post-write collision check must
+    // prevent a score rewind from marking the day fresh.
+    const upsert = migration.split("ON CONFLICT (id) DO UPDATE SET")[1]
+      ?.split("INSERT INTO public.sync_state")[0];
+    expect(upsert).toContain("EXCLUDED.away_score < current_game.away_score");
+    expect(upsert).toContain("EXCLUDED.home_score < current_game.home_score");
+    expect(upsert).toContain("incoming.away_score < persisted.away_score");
+    expect(upsert).toContain("incoming.home_score < persisted.home_score");
+    expect(upsert).toContain("incoming.away_score IS NULL");
+    expect(upsert).toContain("incoming.home_score IS NULL");
+  });
+
   it("rejects canonical same-team aliases before any fenced write", () => {
     // The database must reject malformed RPC callers even if Edge validation
     // was bypassed. GS and GSW identify the same team despite distinct text.
