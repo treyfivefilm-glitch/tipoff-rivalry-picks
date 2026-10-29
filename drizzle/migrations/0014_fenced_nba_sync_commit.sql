@@ -125,6 +125,17 @@ BEGIN
     AND NOT (
       (current_game.state = 'final' AND EXCLUDED.state <> 'final') OR
       (current_game.state = 'live' AND EXCLUDED.state = 'scheduled')
+    )
+    -- The caller's initial read can be stale if another score writer advanced
+    -- this game. Never rewind verified live/final points at the SQL boundary.
+    AND NOT (
+      current_game.state IN ('live','final') AND EXCLUDED.state IN ('live','final')
+      AND (
+        (current_game.away_score IS NOT NULL AND
+          (EXCLUDED.away_score IS NULL OR EXCLUDED.away_score < current_game.away_score))
+        OR (current_game.home_score IS NOT NULL AND
+          (EXCLUDED.home_score IS NULL OR EXCLUDED.home_score < current_game.home_score))
+      )
     );
 
   -- A conflicting ON CONFLICT update was deliberately skipped. Fail the
@@ -135,7 +146,8 @@ BEGIN
   IF EXISTS (
     SELECT 1
     FROM jsonb_to_recordset(p_rows) AS incoming(
-      id text, away_code text, home_code text
+      id text, away_code text, home_code text,
+      away_score integer, home_score integer, state text
     )
     JOIN public.games AS persisted ON persisted.id = incoming.id
     WHERE persisted.source IS DISTINCT FROM 'nba'
@@ -144,6 +156,17 @@ BEGIN
           IS DISTINCT FROM public.nba_canonical_team_code(incoming.away_code)
        OR public.nba_canonical_team_code(persisted.home_code)
           IS DISTINCT FROM public.nba_canonical_team_code(incoming.home_code)
+       -- A skipped stale-score upsert must fail the whole transaction,
+       -- including sync_state, rather than falsely certifying freshness.
+       OR (
+         persisted.state IN ('live','final') AND incoming.state IN ('live','final')
+         AND (
+           (persisted.away_score IS NOT NULL AND
+             (incoming.away_score IS NULL OR incoming.away_score < persisted.away_score))
+           OR (persisted.home_score IS NOT NULL AND
+             (incoming.home_score IS NULL OR incoming.home_score < persisted.home_score))
+         )
+       )
   ) THEN
     RAISE EXCEPTION 'NBA game ID matchup or day collision';
   END IF;
