@@ -444,4 +444,42 @@ describe("unattended NBA worker pure preparation", () => {
       rows: [], cacheable: true,
     });
   });
+  it("does not certify a day fresh when a valid but truncated feed omits a stored NBA result", () => {
+    const stored = {
+      id: "nba:0022600044", source: "nba",
+      start_utc: "2026-11-18T03:00:00Z",
+      away_code: "BOS", home_code: "NYK",
+      away_score: 110, home_score: 103, state: "final", status_detail: "Final",
+    };
+    // The feed still contains another valid game, so it passes the basic
+    // full-season envelope check; this missing result must block freshness.
+    const result = prepareUnattendedNbaDay("2026-11-17", schedule([game()]), null, [stored]);
+    expect(result.rows).toHaveLength(1);
+    expect(result.cacheable).toBe(false);
+
+    // Older ESPN rows may also have attached picks and wagers.
+    expect(prepareUnattendedNbaDay("2026-11-17", schedule([game()]), null, [
+      { ...stored, id: "espn:401234567", source: "espn" },
+    ]).cacheable).toBe(false);
+  });
+
+  it("ignores unrelated sports, other days, and already matched stored NBA games", () => {
+    const stored = {
+      id: "nba:0022600044", source: "nba",
+      start_utc: "2026-11-18T03:00:00Z",
+      away_code: "BOS", home_code: "NYK",
+      away_score: 110, home_score: 103, state: "final", status_detail: "Final",
+    };
+    const feed = schedule([game()]);
+    expect(prepareUnattendedNbaDay("2026-11-17", feed, null, [
+      { ...stored, source: "nfl" },
+    ]).cacheable).toBe(true);
+    expect(prepareUnattendedNbaDay("2026-11-17", feed, null, [
+      { ...stored, start_utc: "2026-11-19T03:00:00Z" },
+    ]).cacheable).toBe(true);
+    expect(prepareUnattendedNbaDay("2026-11-17", feed, null, [
+      { ...stored, id: "nba:0022600012", away_code: "LAL", home_code: "GSW" },
+    ]).cacheable).toBe(true);
+  });
+
 });
