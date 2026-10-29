@@ -3,12 +3,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { loadUnattendedNbaFeeds } from "../_shared/nba-worker-feeds.ts";
 import { authorizedNbaCron, hasOverdueScheduledNbaGame, prepareUnattendedNbaDay, unattendedNbaDays, unattendedNbaHttpStatus } from "../_shared/nba-unattended.ts";
-import type { ExistingNbaGame } from "../_shared/nba-unattended.ts";
-import { syncUtcBounds } from "../_shared/sync-days.ts";
+import { createNbaWorkerBackend } from "../_shared/nba-worker-backend.ts";
 
-// Bound backend calls so a stalled REST request cannot pin a leased day until
-// the Edge runtime kills the worker. Expired leases remain safely reclaimable.
-const BACKEND_REQUEST_TIMEOUT_MS = 10000;
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), {
   status, headers: { "content-type": "application/json", "cache-control": "no-store" },
 });
@@ -24,29 +20,7 @@ Deno.serve(async request => {
   const endpoint = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!endpoint || !key) return json({ error: "Backend configuration missing" }, 503);
-  const admin = {
-    apikey: key,
-    ...(key.startsWith("sb_secret_") ? {} : { Authorization: "Bearer " + key }),
-    "content-type": "application/json",
-  };
-  const rpc = async <T,>(name: string, args: unknown): Promise<T> => {
-    const response = await fetch(endpoint + "/rest/v1/rpc/" + name, {
-      method: "POST", headers: admin, body: JSON.stringify(args),
-      signal: AbortSignal.timeout(BACKEND_REQUEST_TIMEOUT_MS),
-    });
-    if (!response.ok) throw new Error("NBA sync RPC " + name + " failed (HTTP " + response.status + ")");
-    return await response.json() as T;
-  };
-  const readExisting = async (days: string[]): Promise<ExistingNbaGame[]> => {
-    const bounds = syncUtcBounds(days);
-    const path = "/rest/v1/games?select=id,start_utc,away_code,home_code,away_score,home_score,state,status_detail,source" +
-      "&start_utc=gte." + bounds.lower + "T00:00:00Z&start_utc=lt." + bounds.upper + "T00:00:00Z&limit=3000";
-    const response = await fetch(endpoint + path, {
-      headers: admin, signal: AbortSignal.timeout(BACKEND_REQUEST_TIMEOUT_MS),
-    });
-    if (!response.ok) throw new Error("NBA sync database read failed (HTTP " + response.status + ")");
-    return await response.json() as ExistingNbaGame[];
-  };
+  const { rpc, readExisting } = createNbaWorkerBackend(endpoint, key);
 
   const days = unattendedNbaDays(new Date());
   const token = crypto.randomUUID();
