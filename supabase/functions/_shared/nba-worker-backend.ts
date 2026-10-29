@@ -12,16 +12,16 @@ export function isValidExistingNbaGame(value: unknown): value is ExistingNbaGame
   const row = value as Record<string, unknown>;
   const validScore = (score: unknown) => score === null ||
     (typeof score === "number" && Number.isSafeInteger(score) && score >= 0);
-  return typeof row.id === "string" && row.id.trim().length > 0 &&
-    typeof row.start_utc === "string" &&
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(row.start_utc) &&
-    Number.isFinite(Date.parse(row.start_utc)) &&
-    typeof row.away_code === "string" && row.away_code.trim().length > 0 &&
-    typeof row.home_code === "string" && row.home_code.trim().length > 0 &&
-    typeof row.state === "string" && row.state.trim().length > 0 &&
-    (row.status_detail === null || typeof row.status_detail === "string") &&
-    (row.source == null || typeof row.source === "string") &&
-    validScore(row.away_score) && validScore(row.home_score);
+  return typeof row["id"] === "string" && row["id"].trim().length > 0 &&
+    typeof row["start_utc"] === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(row["start_utc"]) &&
+    Number.isFinite(Date.parse(row["start_utc"])) &&
+    typeof row["away_code"] === "string" && row["away_code"].trim().length > 0 &&
+    typeof row["home_code"] === "string" && row["home_code"].trim().length > 0 &&
+    typeof row["state"] === "string" && row["state"].trim().length > 0 &&
+    (row["status_detail"] === null || typeof row["status_detail"] === "string") &&
+    (row["source"] == null || typeof row["source"] === "string") &&
+    validScore(row["away_score"]) && validScore(row["home_score"]);
 }
 
 
