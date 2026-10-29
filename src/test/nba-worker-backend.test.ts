@@ -96,4 +96,30 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     await expect(backend.rpc("commit_nba_sync_day", {})).rejects.toThrow();
     await expect(backend.readExisting(["2026-11-17"])).rejects.toThrow();
   });
+
+  it("rejects malformed HTTP 200 lease replies rather than claiming ownership", async () => {
+    for (const value of [null, {}, "true", 1]) {
+      const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(value)));
+      await expect(backend.rpc<boolean>("try_claim_nba_sync", { p_day: "2026-11-17" }))
+        .rejects.toThrow("try_claim_nba_sync returned malformed result");
+    }
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(false)));
+    expect(await backend.rpc<boolean>("try_claim_nba_sync", {})).toBe(false);
+  });
+
+  it("rejects malformed HTTP 200 commit counts rather than reporting success", async () => {
+    for (const value of [null, {}, "2", -1, 0.5, 41, Number.MAX_SAFE_INTEGER + 1]) {
+      const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(value)));
+      await expect(backend.rpc<number>("commit_nba_sync_day", { p_rows: [] }))
+        .rejects.toThrow("commit_nba_sync_day returned malformed result");
+    }
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(0)));
+    expect(await backend.rpc<number>("commit_nba_sync_day", { p_rows: [] })).toBe(0);
+  });
+
+  it("rejects malformed lease release replies without exposing backend credentials", async () => {
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply({ released: true })));
+    await expect(backend.rpc<boolean>("release_nba_sync", {}))
+      .rejects.toThrow("release_nba_sync returned malformed result");
+  });
 });
