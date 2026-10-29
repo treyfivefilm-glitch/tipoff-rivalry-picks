@@ -53,6 +53,20 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     expect(calls[0]).toContain("limit=3000");
   });
 
+  it("rejects HTTP 206 partial game history even when its JSON array is valid", async () => {
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+      reply([{ id: "nba:0022600012" }], 206)));
+    await expect(backend.readExisting(["2026-11-17"]))
+      .rejects.toThrow("incomplete games");
+  });
+
+  it("fails closed on an ambiguous full 3000-row history page", async () => {
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+      reply(Array.from({ length: 3000 }, () => ({ id: "nba:0022600012" })))));
+    await expect(backend.readExisting(["2026-11-17"]))
+      .rejects.toThrow("incomplete games");
+  });
+
   it("returns a valid empty game list without inventing prior games", async () => {
     const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply([])));
     expect(await backend.readExisting(["2026-11-17"])).toEqual([]);
