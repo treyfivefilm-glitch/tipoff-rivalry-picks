@@ -63,7 +63,7 @@ describe("unattended NBA worker pure preparation", () => {
     // so a stalled request cannot hold the leased day indefinitely.
     expect(worker).toContain("createNbaWorkerBackend(endpoint, key)");
     expect(backend).toContain("export const NBA_BACKEND_REQUEST_TIMEOUT_MS = 10000;");
-    expect(backend.match(/signal: AbortSignal\\.timeout\\(timeoutMs\\)/g)).toHaveLength(2);
+    expect(backend.match(/signal: AbortSignal\.timeout\(timeoutMs\)/g)).toHaveLength(2);
     expect(worker).toContain("finally {");
     expect(worker).toContain('await rpc<boolean>("release_nba_sync"');
   });
