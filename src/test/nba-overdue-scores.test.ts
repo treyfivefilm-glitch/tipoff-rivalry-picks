@@ -41,9 +41,9 @@ describe("unattended NBA overdue-score freshness", () => {
   });
 
   it("checks overdue status before the worker commits and advances freshness", () => {
-    const worker = readFileSync(new URL("../../supabase/functions/nba-sync-worker/index.ts", import.meta.url), "utf8");
-    expect(worker).toContain("hasOverdueScheduledNbaGame(batch.rows, new Date())");
-    expect(worker.indexOf("hasOverdueScheduledNbaGame(batch.rows, new Date())"))
+    const worker = readFileSync(new URL("../../supabase/functions/_shared/nba-worker-handler.ts", import.meta.url), "utf8");
+    expect(worker).toContain("hasOverdueScheduledNbaGame(batch.rows, now())");
+    expect(worker.indexOf("hasOverdueScheduledNbaGame(batch.rows, now())"))
       .toBeLessThan(worker.indexOf('rpc<number>("commit_nba_sync_day"'));
   });
 });

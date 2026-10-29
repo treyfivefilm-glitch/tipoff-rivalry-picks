@@ -42,26 +42,26 @@ describe("unattended NBA worker pure preparation", () => {
 
   it("wires the validated feed boundary into the disabled Edge worker", () => {
     const worker = readFileSync(
-      new URL("../../supabase/functions/nba-sync-worker/index.ts", import.meta.url), "utf8",
+      new URL("../../supabase/functions/_shared/nba-worker-handler.ts", import.meta.url), "utf8",
     );
     const feeds = readFileSync(
       new URL("../../supabase/functions/_shared/nba-worker-feeds.ts", import.meta.url), "utf8",
     );
-    expect(worker).toContain("await loadUnattendedNbaFeeds()");
+    expect(worker).toContain("await loadUnattendedNbaFeeds(requestHttp)");
     expect(feeds).toContain("verifiedUnattendedNbaSchedule(scheduleResult.value)");
     expect(feeds).toContain("isValidNbaScoreboard(liveResult.value)");
   });
 
   it("bounds every unattended worker backend request to avoid hanging leases", () => {
     const worker = readFileSync(
-      new URL("../../supabase/functions/nba-sync-worker/index.ts", import.meta.url), "utf8",
+      new URL("../../supabase/functions/_shared/nba-worker-handler.ts", import.meta.url), "utf8",
     );
     const backend = readFileSync(
       new URL("../../supabase/functions/_shared/nba-worker-backend.ts", import.meta.url), "utf8",
     );
     // Feed timeouts are separate. Both backend REST paths must be bounded
     // so a stalled request cannot hold the leased day indefinitely.
-    expect(worker).toContain("createNbaWorkerBackend(endpoint, key)");
+    expect(worker).toContain("createNbaWorkerBackend(endpoint, key, requestHttp)");
     expect(backend).toContain("export const NBA_BACKEND_REQUEST_TIMEOUT_MS = 10000;");
     expect(backend.match(/signal: AbortSignal\.timeout\(timeoutMs\)/g)).toHaveLength(2);
     expect(worker).toContain("finally {");
@@ -534,12 +534,12 @@ describe("unattended NBA worker pure preparation", () => {
 
   it("reads source metadata before preparing unattended score writes", () => {
     const worker = readFileSync(
-      new URL("../../supabase/functions/nba-sync-worker/index.ts", import.meta.url), "utf8",
+      new URL("../../supabase/functions/_shared/nba-worker-handler.ts", import.meta.url), "utf8",
     );
     const backend = readFileSync(
       new URL("../../supabase/functions/_shared/nba-worker-backend.ts", import.meta.url), "utf8",
     );
-    expect(worker).toContain("createNbaWorkerBackend(endpoint, key)");
+    expect(worker).toContain("createNbaWorkerBackend(endpoint, key, requestHttp)");
     expect(backend).toContain("state,status_detail,source");
   });
 
