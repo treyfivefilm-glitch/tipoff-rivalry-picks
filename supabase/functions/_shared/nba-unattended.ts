@@ -244,6 +244,23 @@ export function prepareUnattendedNbaDay(
     }
     const prior = storedById ?? storedMatchups[0];
     const incoming = gameState(game);
+    // Live basketball scores should not move backwards. A lagging scoreboard
+    // (or contradictory final correction) must not overwrite a newer stored
+    // result or certify the day as freshly verified. Require reconciliation
+    // rather than silently changing an existing pick/wager outcome.
+    const incomingAway = score(game.awayTeam.score);
+    const incomingHome = score(game.homeTeam.score);
+    const scoredUpdate = prior && (
+      (prior.state === "live" && (incoming === "live" || incoming === "final")) ||
+      (prior.state === "final" && incoming === "final")
+    );
+    if (scoredUpdate && (
+      (incomingAway !== null && prior.away_score !== null && incomingAway < prior.away_score) ||
+      (incomingHome !== null && prior.home_score !== null && incomingHome < prior.home_score)
+    )) {
+      identityConflict = true;
+      continue;
+    }
     const preserve = prior && (
       (prior.state === "final" && incoming !== "final") ||
       (prior.state === "live" && incoming === "scheduled")
