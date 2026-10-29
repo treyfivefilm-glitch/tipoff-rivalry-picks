@@ -13,7 +13,9 @@ async function fetchJson(url: string, request: typeof fetch, timeoutMs: number):
     signal: AbortSignal.timeout(timeoutMs),
     headers: { accept: "application/json" },
   });
-  if (!response.ok) throw new Error("NBA feed unavailable");
+  // HTTP 206 can contain valid JSON while omitting games. A partial feed
+  // must not certify an otherwise empty day or settle an incomplete final.
+  if (response.status !== 200) throw new Error("NBA feed unavailable");
   return await response.json();
 }
 

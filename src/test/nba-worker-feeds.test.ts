@@ -80,4 +80,24 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
     });
     expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
   });
+  it("rejects HTTP 206 partial season schedules even with a valid-looking body", async () => {
+    const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+      ? reply(schedule, 206) : reply(live));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100);
+    expect(result).toEqual({
+      schedule: null, live, errors: ["Season schedule unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
+  it("rejects HTTP 206 partial live scoreboards without discarding a healthy schedule", async () => {
+    const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+      ? reply(schedule) : reply(live, 206));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100);
+    expect(result).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
 });
