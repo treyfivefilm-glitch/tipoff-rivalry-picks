@@ -91,3 +91,28 @@ jobs:
         run: bunx vitest run src/test/nba-sync-leases.test.ts
       - name: Concurrent NBA worker sessions (disposable DB only)
         run: bunx vitest run src/test/nba-sync-concurrency.test.ts
+
+  # Exercise the real Deno runtime, not just Node/Vitest simulations.
+  # This is a typecheck and synthetic local-HTTP smoke test only:
+  # no Supabase credentials, Edge deployment, scheduler or migrations.
+  nba-deno-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      NBA_SYNC_WORKER_ENABLED: 'false'
+      NBA_SYNC_CRON_SECRET: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      SUPABASE_URL: 'http://127.0.0.1:54321'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check Edge entrypoint and imports with Deno
+        run: deno check supabase/functions/nba-sync-worker/index.ts
+      - name: Execute isolated worker request flow in Deno
+        run: deno test supabase/functions/nba-sync-worker/worker-runtime.test.ts
