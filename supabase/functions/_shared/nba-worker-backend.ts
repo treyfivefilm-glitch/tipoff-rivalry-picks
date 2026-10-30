@@ -60,7 +60,8 @@ export function createNbaWorkerBackend(
     }
     const response = await request(endpoint + "/rest/v1/rpc/" + name, {
       method: "POST", headers: admin, body: JSON.stringify(args),
-      signal: AbortSignal.timeout(timeoutMs),
+      // Never forward service-role credentials to a redirected host.
+      redirect: "error", signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error("NBA sync RPC " + name + " failed (HTTP " + response.status + ")");
     // A successful HTTP status is not proof that PostgREST returned the
@@ -88,7 +89,8 @@ export function createNbaWorkerBackend(
     // request at its configured max_rows (often 1,000) while returning 200.
     const response = await request(endpoint + path, {
       headers: { ...admin, Prefer: "count=exact" },
-      signal: AbortSignal.timeout(timeoutMs),
+      // A proxy redirect must not forward the privileged apikey header.
+      redirect: "error", signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error("NBA sync database read failed (HTTP " + response.status + ")");
     const data: unknown = await response.json();
