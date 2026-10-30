@@ -134,6 +134,7 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
   });
 
   it("requires a valid local service-role JWT for PostgREST games and worker RPCs", async () => {
+    if (!db) throw new Error("Database unavailable");
     // The local HTTP service must NOT default anonymous callers to service_role.
     // An unauthorized caller may see 401, 403 or a deliberately hidden 404.
     const endpoints = [
