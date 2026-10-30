@@ -27,7 +27,8 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
     const upsert = migration.split("ON CONFLICT (id) DO UPDATE SET")[1]
       ?.split("INSERT INTO public.sync_state")[0];
     expect(upsert).toBeDefined();
-    expect(upsert).toContain("WHERE current_game.source = 'nba'");
+    expect(upsert).toContain("WHERE current_game.source IN ('nba', 'nba_official_schedule')");
+    expect(upsert).toContain("persisted.source IS DISTINCT FROM 'nba_official_schedule'");
     expect(upsert).toContain("public.nba_canonical_team_code(current_game.away_code)");
     expect(upsert).toContain("public.nba_canonical_team_code(EXCLUDED.away_code)");
     expect(upsert).toContain("public.nba_canonical_team_code(current_game.home_code)");
