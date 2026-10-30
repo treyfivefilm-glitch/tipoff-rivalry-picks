@@ -113,7 +113,9 @@ BEGIN
   -- The game ID is immutable for a matchup. The WHERE guard is checked
   -- while holding the conflicting row lock, including if another writer
   -- inserted that ID after the worker read its initial snapshot.
-  WHERE current_game.source = 'nba'
+  -- Imported official NBA schedule rows may already own picks/wagers.
+  -- Reconcile the SAME official ID in place; never permit unrelated sources.
+  WHERE current_game.source IN ('nba', 'nba_official_schedule')
     -- A lease fences one Pacific day, not every day containing this game ID.
     -- A cross-day reschedule must be reconciled explicitly rather than moving
     -- a historical game and certifying two different days as fresh.
@@ -158,7 +160,7 @@ BEGIN
       away_score integer, home_score integer, state text
     )
     JOIN public.games AS persisted ON persisted.id = incoming.id
-    WHERE persisted.source IS DISTINCT FROM 'nba'
+    WHERE persisted.source NOT IN ('nba', 'nba_official_schedule')
        OR (persisted.start_utc AT TIME ZONE 'America/Los_Angeles')::date IS DISTINCT FROM p_day
        OR public.nba_canonical_team_code(persisted.away_code)
           IS DISTINCT FROM public.nba_canonical_team_code(incoming.away_code)
