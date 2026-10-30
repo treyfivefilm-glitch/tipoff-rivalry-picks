@@ -119,6 +119,13 @@ jobs:
           done
           echo "Disposable PostgREST did not become ready" >&2
           exit 1
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Actual Edge entrypoint through real PostgREST/PostgreSQL (provider outage)
+        # The child worker is restricted to loopback. NBA feed access is
+        # denied; all database writes are to disposable PostgreSQL only.
+        run: deno test --allow-run --allow-net=127.0.0.1 --allow-env=CI,RUN_DISPOSABLE_NBA_POSTGREST_TESTS,HOME supabase/functions/nba-sync-worker/entrypoint-postgrest.test.ts
       - name: Real PostgREST HTTP to PostgreSQL worker integration (disposable only)
         run: bunx vitest run src/test/nba-postgrest-http.test.ts
 
