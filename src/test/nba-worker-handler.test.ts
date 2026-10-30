@@ -12,7 +12,14 @@ const game = {
 const schedule = { leagueSchedule: { gameDates: [{ gameDate: "2026-11-17", games: [game] }] } };
 const live = { scoreboard: { gameDate: "2026-11-17", games: [] } };
 const reply = (value: unknown, status = 200) =>
-  new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
+  new Response(JSON.stringify(value), {
+    status, headers: {
+      "content-type": "application/json",
+      ...(Array.isArray(value) ? {
+        "content-range": value.length ? `0-${value.length - 1}/${value.length}` : "*/0",
+      } : {}),
+    },
+  });
 const mockFetch = (handler: (url: string, init?: RequestInit) => Promise<Response>): typeof fetch =>
   handler as unknown as typeof fetch;
 const env = {
@@ -22,7 +29,8 @@ const env = {
   SUPABASE_SERVICE_ROLE_KEY: "test-only-service-role-placeholder",
 };
 type Options = {
-  feedsDown?: boolean; historyDown?: boolean; historyMalformed?: boolean; commitDown?: string;
+  feedsDown?: boolean; historyDown?: boolean; historyMalformed?: boolean;
+  historyMissingCount?: boolean; commitDown?: string;
   releaseDown?: string; releaseDenied?: string; skipLease?: string;
 };
 function fixture(options: Options = {}) {
@@ -32,6 +40,7 @@ function fixture(options: Options = {}) {
     if (url.includes("todaysScoreboard")) return options.feedsDown ? reply({}, 503) : reply(live);
     if (url.includes("/rest/v1/games?")) {
       calls.push({ operation: "history", day: undefined });
+      if (options.historyMissingCount) return new Response("[]", { status: 200 });
       return options.historyDown ? reply({ error: "offline" }, 503) :
         options.historyMalformed ? reply([{}]) : reply([]);
     }
@@ -125,6 +134,17 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
 
   it("fails closed on a malformed successful game-history row and releases all leases", async () => {
     const { calls, post } = fixture({ historyMalformed: true });
+    const response = await post();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      checked: 0, updated: 0, failed: 3, errors: ["NBA refresh failed"],
+    });
+    expect(calls.some(call => call.operation === "commit_nba_sync_day")).toBe(false);
+    expect(calls.filter(call => call.operation === "release_nba_sync")).toHaveLength(3);
+  });
+
+  it("fails closed when PostgREST omits the exact history count", async () => {
+    const { calls, post } = fixture({ historyMissingCount: true });
     const response = await post();
     expect(response.status).toBe(503);
     expect(await response.json()).toMatchObject({
