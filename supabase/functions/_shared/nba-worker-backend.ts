@@ -84,8 +84,11 @@ export function createNbaWorkerBackend(
     const bounds = syncUtcBounds(days);
     const path = "/rest/v1/games?select=id,start_utc,away_code,home_code,away_score,home_score,state,status_detail,source" +
       "&start_utc=gte." + bounds.lower + "T00:00:00Z&start_utc=lt." + bounds.upper + "T00:00:00Z&limit=3000";
+    // Request an exact row count: PostgREST may silently cap a 3,000-row
+    // request at its configured max_rows (often 1,000) while returning 200.
     const response = await request(endpoint + path, {
-      headers: admin, signal: AbortSignal.timeout(timeoutMs),
+      headers: { ...admin, Prefer: "count=exact" },
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error("NBA sync database read failed (HTTP " + response.status + ")");
     const data: unknown = await response.json();
@@ -97,7 +100,25 @@ export function createNbaWorkerBackend(
     // its original picks or wagers remain attached to the omitted record.
     // A full 3,000-row page is ambiguous even if the server reports HTTP 200.
     // Fail closed rather than certify freshness from incomplete history.
-    if (response.status === 206 || data.length >= 3000) {
+    const range = response.headers.get("content-range");
+    if (range !== null) {
+      // PostgREST uses "0-9/10" for complete results, "0-999/1500"
+      // for truncated pages, and "*/0" for an empty result. A wildcard
+      // total cannot prove a 1,000-row default-cap page is complete.
+      const match = /^(\\d+)-(\\d+)\\/(\\d+|\\*)$/.exec(range);
+      const empty = range === "*/0" && data.length === 0;
+      const start = match ? Number(match[1]) : NaN;
+      const end = match ? Number(match[2]) : NaN;
+      const total = match?.[3] === "*" ? null : Number(match?.[3]);
+      if (!empty && (!match || start !== 0 || end - start + 1 !== data.length ||
+          (total !== null && total !== data.length))) {
+        throw new Error("NBA sync database returned incomplete games");
+      }
+    }
+    // Without a trustworthy total, fail closed at PostgREST's common
+    // default max_rows cap as well as the explicitly requested 3,000.
+    if (response.status === 206 || data.length >= 3000 ||
+        (data.length >= 1000 && (!range || range.endsWith("/*")))) {
       throw new Error("NBA sync database returned incomplete games");
     }
     if (!data.every(isValidExistingNbaGame)) {
