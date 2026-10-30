@@ -229,3 +229,76 @@ Deno.test({
       "Synthetic final-score test did not restore the disposable database");
   },
 });
+
+
+Deno.test({
+  name: "Actual NBA Edge entrypoint preserves a pre-existing scheduled game and its foreign-key reference",
+  ignore: !enabled,
+  async fn() {
+    // This is a disposable CI database, not a production schema migration.
+    // A linked row models a pick/wager that must continue pointing at the
+    // SAME official game ID after the scheduled -> final transition.
+    const before = await databaseSnapshot();
+    const counts = before.split(",").map(Number);
+    assert(counts.length === 3 && counts[2] === 0, "Disposable test has active leases");
+    assert(await disposableSql(
+      "SELECT count(*) FROM public.games WHERE id='nba:0022600999'"
+    ) === "0", "Scheduled fixture ID is already occupied");
+    const jwt = await localServiceJwt();
+    const calls: Array<{ path: string; status: number; result: unknown }> = [];
+    const gateway = startGateway(jwt, calls);
+    let worker: Deno.ChildProcess | undefined;
+    try {
+      await disposableSql(
+        "INSERT INTO public.games (id,start_utc,away_code,away_name,home_code,home_name,state,source) " +
+        "VALUES ('nba:0022600999', " +
+        "(((now() AT TIME ZONE 'America/Los_Angeles')::date)::text || 'T19:00:00Z')::timestamptz, " +
+        "'LAL','Los Angeles Lakers','GS','Golden State Warriors','scheduled','nba_official_schedule')"
+      );
+      await disposableSql(
+        "CREATE TABLE public.ci_nba_game_refs (" +
+        "game_id text NOT NULL REFERENCES public.games(id), note text NOT NULL)"
+      );
+      await disposableSql(
+        "INSERT INTO public.ci_nba_game_refs VALUES ('nba:0022600999','existing-pick-reference')"
+      );
+      worker = await startActualWorker(gateway.addr.port, jwt, true);
+      const response = await fetch(workerUrl, {
+        method: "POST", headers: { authorization: "Bearer " + cronSecret },
+        signal: AbortSignal.timeout(20000),
+      });
+      const result = await response.json();
+      assert(response.status === 200, "Scheduled-to-final worker failed: " + JSON.stringify(result));
+      assert(JSON.stringify(result) === JSON.stringify({
+        checked: 3, updated: 1, skipped: 0, failed: 0, errors: [],
+      }), "Unexpected scheduled-to-final result: " + JSON.stringify(result));
+      assert(calls.filter(c => c.path === "/games").length === 1,
+        "Worker must read existing games before reconciling the final");
+      assert(calls.filter(c => c.path === "/rpc/commit_nba_sync_day").length === 3 &&
+        calls.filter(c => c.path === "/rpc/commit_nba_sync_day").every(c => c.status === 200),
+        "Scheduled-to-final fenced commits failed");
+      assert(await disposableSql(
+        "SELECT id,state,away_score,home_score,source FROM public.games WHERE id='nba:0022600999'"
+      ) === "nba:0022600999,final,109,107,nba",
+        "Existing official game did not advance in place to the verified final");
+      assert(await disposableSql(
+        "SELECT game_id,note FROM public.ci_nba_game_refs"
+      ) === "nba:0022600999,existing-pick-reference",
+        "The existing linked game reference was detached or removed");
+      assert(await databaseSnapshot() ===
+        [counts[0]! + 1, counts[1]! + 3, 0].join(","),
+        "Expected one existing game, three verified days and no active leases");
+    } finally {
+      if (worker) await stopWorker(worker);
+      await gateway.shutdown();
+      // Clean only this disposable synthetic game, reference and three days.
+      await disposableSql("DROP TABLE IF EXISTS public.ci_nba_game_refs");
+      await disposableSql("DELETE FROM public.games WHERE id='nba:0022600999'");
+      await disposableSql("DELETE FROM public.sync_state WHERE day::date BETWEEN " +
+        "(now() AT TIME ZONE 'America/Los_Angeles')::date - 1 AND " +
+        "(now() AT TIME ZONE 'America/Los_Angeles')::date + 1");
+    }
+    assert(await databaseSnapshot() === before,
+      "Scheduled-to-final test did not restore the disposable database");
+  },
+});
