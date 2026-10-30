@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CheckCircle2, CircleDollarSign, ClipboardCheck, Clock, XCircle } from "lucide-react";
 import { useBattle, errMsg } from "@/lib/battle-context";
-import { latestWagers, wagerLane, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
+import { latestWagers, paymentCentsWithinBalance, wagerLane, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
 import { computeStandings, h2hResult, winnerOf, type BoardGame, type Payment } from "@/lib/rules";
 import { fmtMoney, pacificTime } from "@/lib/time";
 import { Button } from "@/components/ui/button";
@@ -196,17 +196,17 @@ function LedgerLane({ items, gamesById }: { items: { v: WagerVersion; g: BoardGa
 
 function PaymentForm({ max }: { max: number }) {
   const b = useBattle();
-  const [amount, setAmount] = useState(String(Math.max(1, Math.round(max / 100))));
+  const [amount, setAmount] = useState((max / 100).toFixed(2));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const cents = Math.round(Number(amount) * 100);
-  const valid = Number.isFinite(cents) && cents >= 100;
+  const cents = paymentCentsWithinBalance(amount, max);
+  const valid = cents !== null;
   return (
     <form
       className="mt-3 space-y-2"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!valid || busy) return;
+        if (cents === null || busy) return;
         setBusy(true);
         try {
           await b.recordPayment(cents, note.trim());
@@ -223,7 +223,8 @@ function PaymentForm({ max }: { max: number }) {
         <input
           aria-label="Dollars sent"
           type="number"
-          min="1"
+          min="0.01"
+          max={(max / 100).toFixed(2)}
           step="0.01"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
@@ -238,6 +239,7 @@ function PaymentForm({ max }: { max: number }) {
           className="min-h-11 flex-1 rounded-lg border border-input bg-background px-3 text-sm"
         />
       </div>
+      <p className="text-xs text-muted-foreground">Record between $0.01 and {fmtMoney(max)}. This tracks payment confirmation; it does not transfer money.</p>
       <Button type="submit" variant="gold" className="w-full" disabled={!valid || busy}>
         <CircleDollarSign className="h-4 w-4" /> {busy ? "Saving…" : "Mark payment sent"}
       </Button>

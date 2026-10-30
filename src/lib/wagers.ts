@@ -16,3 +16,14 @@ export function wagerLane(v: WagerVersion, g: BoardGame | undefined): 'offers' |
   return 'ledger';
 }
 export function cashStake(category: string, cents: number): number { return category === 'challenge' ? 0 : cents; }
+/** Convert a payment entry to exact cents without rounding or overpaying.
+ * Payments are only recorded in TIPOFF; the app does not transfer money.
+ */
+export function paymentCentsWithinBalance(raw: string, outstandingCents: number): number | null {
+  if (!/^\d+(?:\.\d{1,2})?$/.test(raw) || !Number.isSafeInteger(outstandingCents) || outstandingCents < 1) {
+    return null;
+  }
+  const [dollars = "", fraction = ""] = raw.split(".");
+  const cents = Number(dollars) * 100 + Number(fraction.padEnd(2, "0"));
+  return Number.isSafeInteger(cents) && cents >= 1 && cents <= outstandingCents ? cents : null;
+}
