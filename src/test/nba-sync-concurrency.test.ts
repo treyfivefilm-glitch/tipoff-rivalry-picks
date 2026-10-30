@@ -1,5 +1,6 @@
 // @vitest-environment node
 import postgres from "postgres";
+import { createUnattendedNbaHandler } from "../../supabase/functions/_shared/nba-worker-handler";
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { stagingDatabaseUrl } from "./staging-db";
@@ -152,4 +153,124 @@ describe.skipIf(!enabled)("NBA lease concurrency (disposable CI database only)",
     }
     expect(await pool`SELECT day FROM public.nba_sync_leases WHERE day=${day}::date`).toHaveLength(0);
   });
+
+  it("runs the authenticated worker through real fenced SQL using an isolated REST adapter", async () => {
+    if (!pool) throw new Error("Disposable pool unavailable.");
+    const db = await pool.reserve();
+    const testDay = "2026-11-17";
+    const gameId = "nba:0022600012";
+    const startUtc = "2026-11-18T03:00:00Z";
+    const secret = "test-only-postgres-bridge-secret-at-least-32-characters";
+    const token = randomUUID();
+    const reply = (value: unknown) => new Response(JSON.stringify(value), {
+      headers: { "content-type": "application/json" },
+    });
+    const scheduleGame = {
+      gameId: "0022600012", gameDateTimeUTC: startUtc,
+      gameStatus: 1, gameStatusText: "Scheduled",
+      awayTeam: { teamTricode: "LAL", score: null },
+      homeTeam: { teamTricode: "GSW", score: null },
+    };
+    const finalGame = {
+      ...scheduleGame, gameStatus: 3, gameStatusText: "Final",
+      awayTeam: { teamTricode: "LAL", score: 109 },
+      homeTeam: { teamTricode: "GSW", score: 107 },
+    };
+    let committed = false;
+    try {
+      await db`BEGIN`;
+      await db`SET LOCAL statement_timeout = '5s'`;
+      // Simulate a previously imported official game that may already have picks.
+      await db`INSERT INTO public.games (
+        id, start_utc, away_code, away_name, home_code, home_name,
+        away_score, home_score, state, status_detail, source
+      ) VALUES (
+        ${gameId}, ${startUtc}::timestamptz, 'LAL', 'Los Angeles Lakers',
+        'GSW', 'Golden State Warriors', NULL, NULL, 'scheduled',
+        'Scheduled', 'nba_official_schedule'
+      )`;
+      const request = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const target = String(input);
+        if (target.includes("scheduleLeagueV2")) {
+          return reply({ leagueSchedule: { gameDates: [{
+            gameDate: testDay, games: [scheduleGame],
+          }] } });
+        }
+        if (target.includes("todaysScoreboard")) {
+          return reply({ scoreboard: { gameDate: testDay, games: [finalGame] } });
+        }
+        if (target.includes("/rest/v1/games?")) {
+          const rows = await db`SELECT id, start_utc, away_code, home_code,
+            away_score, home_score, state, status_detail, source
+            FROM public.games`;
+          return reply(rows);
+        }
+        const rpcName = target.split("/rest/v1/rpc/")[1];
+        const args = JSON.parse(String(init?.body)) as {
+          p_day: string; p_owner_token: string; p_lease_seconds?: number;
+          p_rows?: unknown[];
+        };
+        if (rpcName === "try_claim_nba_sync") {
+          const [result] = await db`SELECT public.try_claim_nba_sync(
+            ${args.p_day}::date, ${args.p_owner_token}::uuid,
+            ${args.p_lease_seconds ?? 180}
+          ) AS value`;
+          return reply(result?.["value"]);
+        }
+        if (rpcName === "commit_nba_sync_day") {
+          const [result] = await db`SELECT public.commit_nba_sync_day(
+            ${args.p_day}::date, ${args.p_owner_token}::uuid,
+            ${db.json(args.p_rows ?? [])}::jsonb
+          ) AS value`;
+          return reply(result?.["value"]);
+        }
+        if (rpcName === "release_nba_sync") {
+          const [result] = await db`SELECT public.release_nba_sync(
+            ${args.p_day}::date, ${args.p_owner_token}::uuid
+          ) AS value`;
+          return reply(result?.["value"]);
+        }
+        throw new Error("Unexpected outbound worker request");
+      }) as typeof fetch;
+      const handler = createUnattendedNbaHandler({
+        env: name => ({
+          NBA_SYNC_WORKER_ENABLED: "true",
+          NBA_SYNC_CRON_SECRET: secret,
+          SUPABASE_URL: "https://backend.invalid",
+          SUPABASE_SERVICE_ROLE_KEY: "test-only-backend-key",
+        } as Record<string, string>)[name],
+        request, now: () => new Date("2026-11-18T12:00:00Z"),
+        newToken: () => token,
+        log: { error: () => {}, warn: () => {}, info: () => {} },
+      });
+      const unauthorized = await handler(new Request("https://worker.invalid", {
+        method: "POST", headers: { authorization: "Bearer wrong" },
+      }));
+      expect(unauthorized.status).toBe(401);
+      const response = await handler(new Request("https://worker.invalid", {
+        method: "POST", headers: { authorization: "Bearer " + secret },
+      }));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({
+        checked: 3, updated: 1, skipped: 0, failed: 0, errors: [],
+      });
+      const [stored] = await db`SELECT source, state, away_score, home_score
+        FROM public.games WHERE id=${gameId}`;
+      expect(stored).toMatchObject({
+        source: "nba", state: "final", away_score: 109, home_score: 107,
+      });
+      const [fresh] = await db`SELECT game_count FROM public.sync_state
+        WHERE day=${testDay}`;
+      expect(fresh?.["game_count"]).toBe(1);
+      expect(await db`SELECT day FROM public.nba_sync_leases
+        WHERE day=${testDay}::date`).toHaveLength(0);
+      committed = true;
+    } finally {
+      // Roll back every synthetic game and freshness record, even on failure.
+      await db`ROLLBACK`;
+      db.release();
+    }
+    expect(committed).toBe(true);
+  });
+
 });
