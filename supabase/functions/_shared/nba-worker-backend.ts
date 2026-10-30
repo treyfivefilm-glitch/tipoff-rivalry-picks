@@ -103,22 +103,22 @@ export function createNbaWorkerBackend(
     const range = response.headers.get("content-range");
     if (range !== null) {
       // PostgREST uses "0-9/10" for complete results, "0-999/1500"
-      // for truncated pages, and "*/0" for an empty result. A wildcard
-      // total cannot prove a 1,000-row default-cap page is complete.
+      // for truncated pages, and "*/0" for an empty result. An unknown
+      // total cannot prove completeness even with fewer than 1,000 rows.
       const match = /^(\d+)-(\d+)\/(\d+|\*)$/.exec(range);
       const empty = range === "*/0" && data.length === 0;
       const start = match ? Number(match[1]) : NaN;
       const end = match ? Number(match[2]) : NaN;
       const total = match?.[3] === "*" ? null : Number(match?.[3]);
       if (!empty && (!match || start !== 0 || end - start + 1 !== data.length ||
-          (total !== null && total !== data.length))) {
+          total === null || total !== data.length)) {
         throw new Error("NBA sync database returned incomplete games");
       }
     }
     // Without a trustworthy total, fail closed at PostgREST's common
     // default max_rows cap as well as the explicitly requested 3,000.
     if (response.status === 206 || data.length >= 3000 ||
-        (data.length >= 1000 && (!range || range.endsWith("/*")))) {
+        (data.length >= 1000 && !range)) {
       throw new Error("NBA sync database returned incomplete games");
     }
     if (!data.every(isValidExistingNbaGame)) {
