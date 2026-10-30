@@ -1,7 +1,7 @@
 // @vitest-environment node
 // Real PostgREST -> disposable PostgreSQL integration, never Supabase/production.
-// The service exposes a local CI-only role without JWT verification. This
-// tests HTTP/SQL compatibility, NOT deployment auth or owner secret setup.
+// The disposable service defaults to anon and accepts a CI-only signed JWT
+// for service_role. This tests PostgREST role isolation, not Supabase deployment.
 import postgres from "postgres";
 import { createHmac, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -148,7 +148,8 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
         const headers = new Headers({ "content-type": "application/json" });
         if (authorization) headers.set("authorization", authorization);
         const response = await fetch(endpoint.url, {
-          method: endpoint.method, headers, body: endpoint.body,
+          method: endpoint.method, headers,
+          ...(endpoint.body === undefined ? {} : { body: endpoint.body }),
         });
         expect([401, 403, 404]).toContain(response.status);
       }
