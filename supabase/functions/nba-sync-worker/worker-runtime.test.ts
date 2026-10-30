@@ -365,3 +365,100 @@ Deno.test("Real loopback PostgREST history timeout prevents fenced commits and r
     await backend.shutdown();
   }
 });
+
+
+Deno.test("Concurrent real HTTP worker requests cannot both commit the same leased days", async () => {
+  // Both requests traverse actual loopback worker and PostgREST-shaped HTTP
+  // servers. A held history read keeps the first worker's leases occupied
+  // while the second request races it. No real Supabase data is involved.
+  const owners = new Map<string, string>();
+  const calls: string[] = [];
+  let unblockHistory = () => {};
+  const historyGate = new Promise<void>(resolve => { unblockHistory = resolve; });
+  let historyStarted = () => {};
+  const historyEntered = new Promise<void>(resolve => { historyStarted = resolve; });
+  const backend = Deno.serve({
+    hostname: "127.0.0.1", port: 0, onListen: () => {},
+  }, async request => {
+    assert.equal(request.headers.get("apikey"), config.SUPABASE_SERVICE_ROLE_KEY);
+    const path = new URL(request.url).pathname;
+    if (path === "/rest/v1/games") {
+      calls.push("history");
+      historyStarted();
+      await historyGate;
+      return json([]);
+    }
+    const name = path.split("/rest/v1/rpc/")[1];
+    if (!name) return json({ error: "Unknown path" }, 404);
+    const body = await request.json() as {
+      p_day?: string; p_owner_token?: string; p_rows?: unknown[];
+    };
+    const day = body.p_day ?? "";
+    const token = body.p_owner_token ?? "";
+    if (name === "try_claim_nba_sync") {
+      calls.push("claim:" + day);
+      if (owners.has(day)) return json(false);
+      owners.set(day, token);
+      return json(true);
+    }
+    if (name === "release_nba_sync") {
+      calls.push("release:" + day);
+      if (owners.get(day) !== token) return json(false);
+      owners.delete(day);
+      return json(true);
+    }
+    if (name === "commit_nba_sync_day") {
+      calls.push("commit:" + day);
+      if (owners.get(day) !== token) return json({ error: "Stale lease" }, 409);
+      return json(body.p_rows?.length ?? 0);
+    }
+    return json({ error: "Unknown RPC" }, 404);
+  });
+  const backendUrl = "http://127.0.0.1:" + backend.addr.port;
+  const outbound = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("scheduleLeagueV2")) return json(schedule);
+    if (url.includes("todaysScoreboard")) return json(live);
+    if (!url.startsWith(backendUrl + "/rest/v1/")) throw new Error("Unexpected outbound URL");
+    return fetch(input, init);
+  }) as typeof fetch;
+  let nextToken = 0;
+  const handler = createUnattendedNbaHandler({
+    env: name => name === "SUPABASE_URL" ? backendUrl : config[name],
+    request: outbound,
+    now: () => new Date("2026-11-17T12:00:00Z"),
+    newToken: () => "concurrent-http-test-" + ++nextToken,
+    log: { error: () => {}, warn: () => {}, info: () => {} },
+  });
+  const worker = Deno.serve({
+    hostname: "127.0.0.1", port: 0, onListen: () => {},
+  }, handler);
+  try {
+    const post = () => fetch("http://127.0.0.1:" + worker.addr.port + "/", {
+      method: "POST", headers: { authorization: "Bearer " + secret },
+    });
+    const firstPending = post();
+    await historyEntered;
+    // The first request still owns all three days until history is released.
+    const second = await post();
+    assert.equal(second.status, 200);
+    assert.deepEqual(await second.json(), {
+      checked: 0, updated: 0, skipped: 3, failed: 0, errors: [],
+    });
+    assert.equal(calls.filter(call => call.startsWith("commit:")).length, 0);
+    unblockHistory();
+    const first = await firstPending;
+    assert.equal(first.status, 200);
+    assert.deepEqual(await first.json(), {
+      checked: 3, updated: 1, skipped: 0, failed: 0, errors: [],
+    });
+    assert.equal(calls.filter(call => call === "history").length, 1);
+    assert.equal(calls.filter(call => call.startsWith("commit:")).length, 3);
+    assert.equal(calls.filter(call => call.startsWith("release:")).length, 3);
+    assert.equal(owners.size, 0);
+  } finally {
+    unblockHistory();
+    await worker.shutdown();
+    await backend.shutdown();
+  }
+});
