@@ -140,3 +140,84 @@ Deno.test("Edge handler serves real loopback HTTP with auth enforced before any 
     await server.shutdown();
   }
 });
+
+
+Deno.test("Edge handler crosses a real loopback PostgREST HTTP boundary and fails closed on missing history counts", async () => {
+  // Unlike the injected-response smoke tests, these requests traverse two
+  // real Deno HTTP servers. The backend is a synthetic PostgREST-shaped stub,
+  // NOT Supabase or a database; no external network or credentials are used.
+  const calls: string[] = [];
+  let omitHistoryCount = false;
+  const backend = Deno.serve({
+    hostname: "127.0.0.1", port: 0, onListen: () => {},
+  }, async request => {
+    const path = new URL(request.url).pathname;
+    assert.equal(request.headers.get("apikey"), config.SUPABASE_SERVICE_ROLE_KEY);
+    if (path === "/rest/v1/games") {
+      assert.equal(request.method, "GET");
+      assert.equal(request.headers.get("prefer"), "count=exact");
+      calls.push("history");
+      return omitHistoryCount
+        ? new Response("[]", { status: 200, headers: { "content-type": "application/json" } })
+        : json([]);
+    }
+    const name = path.split("/rest/v1/rpc/")[1];
+    if (!name) return json({ error: "Unknown path" }, 404);
+    assert.equal(request.method, "POST");
+    const body = await request.json() as { p_day?: string; p_rows?: unknown[] };
+    calls.push(name + ":" + (body.p_day ?? ""));
+    if (name === "try_claim_nba_sync" || name === "release_nba_sync") return json(true);
+    if (name === "commit_nba_sync_day") return json(body.p_rows?.length ?? 0);
+    return json({ error: "Unknown RPC" }, 404);
+  });
+  const backendUrl = `http://127.0.0.1:${backend.addr.port}`;
+  const outbound = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("scheduleLeagueV2")) return json(schedule);
+    if (url.includes("todaysScoreboard")) return json(live);
+    if (!url.startsWith(backendUrl + "/rest/v1/")) {
+      throw new Error("Unexpected outbound URL");
+    }
+    return fetch(input, init);
+  }) as typeof fetch;
+  const handler = createUnattendedNbaHandler({
+    env: name => name === "SUPABASE_URL" ? backendUrl : config[name],
+    request: outbound,
+    now: () => new Date("2026-11-17T12:00:00Z"),
+    newToken: () => "loopback-test-lease-token",
+    log: { error: () => {}, warn: () => {}, info: () => {} },
+  });
+  const worker = Deno.serve({
+    hostname: "127.0.0.1", port: 0, onListen: () => {},
+  }, handler);
+  try {
+    const url = `http://127.0.0.1:${worker.addr.port}/`;
+    const post = () => fetch(url, {
+      method: "POST", headers: { authorization: "Bearer " + secret },
+    });
+    const healthy = await post();
+    assert.equal(healthy.status, 200);
+    assert.deepEqual(await healthy.json(), {
+      checked: 3, updated: 1, skipped: 0, failed: 0, errors: [],
+    });
+    assert.equal(calls.filter(call => call === "history").length, 1);
+    assert.equal(calls.filter(call => call.startsWith("commit_nba_sync_day:")).length, 3);
+    assert.equal(calls.filter(call => call.startsWith("release_nba_sync:")).length, 3);
+
+    // An HTTP 200 empty array without PostgREST's exact Content-Range must
+    // never certify three days, even when it arrived over a real HTTP hop.
+    omitHistoryCount = true;
+    const degraded = await post();
+    assert.equal(degraded.status, 503);
+    assert.deepEqual(await degraded.json(), {
+      checked: 0, updated: 0, skipped: 0, failed: 3,
+      errors: ["NBA refresh failed"],
+    });
+    assert.equal(calls.filter(call => call === "history").length, 2);
+    assert.equal(calls.filter(call => call.startsWith("commit_nba_sync_day:")).length, 3);
+    assert.equal(calls.filter(call => call.startsWith("release_nba_sync:")).length, 6);
+  } finally {
+    await worker.shutdown();
+    await backend.shutdown();
+  }
+});
