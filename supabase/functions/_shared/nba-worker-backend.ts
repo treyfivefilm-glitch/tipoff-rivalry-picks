@@ -105,7 +105,7 @@ export function createNbaWorkerBackend(
       // PostgREST uses "0-9/10" for complete results, "0-999/1500"
       // for truncated pages, and "*/0" for an empty result. A wildcard
       // total cannot prove a 1,000-row default-cap page is complete.
-      const match = /^(\\d+)-(\\d+)\\/(\\d+|\\*)$/.exec(range);
+      const match = /^(\d+)-(\d+)\/(\d+|\*)$/.exec(range);
       const empty = range === "*/0" && data.length === 0;
       const start = match ? Number(match[1]) : NaN;
       const end = match ? Number(match[2]) : NaN;
