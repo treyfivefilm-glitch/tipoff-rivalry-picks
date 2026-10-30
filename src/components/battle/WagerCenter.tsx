@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CheckCircle2, CircleDollarSign, ClipboardCheck, Clock, XCircle } from "lucide-react";
 import { useBattle, errMsg } from "@/lib/battle-context";
-import { latestWagers, paymentCentsWithinBalance, wagerLane, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
+import { latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
 import { computeStandings, h2hResult, winnerOf, type BoardGame, type Payment } from "@/lib/rules";
 import { fmtMoney, pacificTime } from "@/lib/time";
 import { Button } from "@/components/ui/button";
@@ -141,6 +141,8 @@ function LedgerLane({ items, gamesById }: { items: { v: WagerVersion; g: BoardGa
   const s = useMemo(() => computeStandings(b.games, b.payments, b.me.id), [b.games, b.payments, b.me.id]);
   const pending = b.payments.filter((p) => p.status === "pending");
   const confirmed = b.payments.filter((p) => p.status === "confirmed");
+  const owedCents = Math.max(0, -s.outstanding);
+  const recordableCents = unrecordedPaymentCents(owedCents, b.payments, b.me.id, b.friend?.id ?? null);
 
   return (
     <div className="space-y-4">
@@ -152,7 +154,12 @@ function LedgerLane({ items, gamesById }: { items: { v: WagerVersion; g: BoardGa
         <p className="text-xs text-muted-foreground">
           {s.outstanding > 0 ? `${b.friend?.name ?? "Friend"} owes you` : s.outstanding < 0 ? `You owe ${b.friend?.name ?? "Friend"}` : "All settled up"}
         </p>
-        {s.outstanding < 0 && <PaymentForm max={-s.outstanding} />}
+        {owedCents > 0 && recordableCents < owedCents && b.friend && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Pending payments are awaiting your friend's confirmation and cannot be marked sent again.
+          </p>
+        )}
+        {recordableCents > 0 && <PaymentForm key={recordableCents} max={recordableCents} />}
       </section>
 
       {pending.length > 0 && (
