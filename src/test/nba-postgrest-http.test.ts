@@ -217,4 +217,61 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
     expect(stored).toMatchObject({ state: "final", away_score: 109, home_score: 107 });
   });
 
+  it("fences stale workers after real PostgreSQL lease expiry and takeover", async () => {
+    if (!db) throw new Error("Database unavailable");
+    const leaseDay = "2026-11-14";
+    const staleOwner = randomUUID(), currentOwner = randomUUID();
+    const call = async (rpc: string, args: Record<string, unknown>) => {
+      return fetch(restUrl + "/rpc/" + rpc, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify(args),
+      });
+    };
+    const claimArgs = (token: string) => ({
+      p_day: leaseDay, p_owner_token: token, p_lease_seconds: 180,
+    });
+    const original = await call("try_claim_nba_sync", claimArgs(staleOwner));
+    expect(original.status).toBe(200);
+    expect(await original.json()).toBe(true);
+
+    // Advance only the disposable test lease into the past. No sleep or
+    // production data is involved; takeover still goes through real SQL.
+    await db`UPDATE public.nba_sync_leases
+      SET expires_at = clock_timestamp() - interval '1 second'
+      WHERE day = ${leaseDay}::date AND owner_token = ${staleOwner}::uuid`;
+    const takeover = await call("try_claim_nba_sync", claimArgs(currentOwner));
+    expect(takeover.status).toBe(200);
+    expect(await takeover.json()).toBe(true);
+
+    // The old worker may have finished fetching, but its fenced write must
+    // fail atomically and must not mark this day freshly synchronized.
+    const staleCommit = await call("commit_nba_sync_day", {
+      p_day: leaseDay, p_owner_token: staleOwner, p_rows: [],
+    });
+    expect(staleCommit.ok).toBe(false);
+    expect(await db`SELECT day FROM public.sync_state WHERE day=${leaseDay}`).toHaveLength(0);
+    const staleRelease = await call("release_nba_sync", {
+      p_day: leaseDay, p_owner_token: staleOwner,
+    });
+    expect(staleRelease.status).toBe(200);
+    expect(await staleRelease.json()).toBe(false);
+    const [owner] = await db`SELECT owner_token FROM public.nba_sync_leases
+      WHERE day=${leaseDay}::date`;
+    expect(owner?.["owner_token"]).toBe(currentOwner);
+
+    const currentCommit = await call("commit_nba_sync_day", {
+      p_day: leaseDay, p_owner_token: currentOwner, p_rows: [],
+    });
+    expect(currentCommit.status).toBe(200);
+    expect(await currentCommit.json()).toBe(0);
+    const [fresh] = await db`SELECT game_count FROM public.sync_state WHERE day=${leaseDay}`;
+    expect(fresh?.["game_count"]).toBe(0);
+    const release = await call("release_nba_sync", {
+      p_day: leaseDay, p_owner_token: currentOwner,
+    });
+    expect(release.status).toBe(200);
+    expect(await release.json()).toBe(true);
+    expect(await db`SELECT day FROM public.nba_sync_leases WHERE day=${leaseDay}::date`).toHaveLength(0);
+  });
+
 });
