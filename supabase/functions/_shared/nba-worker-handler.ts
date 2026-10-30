@@ -10,6 +10,8 @@ import { createNbaWorkerBackend } from "./nba-worker-backend.ts";
 export type NbaWorkerDependencies = {
   env: (name: string) => string | undefined;
   request?: typeof fetch;
+  /** Test-only shorter deadline; production uses the backend default. */
+  backendTimeoutMs?: number;
   now?: () => Date;
   newToken?: () => string;
   log?: Pick<Console, "error" | "warn" | "info">;
@@ -37,7 +39,7 @@ export function createUnattendedNbaHandler(deps: NbaWorkerDependencies) {
     const endpoint = deps.env("SUPABASE_URL");
     const key = deps.env("SUPABASE_SERVICE_ROLE_KEY");
     if (!endpoint || !key) return json({ error: "Backend configuration missing" }, 503);
-    const { rpc, readExisting } = createNbaWorkerBackend(endpoint, key, requestHttp);
+    const { rpc, readExisting } = createNbaWorkerBackend(endpoint, key, requestHttp, deps.backendTimeoutMs);
 
     const days = unattendedNbaDays(now());
     const token = newToken();
