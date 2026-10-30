@@ -29,7 +29,7 @@ async function localServiceJwt() {
 async function databaseSnapshot() {
   // Explicitly fixed to the disposable CI database. No URL or credentials from the user.
   const command = new Deno.Command("psql", {
-    args: ["-h", "127.0.0.1", "-U", "postgres", "-d", "tipoff_test", "-tAc",
+    args: ["-h", "127.0.0.1", "-U", "postgres", "-d", "tipoff_test", "-F", ",", "-tAc",
       "SELECT (SELECT count(*) FROM public.games), (SELECT count(*) FROM public.sync_state), (SELECT count(*) FROM public.nba_sync_leases)"],
     env: { PGPASSWORD: "postgres" },
     stdout: "piped", stderr: "piped",
