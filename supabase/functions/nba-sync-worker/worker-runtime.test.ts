@@ -12,7 +12,7 @@ const assert = {
   },
 };
 import { createUnattendedNbaHandler } from "../_shared/nba-worker-handler.ts";
-import { createNbaWorkerBackend } from "../_shared/nba-worker-backend.ts";
+import { createNbaWorkerBackend, normalizeNbaWorkerBackendUrl } from "../_shared/nba-worker-backend.ts";
 
 const secret = "test-only-deno-runtime-secret-at-least-32-characters";
 const config: Record<string, string> = {
@@ -74,6 +74,46 @@ function setup(feedsDown = false) {
     }));
   return { handler, post, calls };
 }
+
+Deno.test("Privileged NBA backend accepts HTTPS or loopback HTTP, not remote plaintext or ambiguous URLs", () => {
+  assert.equal(normalizeNbaWorkerBackendUrl("https://example.invalid/"), "https://example.invalid");
+  assert.equal(normalizeNbaWorkerBackendUrl("http://127.0.0.1:54321/"), "http://127.0.0.1:54321");
+  assert.equal(normalizeNbaWorkerBackendUrl("http://localhost:54321"), "http://localhost:54321");
+  const invalid = [
+    "http://example.invalid", "http://localhost.evil.invalid",
+    "https://user:password@example.invalid", "https://example.invalid/rest/v1",
+    "https://example.invalid?token=secret", "https://example.invalid/#fragment",
+    "ftp://example.invalid", "not a URL",
+  ];
+  for (const endpoint of invalid) {
+    let rejected = false;
+    try {
+      normalizeNbaWorkerBackendUrl(endpoint);
+    } catch {
+      rejected = true;
+    }
+    assert.equal(rejected, true);
+  }
+});
+
+Deno.test("Worker rejects insecure backend configuration before any outbound request", async () => {
+  let outbound = 0;
+  const handler = createUnattendedNbaHandler({
+    env: name => name === "SUPABASE_URL" ? "http://example.invalid" : config[name],
+    request: (async () => {
+      outbound++;
+      throw new Error("Must not send privileged requests");
+    }) as typeof fetch,
+    now: () => new Date("2026-11-17T12:00:00Z"),
+    log: { error: () => {}, warn: () => {}, info: () => {} },
+  });
+  const response = await handler(new Request("https://worker.invalid/", {
+    method: "POST", headers: { authorization: "Bearer " + secret },
+  }));
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: "Backend configuration invalid" });
+  assert.equal(outbound, 0);
+});
 
 Deno.test("Edge handler rejects unauthorized requests without network activity", async () => {
   const { post, calls } = setup();
