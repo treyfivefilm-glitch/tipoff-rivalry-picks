@@ -39,7 +39,15 @@ export function createUnattendedNbaHandler(deps: NbaWorkerDependencies) {
     const endpoint = deps.env("SUPABASE_URL");
     const key = deps.env("SUPABASE_SERVICE_ROLE_KEY");
     if (!endpoint || !key) return json({ error: "Backend configuration missing" }, 503);
-    const { rpc, readExisting } = createNbaWorkerBackend(endpoint, key, requestHttp, deps.backendTimeoutMs);
+    // Invalid or insecure service URLs must fail before any privileged fetch.
+    // Do not echo the configured URL or credentials in the response.
+    let backend: ReturnType<typeof createNbaWorkerBackend>;
+    try {
+      backend = createNbaWorkerBackend(endpoint, key, requestHttp, deps.backendTimeoutMs);
+    } catch {
+      return json({ error: "Backend configuration invalid" }, 503);
+    }
+    const { rpc, readExisting } = backend;
 
     const days = unattendedNbaDays(now());
     const token = newToken();
