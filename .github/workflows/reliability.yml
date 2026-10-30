@@ -71,7 +71,9 @@ jobs:
         env:
           PGRST_DB_URI: postgres://postgres:postgres@postgres:5432/tipoff_test
           PGRST_DB_SCHEMAS: public
-          PGRST_DB_ANON_ROLE: service_role
+          PGRST_DB_ANON_ROLE: anon
+          # Fixed CI-only JWT signing key, never a production credential.
+          PGRST_JWT_SECRET: tipoff-disposable-ci-jwt-secret-not-production-2026
           PGRST_SERVER_PORT: 3000
         ports:
           - 3000:3000
@@ -108,7 +110,9 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA public TO service_role; NOTIFY pgrst, 'reload schema';"
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error "http://127.0.0.1:3000/games?select=id&limit=0" >/dev/null 2>&1; then
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:3000/games?select=id&limit=0" || true)"
+            # Anonymous access must be denied; 404 means schema is not ready.
+            if [ "$status" = "401" ] || [ "$status" = "403" ]; then
               exit 0
             fi
             sleep 2

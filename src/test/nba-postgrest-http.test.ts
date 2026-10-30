@@ -3,7 +3,7 @@
 // The service exposes a local CI-only role without JWT verification. This
 // tests HTTP/SQL compatibility, NOT deployment auth or owner secret setup.
 import postgres from "postgres";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createUnattendedNbaHandler } from "../../supabase/functions/_shared/nba-worker-handler";
 
@@ -11,6 +11,21 @@ const enabled = process.env["CI"] === "true" &&
   process.env["RUN_DISPOSABLE_NBA_POSTGREST_TESTS"] === "true";
 const dbUrl = process.env["STAGING_TEST_DB_URL"];
 const restUrl = "http://127.0.0.1:3000";
+// Disposable CI-only signing key matches the local PostgREST service.
+// No production credentials or external Supabase projects are involved.
+const testJwtSecret = "tipoff-disposable-ci-jwt-secret-not-production-2026";
+const encodeJwt = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+const unsignedJwt = [
+  encodeJwt({ alg: "HS256", typ: "JWT" }),
+  encodeJwt({ role: "service_role" }),
+].join(".");
+const testServiceJwt = unsignedJwt + "." +
+  createHmac("sha256", testJwtSecret).update(unsignedJwt).digest("base64url");
+const privilegedFetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  const headers = new Headers(init?.headers);
+  headers.set("authorization", "Bearer " + testServiceJwt);
+  return fetch(input, { ...init, headers });
+};
 if (enabled) {
   if (!dbUrl) throw new Error("Missing disposable database URL");
   const target = new URL(dbUrl);
@@ -84,7 +99,7 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
         NBA_SYNC_WORKER_ENABLED: "true",
         NBA_SYNC_CRON_SECRET: secret,
         SUPABASE_URL: restUrl,
-        SUPABASE_SERVICE_ROLE_KEY: "sb_secret_ci-fake-postgrest-key",
+        SUPABASE_SERVICE_ROLE_KEY: testServiceJwt,
       } as Record<string, string>)[name],
       request, now: () => new Date("2026-11-17T12:00:00Z"),
       newToken: () => randomUUID(),
@@ -118,12 +133,37 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
     expect(await db`SELECT day FROM public.nba_sync_leases`).toHaveLength(0);
   });
 
+  it("requires a valid local service-role JWT for PostgREST games and worker RPCs", async () => {
+    // The local HTTP service must NOT default anonymous callers to service_role.
+    // An unauthorized caller may see 401, 403 or a deliberately hidden 404.
+    const endpoints = [
+      { url: restUrl + "/games?select=id&limit=0", method: "GET" },
+      { url: restUrl + "/rpc/try_claim_nba_sync", method: "POST",
+        body: JSON.stringify({ p_day: "2026-11-15",
+          p_owner_token: randomUUID(), p_lease_seconds: 180 }) },
+    ];
+    for (const endpoint of endpoints) {
+      for (const authorization of [null, "Bearer invalid.jwt.signature"]) {
+        const headers = new Headers({ "content-type": "application/json" });
+        if (authorization) headers.set("authorization", authorization);
+        const response = await fetch(endpoint.url, {
+          method: endpoint.method, headers, body: endpoint.body,
+        });
+        expect([401, 403, 404]).toContain(response.status);
+      }
+    }
+    const authorized = await privilegedFetch(restUrl + "/games?select=id&limit=0");
+    expect(authorized.status).toBe(200);
+    expect(await authorized.json()).toEqual([]);
+    expect(await db`SELECT day FROM public.nba_sync_leases WHERE day='2026-11-15'`).toHaveLength(0);
+  });
+
   it("enforces competing lease owners through PostgREST RPC and real row locks", async () => {
     if (!db) throw new Error("Database unavailable");
     const ownerA = randomUUID(), ownerB = randomUUID();
     const leaseDay = "2026-11-16";
     const claim = async (token: string) => {
-      const response = await fetch(restUrl + "/rpc/try_claim_nba_sync", {
+      const response = await privilegedFetch(restUrl + "/rpc/try_claim_nba_sync", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ p_day: leaseDay, p_owner_token: token, p_lease_seconds: 180 }),
       });
@@ -135,7 +175,7 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
     const winner = a ? ownerA : ownerB;
     const loser = a ? ownerB : ownerA;
     expect(await claim(loser)).toBe(false);
-    const release = await fetch(restUrl + "/rpc/release_nba_sync", {
+    const release = await privilegedFetch(restUrl + "/rpc/release_nba_sync", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ p_day: leaseDay, p_owner_token: winner }),
     });
@@ -178,7 +218,7 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
           NBA_SYNC_WORKER_ENABLED: "true",
           NBA_SYNC_CRON_SECRET: secret,
           SUPABASE_URL: restUrl,
-          SUPABASE_SERVICE_ROLE_KEY: "sb_secret_ci-fake-postgrest-key",
+          SUPABASE_SERVICE_ROLE_KEY: testServiceJwt,
         } as Record<string, string>)[name],
         request: backendRequest(paths, pauseHistory),
         now: () => new Date("2026-11-17T12:00:00Z"),
@@ -222,7 +262,7 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
     const leaseDay = "2026-11-14";
     const staleOwner = randomUUID(), currentOwner = randomUUID();
     const call = async (rpc: string, args: Record<string, unknown>) => {
-      return fetch(restUrl + "/rpc/" + rpc, {
+      return privilegedFetch(restUrl + "/rpc/" + rpc, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify(args),
       });
@@ -310,7 +350,7 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
           NBA_SYNC_WORKER_ENABLED: "true",
           NBA_SYNC_CRON_SECRET: secret,
           SUPABASE_URL: restUrl,
-          SUPABASE_SERVICE_ROLE_KEY: "sb_secret_ci-fake-postgrest-key",
+          SUPABASE_SERVICE_ROLE_KEY: testServiceJwt,
         } as Record<string, string>)[name],
         request,
         backendTimeoutMs: 800,
