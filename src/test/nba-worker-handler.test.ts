@@ -221,6 +221,11 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
 
   it("fences overlapping authorized requests so each Pacific day is committed once", async () => {
     const owned = new Map<string, string>();
+    // Do not let the first worker release its leases before both workers
+    // have attempted all three claims; this exercises genuine overlap.
+    let finishClaims!: () => void;
+    const bothClaimed = new Promise<void>(resolve => { finishClaims = resolve; });
+    let finalDayAttempts = 0;
     const committed = new Map<string, number>();
     const released: string[] = [];
     const request = mockFetch(async (url, init) => {
@@ -234,9 +239,14 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
       if (operation === "try_claim_nba_sync") {
         // Yield once to interleave the two independently authenticated workers.
         await Promise.resolve();
-        if (owned.has(args.p_day)) return reply(false);
-        owned.set(args.p_day, args.p_owner_token);
-        return reply(true);
+        const acquired = !owned.has(args.p_day);
+        if (acquired) owned.set(args.p_day, args.p_owner_token);
+        if (args.p_day === "2026-11-18") {
+          finalDayAttempts++;
+          if (finalDayAttempts === 2) finishClaims();
+          await bothClaimed;
+        }
+        return reply(acquired);
       }
       if (operation === "commit_nba_sync_day") {
         if (owned.get(args.p_day) !== args.p_owner_token) return reply({}, 409);
