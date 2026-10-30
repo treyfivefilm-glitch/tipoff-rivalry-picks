@@ -4,10 +4,11 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { describeAuthFailure, RESET_REQUEST_NOTICE, type AuthFeedback } from "@/lib/auth-feedback";
+import { safeAuthRedirect } from "@/lib/auth-redirect";
 import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, runWithoutGuestAccountSwitch } from "@/lib/guest-session-guard";
 
 export const Route = createFileRoute("/auth")({
-  validateSearch: (s: Record<string, unknown>) => ({ redirect: typeof s["redirect"] === "string" && s["redirect"].startsWith("/") && !s["redirect"].startsWith("//") ? s["redirect"] : undefined }),
+  validateSearch: (s: Record<string, unknown>) => ({ redirect: safeAuthRedirect(s["redirect"]) }),
   head: () => ({ meta: [{ title: "Sign in · NBA Pick Battle" }, { name: "description", content: "Sign in to your private NBA Pick Battle room." }, { property: "og:title", content: "Sign in · NBA Pick Battle" }, { property: "og:description", content: "Sign in to your private pick battle." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
   component: AuthPage,
 });
