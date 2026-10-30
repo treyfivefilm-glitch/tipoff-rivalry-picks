@@ -71,7 +71,7 @@ function fixture(options: Options = {}) {
   const handler = createUnattendedNbaHandler({
     env: name => env[name as keyof typeof env],
     request,
-    backendTimeoutMs: options.historyTimeout ? 40 : undefined,
+    ...(options.historyTimeout ? { backendTimeoutMs: 40 } : {}),
     now: () => new Date("2026-11-17T12:00:00Z"),
     newToken: () => "test-only-lease-token",
     log: { error: () => {}, warn: () => {}, info: () => {} },
