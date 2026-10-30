@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestWagers, paymentCentsWithinBalance, wagerLane, type WagerVersion } from "@/lib/wagers";
+import { latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, type WagerVersion } from "@/lib/wagers";
 import type { BoardGame } from "@/lib/rules";
 
 const future = new Date(Date.now() + 86400_000).toISOString();
@@ -73,5 +73,38 @@ describe("payment amount safety", () => {
     expect(paymentCentsWithinBalance("1.00", 0)).toBeNull();
     expect(paymentCentsWithinBalance("1.00", -100)).toBeNull();
     expect(paymentCentsWithinBalance("1.00", Number.NaN)).toBeNull();
+  });
+});
+
+describe("pending payment reservation", () => {
+  const outgoing = (cents: number, status: "pending" | "confirmed" | "rejected" = "pending") => ({
+    payer_id: "me", recipient_id: "friend", cents, status,
+  });
+
+  it("reserves an outgoing pending payment so it cannot be marked sent twice", () => {
+    expect(unrecordedPaymentCents(380, [outgoing(380)], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(380, [outgoing(100)], "me", "friend")).toBe(280);
+    expect(unrecordedPaymentCents(380, [outgoing(100), outgoing(80)], "me", "friend")).toBe(200);
+    expect(paymentCentsWithinBalance("2.01", unrecordedPaymentCents(380, [outgoing(180)], "me", "friend"))).toBeNull();
+  });
+
+  it("ignores confirmed, rejected, incoming, and unrelated-room-recipient transfers", () => {
+    const payments = [
+      outgoing(100, "confirmed"),
+      outgoing(100, "rejected"),
+      { payer_id: "friend", recipient_id: "me", cents: 100, status: "pending" as const },
+      { payer_id: "me", recipient_id: "other", cents: 100, status: "pending" as const },
+    ];
+    expect(unrecordedPaymentCents(380, payments, "me", "friend")).toBe(380);
+  });
+
+  it("fails closed on pending overpayment, invalid balances or missing recipient", () => {
+    expect(unrecordedPaymentCents(100, [outgoing(150)], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(100, [outgoing(50), outgoing(50)], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(100, [outgoing(-1)], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(100, [outgoing(Number.NaN)], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(-100, [], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(100, [], "me", null)).toBe(0);
+    expect(unrecordedPaymentCents(100, [], "me", "me")).toBe(0);
   });
 });
