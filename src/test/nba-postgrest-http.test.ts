@@ -274,4 +274,71 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
     expect(await db`SELECT day FROM public.nba_sync_leases WHERE day=${leaseDay}::date`).toHaveLength(0);
   });
 
+
+  it("fails closed when real PostgREST history is blocked by a PostgreSQL table lock", async () => {
+    if (!db) throw new Error("Database unavailable");
+    // Unlike a synthetic delayed fetch, this holds a genuine PostgreSQL
+    // ACCESS EXCLUSIVE lock. PostgREST's real SELECT must wait until the
+    // worker's HTTP deadline aborts; no fenced commit may be attempted.
+    const before = await db`SELECT day::text, game_count FROM public.sync_state ORDER BY day`;
+    let signalLocked!: () => void;
+    let unlock!: () => void;
+    const locked = new Promise<void>(resolve => { signalLocked = resolve; });
+    const releaseLock = new Promise<void>(resolve => { unlock = resolve; });
+    const lockTransaction = db.begin(async tx => {
+      await tx`LOCK TABLE public.games IN ACCESS EXCLUSIVE MODE`;
+      signalLocked();
+      await releaseLock;
+    });
+    const paths: string[] = [];
+    try {
+      await locked;
+      const request = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const target = String(input);
+        if (target.includes("scheduleLeagueV2")) {
+          return reply({ leagueSchedule: { gameDates: [{ gameDate: day, games: [scheduleGame] }] } });
+        }
+        if (target.includes("todaysScoreboard")) {
+          return reply({ scoreboard: { gameDate: day, games: [finalGame] } });
+        }
+        if (!target.startsWith(restUrl + "/rest/v1/")) throw new Error("Unexpected outbound target");
+        paths.push(new URL(target).pathname);
+        return fetch(restUrl + target.slice((restUrl + "/rest/v1").length), init);
+      }) as typeof fetch;
+      const handler = createUnattendedNbaHandler({
+        env: name => ({
+          NBA_SYNC_WORKER_ENABLED: "true",
+          NBA_SYNC_CRON_SECRET: secret,
+          SUPABASE_URL: restUrl,
+          SUPABASE_SERVICE_ROLE_KEY: "sb_secret_ci-fake-postgrest-key",
+        } as Record<string, string>)[name],
+        request,
+        backendTimeoutMs: 800,
+        now: () => new Date("2026-11-17T12:00:00Z"),
+        newToken: () => randomUUID(),
+        log: { error: () => {}, warn: () => {}, info: () => {} },
+      });
+      const response = await handler(new Request("http://worker.invalid", {
+        method: "POST", headers: { authorization: "Bearer " + secret },
+      }));
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        checked: 0, updated: 0, skipped: 0, failed: 3,
+        errors: ["NBA refresh failed"],
+      });
+      expect(paths.filter(p => p === "/rest/v1/games")).toHaveLength(1);
+      expect(paths.filter(p => p === "/rest/v1/rpc/try_claim_nba_sync")).toHaveLength(3);
+      expect(paths.filter(p => p === "/rest/v1/rpc/commit_nba_sync_day")).toHaveLength(0);
+      expect(paths.filter(p => p === "/rest/v1/rpc/release_nba_sync")).toHaveLength(3);
+    } finally {
+      // Always unlock the disposable database even on assertion failure.
+      unlock();
+      await lockTransaction;
+    }
+    expect(await db`SELECT day::text, game_count FROM public.sync_state ORDER BY day`).toEqual(before);
+    expect(await db`SELECT day FROM public.nba_sync_leases`).toHaveLength(0);
+    const [stored] = await db`SELECT state, away_score, home_score FROM public.games WHERE id=${gameId}`;
+    expect(stored).toMatchObject({ state: "final", away_score: 109, home_score: 107 });
+  });
+
 });
