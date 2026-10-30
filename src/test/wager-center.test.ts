@@ -81,29 +81,31 @@ describe("pending payment reservation", () => {
     payer_id: "me", recipient_id: "friend", cents, status,
   });
 
-  it("reserves an outgoing pending payment so it cannot be marked sent twice", () => {
+  it("disables another payment while any outgoing transfer awaits confirmation", () => {
     expect(unrecordedPaymentCents(380, [outgoing(380)], "me", "friend")).toBe(0);
-    expect(unrecordedPaymentCents(380, [outgoing(100)], "me", "friend")).toBe(280);
-    expect(unrecordedPaymentCents(380, [outgoing(100), outgoing(80)], "me", "friend")).toBe(200);
-    expect(paymentCentsWithinBalance("2.01", unrecordedPaymentCents(380, [outgoing(180)], "me", "friend"))).toBeNull();
+    expect(unrecordedPaymentCents(380, [outgoing(100)], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(380, [outgoing(1)], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(380, [], "me", "friend")).toBe(380);
   });
 
-  it("ignores confirmed, rejected, incoming, and unrelated-room-recipient transfers", () => {
+  it("allows payment again after confirmation or rejection and ignores incoming transfers", () => {
     const payments = [
       outgoing(100, "confirmed"),
       outgoing(100, "rejected"),
       { payer_id: "friend", recipient_id: "me", cents: 100, status: "pending" as const },
-      { payer_id: "me", recipient_id: "other", cents: 100, status: "pending" as const },
     ];
     expect(unrecordedPaymentCents(380, payments, "me", "friend")).toBe(380);
   });
 
-  it("fails closed on pending overpayment, invalid balances or missing recipient", () => {
-    expect(unrecordedPaymentCents(100, [outgoing(150)], "me", "friend")).toBe(0);
-    expect(unrecordedPaymentCents(100, [outgoing(50), outgoing(50)], "me", "friend")).toBe(0);
-    expect(unrecordedPaymentCents(100, [outgoing(-1)], "me", "friend")).toBe(0);
-    expect(unrecordedPaymentCents(100, [outgoing(Number.NaN)], "me", "friend")).toBe(0);
+  it("matches the RPC's per-room rule even if a pending recipient is unexpected", () => {
+    expect(unrecordedPaymentCents(380, [
+      { payer_id: "me", recipient_id: "other", cents: 1, status: "pending" },
+    ], "me", "friend")).toBe(0);
+  });
+
+  it("fails closed for invalid balances or missing recipient", () => {
     expect(unrecordedPaymentCents(-100, [], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(Number.NaN, [], "me", "friend")).toBe(0);
     expect(unrecordedPaymentCents(100, [], "me", null)).toBe(0);
     expect(unrecordedPaymentCents(100, [], "me", "me")).toBe(0);
   });
