@@ -288,6 +288,45 @@ Deno.test({
       assert(await databaseSnapshot() ===
         [counts[0]! + 1, counts[1]! + 3, 0].join(","),
         "Expected one existing game, three verified days and no active leases");
+
+      // A scheduled refresh may run repeatedly while the app is unattended.
+      // Replaying the same verified final must never duplicate the game,
+      // detach a pick/wager reference, or accumulate sync rows or leases.
+      const finalRow = await disposableSql(
+        "SELECT id,state,away_score,home_score,source FROM public.games WHERE id='nba:0022600999'"
+      );
+      const linkedRow = await disposableSql(
+        "SELECT game_id,note FROM public.ci_nba_game_refs"
+      );
+      const repeat = await fetch(workerUrl, {
+        method: "POST", headers: { authorization: "Bearer " + cronSecret },
+        signal: AbortSignal.timeout(20000),
+      });
+      const repeatResult = await repeat.json();
+      assert(repeat.status === 200, "Repeated final-score refresh failed: " +
+        JSON.stringify(repeatResult));
+      assert(JSON.stringify(repeatResult) === JSON.stringify({
+        checked: 3, updated: 1, skipped: 0, failed: 0, errors: [],
+      }), "Repeated refresh returned unexpected counts: " + JSON.stringify(repeatResult));
+      assert(await disposableSql(
+        "SELECT id,state,away_score,home_score,source FROM public.games WHERE id='nba:0022600999'"
+      ) === finalRow, "Repeated refresh changed the verified final");
+      assert(await disposableSql(
+        "SELECT game_id,note FROM public.ci_nba_game_refs"
+      ) === linkedRow, "Repeated refresh changed the linked pick/wager reference");
+      assert(await databaseSnapshot() ===
+        [counts[0]! + 1, counts[1]! + 3, 0].join(","),
+        "Repeated refresh duplicated game/sync rows or leaked leases");
+      for (const [path, expected] of [
+        ["/rpc/try_claim_nba_sync", 6], ["/games", 2],
+        ["/rpc/commit_nba_sync_day", 6], ["/rpc/release_nba_sync", 6],
+      ] as const) {
+        assert(calls.filter(c => c.path === path).length === expected,
+          "Unexpected repeated-refresh PostgREST calls to " + path);
+      }
+      assert(calls.filter(c => c.path === "/rpc/commit_nba_sync_day")
+        .every(c => c.status === 200),
+        "Repeated refresh must commit only with valid fenced leases");
     } finally {
       if (worker) await stopWorker(worker);
       await gateway.shutdown();
