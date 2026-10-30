@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GUEST_SESSION_WARNING, assertSameInviteAccount, ensureGuestSession, hasAccountSession, hasGuestSession, verifiedInviteAccountId } from "./guest-session-guard";
+import { GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, assertSameInviteAccount, ensureGuestSession, hasAccountSession, hasGuestSession, runWithoutGuestAccountSwitch, verifiedInviteAccountId } from "./guest-session-guard";
 
 describe("guest account protection on email sign-in", () => {
   it("blocks switching away from an existing guest session", () => {
@@ -48,6 +48,40 @@ describe("guest account protection on email sign-in", () => {
       getSession: async () => ({ data: { session: null }, error: null }),
       signInAnonymously: async () => ({ error: new Error("Guest registration unavailable") }),
     })).rejects.toThrow("Guest registration unavailable");
+  });
+  it("blocks reset and Google sign-in actions while a guest owns rooms", async () => {
+    let calls = 0;
+    const auth = {
+      getSession: async () => ({
+        data: { session: { user: { is_anonymous: true } } }, error: null,
+      }),
+    };
+    for (const action of ["reset", "google"]) {
+      await expect(runWithoutGuestAccountSwitch(auth, async () => {
+        calls++;
+        return action;
+      })).rejects.toBeInstanceOf(GuestAccountSwitchBlockedError);
+    }
+    expect(calls).toBe(0);
+  });
+  it("does not run account-switch actions if session verification fails", async () => {
+    let calls = 0;
+    await expect(runWithoutGuestAccountSwitch({
+      getSession: async () => ({
+        data: { session: null }, error: new Error("Session unavailable"),
+      }),
+    }, async () => { calls++; })).rejects.toThrow("Session unavailable");
+    expect(calls).toBe(0);
+  });
+  it("allows recovery actions for signed-out and permanent-account sessions", async () => {
+    for (const session of [null, { user: { is_anonymous: false } }]) {
+      let calls = 0;
+      const result = await runWithoutGuestAccountSwitch({
+        getSession: async () => ({ data: { session }, error: null }),
+      }, async () => { calls++; return "started"; });
+      expect(result).toBe("started");
+      expect(calls).toBe(1);
+    }
   });
   it("recognizes a verified invitation account without creating a guest", async () => {
     await expect(verifiedInviteAccountId({

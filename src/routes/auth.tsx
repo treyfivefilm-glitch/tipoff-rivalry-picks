@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { describeAuthFailure, RESET_REQUEST_NOTICE, type AuthFeedback } from "@/lib/auth-feedback";
-import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING } from "@/lib/guest-session-guard";
+import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, runWithoutGuestAccountSwitch } from "@/lib/guest-session-guard";
 
 export const Route = createFileRoute("/auth")({
   validateSearch: (s: Record<string, unknown>) => ({ redirect: typeof s["redirect"] === "string" && s["redirect"].startsWith("/") && !s["redirect"].startsWith("//") ? s["redirect"] : undefined }),
@@ -64,13 +64,24 @@ function AuthPage() {
       setFeedback({ message: "Enter your email address first.", nextStep: "You do not need to enter a password to request a reset.", canReset: false });
       return;
     }
-    setBusy(true); setFeedback(null); setNotice("");
+    setBusy(true); setFeedback(null); setNotice(""); setGuestProtected(false);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/reset-password` });
-      if (error) throw error;
+      // Recovery links may replace a guest session when opened in this browser.
+      // Keep guest rooms and wagers intact; upgrade from Profile instead.
+      await runWithoutGuestAccountSwitch(supabase.auth, async () => {
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: window.location.origin + "/reset-password",
+        });
+        if (error) throw error;
+      });
       setNotice(RESET_REQUEST_NOTICE);
     } catch (err) {
-      setFeedback(describeAuthFailure(err, "reset"));
+      if (err instanceof GuestAccountSwitchBlockedError) {
+        setGuestProtected(true);
+        setFeedback({ message: "Keep your current guest account", nextStep: GUEST_SESSION_WARNING, canReset: false });
+      } else {
+        setFeedback(describeAuthFailure(err, "reset"));
+      }
     } finally { setBusy(false); }
   }
 
@@ -89,22 +100,26 @@ function AuthPage() {
 
   async function google() {
     if (busy || !googleEnabled) return;
-    setBusy(true);
+    setBusy(true); setFeedback(null); setGuestProtected(false);
     try {
-      // The standalone Supabase project must enable Google and allowlist this origin.
-      // No managed Lovable OAuth broker is involved.
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      // Sign-in switches identity; guests must link Google in Profile instead.
+      const { data, error } = await runWithoutGuestAccountSwitch(supabase.auth, () => supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: window.location.origin + (redirect ?? "/rooms"),
           skipBrowserRedirect: true,
         },
-      });
+      }));
       if (error) throw error;
       if (!data.url) throw new Error("Google sign-in is not configured yet. Use email instead.");
       window.location.assign(data.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Google sign-in failed");
+      if (error instanceof GuestAccountSwitchBlockedError) {
+        setGuestProtected(true);
+        setFeedback({ message: "Keep your current guest account", nextStep: GUEST_SESSION_WARNING, canReset: false });
+      } else {
+        toast.error(error instanceof Error ? error.message : "Google sign-in failed");
+      }
       setBusy(false);
     }
   }

@@ -24,6 +24,31 @@ export async function ensureGuestSession(auth: {
   return "created";
 }
 
+/** Fail closed before an email reset or external sign-in can replace a guest
+ * account with rooms or unsettled wagers in this browser.
+ */
+export class GuestAccountSwitchBlockedError extends Error {
+  constructor() {
+    super("Keep your guest account and attach a recovery method in Profile.");
+    this.name = "GuestAccountSwitchBlockedError";
+  }
+}
+
+export async function runWithoutGuestAccountSwitch<T>(
+  auth: {
+    getSession: () => Promise<{
+      data: { session: { user?: { is_anonymous?: boolean | null } | null } | null };
+      error: Error | null;
+    }>;
+  },
+  action: () => Promise<T>,
+): Promise<T> {
+  const { data, error } = await auth.getSession();
+  if (error) throw error;
+  if (hasGuestSession(data.session)) throw new GuestAccountSwitchBlockedError();
+  return action();
+}
+
 export const GUEST_SESSION_WARNING = "Signing in or creating another account here could disconnect this browser from your guest rooms and wagers. Return to your rooms and use Profile to attach a permanent account before switching identities.";
 
 /** A failed account check is not evidence that a visitor is signed out.
