@@ -383,4 +383,55 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
     expect(stored).toMatchObject({ state: "final", away_score: 109, home_score: 107 });
   });
 
+  it("keeps final scores and freshness unchanged during a total provider outage over real PostgREST", async () => {
+    if (!db) throw new Error("Database unavailable");
+    const beforeGames = await db`SELECT id, state, away_score, home_score, source
+      FROM public.games WHERE id=${gameId}`;
+    const beforeFreshness = await db`SELECT day, game_count, synced_at
+      FROM public.sync_state ORDER BY day`;
+    const paths: string[] = [];
+    const request = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const target = String(input);
+      if (target.includes("scheduleLeagueV2") || target.includes("todaysScoreboard")) {
+        return new Response(JSON.stringify({ error: "Provider unavailable" }), {
+          status: 503, headers: { "content-type": "application/json" },
+        });
+      }
+      if (!target.startsWith(restUrl + "/rest/v1/")) {
+        throw new Error("Unexpected outbound target");
+      }
+      paths.push(new URL(target).pathname);
+      return fetch(restUrl + target.slice((restUrl + "/rest/v1").length), init);
+    }) as typeof fetch;
+    const handler = createUnattendedNbaHandler({
+      env: name => ({
+        NBA_SYNC_WORKER_ENABLED: "true",
+        NBA_SYNC_CRON_SECRET: secret,
+        SUPABASE_URL: restUrl,
+        SUPABASE_SERVICE_ROLE_KEY: testServiceJwt,
+      } as Record<string, string>)[name],
+      request,
+      now: () => new Date("2026-11-17T12:00:00Z"),
+      newToken: () => randomUUID(),
+      log: { error: () => {}, warn: () => {}, info: () => {} },
+    });
+    const response = await handler(new Request("http://worker.invalid", {
+      method: "POST", headers: { authorization: "Bearer " + secret },
+    }));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      checked: 0, updated: 0, skipped: 0, failed: 3,
+      errors: ["Season schedule unavailable", "Live scoreboard unavailable"],
+    });
+    expect(paths.filter(p => p === "/rest/v1/rpc/try_claim_nba_sync")).toHaveLength(3);
+    expect(paths).not.toContain("/rest/v1/games");
+    expect(paths).not.toContain("/rest/v1/rpc/commit_nba_sync_day");
+    expect(paths.filter(p => p === "/rest/v1/rpc/release_nba_sync")).toHaveLength(3);
+    expect(await db`SELECT id, state, away_score, home_score, source
+      FROM public.games WHERE id=${gameId}`).toEqual(beforeGames);
+    expect(await db`SELECT day, game_count, synced_at
+      FROM public.sync_state ORDER BY day`).toEqual(beforeFreshness);
+    expect(await db`SELECT day FROM public.nba_sync_leases`).toHaveLength(0);
+  });
+
 });
