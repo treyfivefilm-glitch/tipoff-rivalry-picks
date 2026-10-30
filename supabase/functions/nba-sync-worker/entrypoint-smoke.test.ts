@@ -9,7 +9,7 @@ async function startEntrypoint(enabled: boolean) {
     args: [
       "run", "--no-check",
       "--allow-net=0.0.0.0:8000,127.0.0.1:8000",
-      "--allow-env=NBA_SYNC_WORKER_ENABLED,NBA_SYNC_CRON_SECRET",
+      "--allow-env=NBA_SYNC_WORKER_ENABLED,NBA_SYNC_CRON_SECRET,SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY",
       "supabase/functions/nba-sync-worker/index.ts",
     ],
     clearEnv: true,
