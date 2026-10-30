@@ -160,7 +160,8 @@ BEGIN
       away_score integer, home_score integer, state text
     )
     JOIN public.games AS persisted ON persisted.id = incoming.id
-    WHERE persisted.source NOT IN ('nba', 'nba_official_schedule')
+    WHERE (persisted.source IS DISTINCT FROM 'nba'
+           AND persisted.source IS DISTINCT FROM 'nba_official_schedule')
        OR (persisted.start_utc AT TIME ZONE 'America/Los_Angeles')::date IS DISTINCT FROM p_day
        OR public.nba_canonical_team_code(persisted.away_code)
           IS DISTINCT FROM public.nba_canonical_team_code(incoming.away_code)
