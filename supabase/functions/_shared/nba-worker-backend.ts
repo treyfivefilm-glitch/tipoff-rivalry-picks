@@ -5,6 +5,26 @@ import { syncUtcBounds } from "./sync-days.ts";
 
 export const NBA_BACKEND_REQUEST_TIMEOUT_MS = 10000;
 
+/** Never transmit a privileged service-role key over remote plaintext HTTP
+ * or to a URL with embedded credentials, paths, queries, or fragments.
+ * Local loopback HTTP is permitted for disposable integration testing.
+ */
+export function normalizeNbaWorkerBackendUrl(endpoint: string): string {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    throw new Error("NBA sync backend URL is invalid");
+  }
+  const loopback = url.hostname === "localhost" ||
+    url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  if ((url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) ||
+      url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("NBA sync backend URL is not a safe service endpoint");
+  }
+  return url.origin;
+}
+
 /** A successful HTTP 200 array is not sufficient: a malformed stored row
  * can hide a picked game or bypass identity/score reconciliation. */
 export function isValidExistingNbaGame(value: unknown): value is ExistingNbaGame {
@@ -46,6 +66,7 @@ export function createNbaWorkerBackend(
   request: typeof fetch = fetch,
   timeoutMs = NBA_BACKEND_REQUEST_TIMEOUT_MS,
 ) {
+  const baseUrl = normalizeNbaWorkerBackendUrl(endpoint);
   const admin = {
     apikey: key,
     ...(key.startsWith("sb_secret_") ? {} : { Authorization: "Bearer " + key }),
@@ -58,7 +79,7 @@ export function createNbaWorkerBackend(
         name !== "commit_nba_sync_day") {
       throw new Error("Unexpected NBA sync RPC");
     }
-    const response = await request(endpoint + "/rest/v1/rpc/" + name, {
+    const response = await request(baseUrl + "/rest/v1/rpc/" + name, {
       method: "POST", headers: admin, body: JSON.stringify(args),
       // Never forward service-role credentials to a redirected host.
       redirect: "error", signal: AbortSignal.timeout(timeoutMs),
@@ -87,7 +108,7 @@ export function createNbaWorkerBackend(
       "&start_utc=gte." + bounds.lower + "T00:00:00Z&start_utc=lt." + bounds.upper + "T00:00:00Z&limit=3000";
     // Request an exact row count: PostgREST may silently cap a 3,000-row
     // request at its configured max_rows (often 1,000) while returning 200.
-    const response = await request(endpoint + path, {
+    const response = await request(baseUrl + path, {
       headers: { ...admin, Prefer: "count=exact" },
       // A proxy redirect must not forward the privileged apikey header.
       redirect: "error", signal: AbortSignal.timeout(timeoutMs),
