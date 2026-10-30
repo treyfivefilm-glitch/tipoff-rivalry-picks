@@ -79,9 +79,10 @@ Deno.test("Actual NBA Edge entrypoint is disabled by default and fails closed be
     const authorized = await fetch(url, {
       method: "POST", headers: { authorization: "Bearer " + secret },
     });
-    if (authorized.status !== 503 ||
-        (await authorized.json() as { error?: string }).error !== "Backend configuration missing") {
-      throw new Error("Entrypoint reached a backend without explicit configuration");
+    const result = await authorized.json() as { error?: string };
+    if (authorized.status !== 503 || result.error !== "Backend configuration missing") {
+      throw new Error("Unexpected authorized-without-backend response: " +
+        authorized.status + " " + JSON.stringify(result));
     }
   } finally {
     await stopEntrypoint(enabled);
