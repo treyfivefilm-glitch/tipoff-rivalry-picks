@@ -208,7 +208,7 @@ describe.skipIf(!enabled)("NBA lease concurrency (disposable CI database only)",
         const rpcName = target.split("/rest/v1/rpc/")[1];
         const args = JSON.parse(String(init?.body)) as {
           p_day: string; p_owner_token: string; p_lease_seconds?: number;
-          p_rows?: unknown[];
+          p_rows?: Record<string, string | number | null>[];
         };
         if (rpcName === "try_claim_nba_sync") {
           const [result] = await db`SELECT public.try_claim_nba_sync(
