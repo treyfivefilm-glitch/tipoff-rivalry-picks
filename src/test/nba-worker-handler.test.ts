@@ -30,7 +30,7 @@ const env = {
 };
 type Options = {
   feedsDown?: boolean; historyDown?: boolean; historyMalformed?: boolean;
-  historyMissingCount?: boolean; commitDown?: string;
+  historyMissingCount?: boolean; historyTimeout?: boolean; commitDown?: string;
   releaseDown?: string; releaseDenied?: string; skipLease?: string;
 };
 function fixture(options: Options = {}) {
@@ -41,6 +41,14 @@ function fixture(options: Options = {}) {
     if (url.includes("/rest/v1/games?")) {
       calls.push({ operation: "history", day: undefined });
       if (options.historyMissingCount) return new Response("[]", { status: 200 });
+      if (options.historyTimeout) {
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) return reject(new Error("Backend request missing timeout signal"));
+          if (signal.aborted) return reject(signal.reason);
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        });
+      }
       return options.historyDown ? reply({ error: "offline" }, 503) :
         options.historyMalformed ? reply([{}]) : reply([]);
     }
@@ -63,6 +71,7 @@ function fixture(options: Options = {}) {
   const handler = createUnattendedNbaHandler({
     env: name => env[name as keyof typeof env],
     request,
+    backendTimeoutMs: options.historyTimeout ? 40 : undefined,
     now: () => new Date("2026-11-17T12:00:00Z"),
     newToken: () => "test-only-lease-token",
     log: { error: () => {}, warn: () => {}, info: () => {} },
@@ -197,4 +206,74 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
     expect(calls.filter(call => call.operation === "release_nba_sync")
       .map(call => call.day)).toEqual(["2026-11-16", "2026-11-18"]);
   });
+
+  it("times out stalled backend history, skips all writes and releases each lease", async () => {
+    const { calls, post } = fixture({ historyTimeout: true });
+    const response = await post();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      checked: 0, updated: 0, failed: 3, errors: ["NBA refresh failed"],
+    });
+    expect(calls.filter(call => call.operation === "history")).toHaveLength(1);
+    expect(calls.filter(call => call.operation === "commit_nba_sync_day")).toHaveLength(0);
+    expect(calls.filter(call => call.operation === "release_nba_sync")).toHaveLength(3);
+  });
+
+  it("fences overlapping authorized requests so each Pacific day is committed once", async () => {
+    const owned = new Map<string, string>();
+    const committed = new Map<string, number>();
+    const released: string[] = [];
+    const request = mockFetch(async (url, init) => {
+      if (url.includes("scheduleLeagueV2")) return reply(schedule);
+      if (url.includes("todaysScoreboard")) return reply(live);
+      if (url.includes("/rest/v1/games?")) return reply([]);
+      const operation = url.split("/rpc/")[1];
+      const args = JSON.parse(String(init?.body)) as {
+        p_day: string; p_owner_token: string; p_rows?: unknown[];
+      };
+      if (operation === "try_claim_nba_sync") {
+        // Yield once to interleave the two independently authenticated workers.
+        await Promise.resolve();
+        if (owned.has(args.p_day)) return reply(false);
+        owned.set(args.p_day, args.p_owner_token);
+        return reply(true);
+      }
+      if (operation === "commit_nba_sync_day") {
+        if (owned.get(args.p_day) !== args.p_owner_token) return reply({}, 409);
+        committed.set(args.p_day, (committed.get(args.p_day) ?? 0) + 1);
+        return reply(args.p_rows?.length ?? 0);
+      }
+      if (operation === "release_nba_sync") {
+        if (owned.get(args.p_day) !== args.p_owner_token) return reply(false);
+        owned.delete(args.p_day);
+        released.push(args.p_day);
+        return reply(true);
+      }
+      throw new Error("Unexpected backend operation");
+    });
+    let nextToken = 0;
+    const handler = createUnattendedNbaHandler({
+      env: name => env[name as keyof typeof env],
+      request,
+      now: () => new Date("2026-11-17T12:00:00Z"),
+      newToken: () => "synthetic-owner-" + ++nextToken,
+      log: { error: () => {}, warn: () => {}, info: () => {} },
+    });
+    const post = () => handler(new Request("https://worker.invalid/", {
+      method: "POST", headers: { authorization: "Bearer " + secret },
+    }));
+    const responses = await Promise.all([post(), post()]);
+    const results = await Promise.all(responses.map(response => response.json())) as Array<{
+      checked: number; skipped: number; failed: number; updated: number;
+    }>;
+    expect(responses.map(response => response.status)).toEqual([200, 200]);
+    expect(results.reduce((sum, result) => sum + result.checked, 0)).toBe(3);
+    expect(results.reduce((sum, result) => sum + result.skipped, 0)).toBe(3);
+    expect(results.reduce((sum, result) => sum + result.failed, 0)).toBe(0);
+    expect(results.reduce((sum, result) => sum + result.updated, 0)).toBe(1);
+    expect([...committed.values()]).toEqual([1, 1, 1]);
+    expect(released).toHaveLength(3);
+    expect(owned.size).toBe(0);
+  });
+
 });
