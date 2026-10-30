@@ -173,8 +173,14 @@ Deno.test({
   name: "Actual NBA Edge entrypoint commits a synthetic final through real PostgREST and preserves its game ID",
   ignore: !enabled,
   async fn() {
+    // Earlier rollback-only SQL tests can leave their own fixture rows.
+    // Require only that this game's identity and leases are unoccupied.
     const before = await databaseSnapshot();
-    assert(before === "0,0,0", "Successful-path test requires a clean disposable database");
+    const counts = before.split(",").map(Number);
+    assert(counts.length === 3 && counts[2] === 0, "Disposable test has active leases");
+    assert(await disposableSql(
+      "SELECT count(*) FROM public.games WHERE id='nba:0022600999'"
+    ) === "0", "Synthetic official game ID is already occupied");
     const jwt = await localServiceJwt();
     const calls: Array<{ path: string; status: number; result: unknown }> = [];
     const gateway = startGateway(jwt, calls);
@@ -206,8 +212,9 @@ Deno.test({
         "SELECT id,state,away_score,home_score,source FROM public.games WHERE id='nba:0022600999'"
       ) === "nba:0022600999,final,109,107,nba",
         "Actual entrypoint did not store the official final and winning score");
-      assert(await databaseSnapshot() === "1,3,0",
-        "Expected one official game, three verified days and zero remaining leases");
+      assert(await databaseSnapshot() ===
+        [counts[0]! + 1, counts[1]! + 3, 0].join(","),
+        "Expected one additional official game, three verified days and zero remaining leases");
     } finally {
       if (worker) await stopWorker(worker);
       await gateway.shutdown();
