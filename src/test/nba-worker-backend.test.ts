@@ -100,7 +100,7 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
   });
 
   it("validates Content-Range against the returned history array", async () => {
-    for (const contentRange of ["0-1/3", "1-2/2", "0-2/2", "not-a-range"]) {
+    for (const contentRange of ["0-1/3", "1-2/2", "0-2/2", "0-1/*", "not-a-range"]) {
       const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
         new Response(JSON.stringify([validStoredGame, validStoredGame]), {
           status: 200, headers: { "content-range": contentRange },
