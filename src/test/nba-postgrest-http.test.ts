@@ -73,14 +73,18 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
       }
       if (!target.startsWith(restUrl + "/rest/v1/")) throw new Error("Unexpected outbound target");
       backendPaths.push(new URL(target).pathname);
-      return fetch(input, init);
+      // Supabase's API gateway mounts PostgREST under /rest/v1; the
+      // standalone PostgREST container exposes those routes at its root.
+      // Translate only this known local prefix, preserving real HTTP and SQL.
+      const directUrl = restUrl + target.slice((restUrl + "/rest/v1").length);
+      return fetch(directUrl, init);
     }) as typeof fetch;
     const handler = createUnattendedNbaHandler({
       env: name => ({
         NBA_SYNC_WORKER_ENABLED: "true",
         NBA_SYNC_CRON_SECRET: secret,
         SUPABASE_URL: restUrl,
-        SUPABASE_SERVICE_ROLE_KEY: "ci-fake-postgrest-key",
+        SUPABASE_SERVICE_ROLE_KEY: "sb_secret_ci-fake-postgrest-key",
       } as Record<string, string>)[name],
       request, now: () => new Date("2026-11-17T12:00:00Z"),
       newToken: () => randomUUID(),
@@ -119,7 +123,7 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
     const ownerA = randomUUID(), ownerB = randomUUID();
     const leaseDay = "2026-11-16";
     const claim = async (token: string) => {
-      const response = await fetch(restUrl + "/rest/v1/rpc/try_claim_nba_sync", {
+      const response = await fetch(restUrl + "/rpc/try_claim_nba_sync", {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ p_day: leaseDay, p_owner_token: token, p_lease_seconds: 180 }),
       });
@@ -131,7 +135,7 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
     const winner = a ? ownerA : ownerB;
     const loser = a ? ownerB : ownerA;
     expect(await claim(loser)).toBe(false);
-    const release = await fetch(restUrl + "/rest/v1/rpc/release_nba_sync", {
+    const release = await fetch(restUrl + "/rpc/release_nba_sync", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ p_day: leaseDay, p_owner_token: winner }),
     });
