@@ -63,10 +63,23 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # Disposable HTTP-to-SQL bridge. The local service intentionally uses
+      # an anonymous service_role for integration tests ONLY: this is not a
+      # production authentication configuration or an Edge deployment.
+      postgrest:
+        image: postgrest/postgrest:v12.2.3
+        env:
+          PGRST_DB_URI: postgres://postgres:postgres@postgres:5432/tipoff_test
+          PGRST_DB_SCHEMAS: public
+          PGRST_DB_ANON_ROLE: service_role
+          PGRST_SERVER_PORT: 3000
+        ports:
+          - 3000:3000
     env:
       CI: 'true'
       RUN_STAGING_DB_TESTS: 'true'
       RUN_DISPOSABLE_NBA_CONCURRENCY_TESTS: 'true'
+      RUN_DISPOSABLE_NBA_POSTGREST_TESTS: 'true'
       STAGING_TEST_DB_URL: 'postgres://postgres:postgres@127.0.0.1:5432/tipoff_test'
       PGPASSWORD: postgres
       SUPABASE_SERVICE_ROLE_KEY: ''
@@ -91,6 +104,19 @@ jobs:
         run: bunx vitest run src/test/nba-sync-leases.test.ts
       - name: Concurrent NBA worker sessions (disposable DB only)
         run: bunx vitest run src/test/nba-sync-concurrency.test.ts
+      - name: Refresh disposable PostgREST schema and wait for HTTP readiness
+        run: |
+          psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA public TO service_role; NOTIFY pgrst, 'reload schema';"
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:3000/ >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Disposable PostgREST did not become ready" >&2
+          exit 1
+      - name: Real PostgREST HTTP to PostgreSQL worker integration (disposable only)
+        run: bunx vitest run src/test/nba-postgrest-http.test.ts
 
   # Exercise the real Deno runtime, not just Node/Vitest simulations.
   # This is a typecheck and synthetic local-HTTP smoke test only:
