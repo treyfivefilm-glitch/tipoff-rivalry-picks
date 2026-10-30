@@ -29,10 +29,10 @@ export function paymentCentsWithinBalance(raw: string, outstandingCents: number)
   return Number.isSafeInteger(cents) && cents >= 1 && cents <= outstandingCents ? cents : null;
 }
 
-/** Remaining amount a player may mark as sent while earlier transfers await
- * recipient confirmation. Pending transfers do not settle the ledger, but
- * must reserve their amount so a refresh or double tap cannot offer it again.
- * The database must independently validate payment writes.
+/** The existing record_payment RPC allows only one pending outgoing payment
+ * per room. Do not offer another payment form until the recipient responds,
+ * even if the first transfer was partial. Pending transfers do not settle
+ * the displayed ledger balance.
  */
 export function unrecordedPaymentCents(
   owedCents: number,
@@ -41,12 +41,6 @@ export function unrecordedPaymentCents(
   recipientId: string | null,
 ): number {
   if (!Number.isSafeInteger(owedCents) || owedCents <= 0 || !payerId || !recipientId || payerId === recipientId) return 0;
-  let pending = 0;
-  for (const payment of payments) {
-    if (payment.status !== 'pending' || payment.payer_id !== payerId || payment.recipient_id !== recipientId) continue;
-    if (!Number.isSafeInteger(payment.cents) || payment.cents <= 0) return 0;
-    pending += payment.cents;
-    if (!Number.isSafeInteger(pending) || pending >= owedCents) return 0;
-  }
-  return owedCents - pending;
+  if (payments.some((payment) => payment.status === 'pending' && payment.payer_id === payerId)) return 0;
+  return owedCents;
 }
