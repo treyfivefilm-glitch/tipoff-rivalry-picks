@@ -306,3 +306,62 @@ Deno.test("Privileged PostgREST requests never follow a redirect to another serv
     await destination.shutdown();
   }
 });
+
+Deno.test("Real loopback PostgREST history timeout prevents fenced commits and releases leases", async () => {
+  // Exercise an actual delayed HTTP response, not an injected thrown error.
+  // A partial history read must never allow wager-linked scores to be written.
+  const calls: string[] = [];
+  const backend = Deno.serve({
+    hostname: "127.0.0.1", port: 0, onListen: () => {},
+  }, async request => {
+    const path = new URL(request.url).pathname;
+    assert.equal(request.headers.get("apikey"), config.SUPABASE_SERVICE_ROLE_KEY);
+    if (path === "/rest/v1/games") {
+      calls.push("history");
+      await new Promise(resolve => setTimeout(resolve, 400));
+      return json([]);
+    }
+    const name = path.split("/rest/v1/rpc/")[1];
+    if (!name) return json({ error: "Unknown path" }, 404);
+    calls.push(name);
+    if (name === "try_claim_nba_sync" || name === "release_nba_sync") return json(true);
+    if (name === "commit_nba_sync_day") return json(0);
+    return json({ error: "Unknown RPC" }, 404);
+  });
+  const backendUrl = `http://127.0.0.1:${backend.addr.port}`;
+  const outbound = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("scheduleLeagueV2")) return json(schedule);
+    if (url.includes("todaysScoreboard")) return json(live);
+    if (!url.startsWith(backendUrl + "/rest/v1/")) throw new Error("Unexpected outbound URL");
+    return fetch(input, init);
+  }) as typeof fetch;
+  const handler = createUnattendedNbaHandler({
+    env: name => name === "SUPABASE_URL" ? backendUrl : config[name],
+    request: outbound,
+    backendTimeoutMs: 80,
+    now: () => new Date("2026-11-17T12:00:00Z"),
+    newToken: () => "timeout-test-lease-token",
+    log: { error: () => {}, warn: () => {}, info: () => {} },
+  });
+  const worker = Deno.serve({
+    hostname: "127.0.0.1", port: 0, onListen: () => {},
+  }, handler);
+  try {
+    const response = await fetch(`http://127.0.0.1:${worker.addr.port}/`, {
+      method: "POST", headers: { authorization: "Bearer " + secret },
+    });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), {
+      checked: 0, updated: 0, skipped: 0, failed: 3,
+      errors: ["NBA refresh failed"],
+    });
+    assert.equal(calls.filter(call => call === "history").length, 1);
+    assert.equal(calls.filter(call => call === "try_claim_nba_sync").length, 3);
+    assert.equal(calls.filter(call => call === "commit_nba_sync_day").length, 0);
+    assert.equal(calls.filter(call => call === "release_nba_sync").length, 3);
+  } finally {
+    await worker.shutdown();
+    await backend.shutdown();
+  }
+});
