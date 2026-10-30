@@ -101,7 +101,11 @@ export function createNbaWorkerBackend(
     // A full 3,000-row page is ambiguous even if the server reports HTTP 200.
     // Fail closed rather than certify freshness from incomplete history.
     const range = response.headers.get("content-range");
-    if (range !== null) {
+    // An exact count was requested. Without Content-Range, even an empty
+    // HTTP 200 list cannot prove that PostgREST returned every stored game.
+    // Fail closed rather than risk orphaning existing picks or wagers.
+    if (range === null) throw new Error("NBA sync database returned incomplete games");
+    {
       // PostgREST uses "0-9/10" for complete results, "0-999/1500"
       // for truncated pages, and "*/0" for an empty result. An unknown
       // total cannot prove completeness even with fewer than 1,000 rows.
@@ -115,10 +119,9 @@ export function createNbaWorkerBackend(
         throw new Error("NBA sync database returned incomplete games");
       }
     }
-    // Without a trustworthy total, fail closed at PostgREST's common
-    // default max_rows cap as well as the explicitly requested 3,000.
-    if (response.status === 206 || data.length >= 3000 ||
-        (data.length >= 1000 && !range)) {
+    // Reject partial responses and an ambiguous full requested page even
+    // when the server reports an apparently matching exact count.
+    if (response.status === 206 || data.length >= 3000) {
       throw new Error("NBA sync database returned incomplete games");
     }
     if (!data.every(isValidExistingNbaGame)) {

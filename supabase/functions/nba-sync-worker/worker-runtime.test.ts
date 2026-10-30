@@ -22,7 +22,12 @@ const config: Record<string, string> = {
 };
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
-    status, headers: { "content-type": "application/json" },
+    status, headers: {
+      "content-type": "application/json",
+      ...(Array.isArray(data) ? {
+        "content-range": data.length ? `0-${data.length - 1}/${data.length}` : "*/0",
+      } : {}),
+    },
   });
 const schedule = {
   leagueSchedule: { gameDates: [{

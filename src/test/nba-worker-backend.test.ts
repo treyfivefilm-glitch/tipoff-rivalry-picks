@@ -10,7 +10,14 @@ const validStoredGame = {
   state: "final", status_detail: "Final", source: "nba",
 };
 const reply = (value: unknown, status = 200) =>
-  new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
+  new Response(JSON.stringify(value), {
+    status, headers: {
+      "content-type": "application/json",
+      ...(Array.isArray(value) ? {
+        "content-range": value.length ? `0-${value.length - 1}/${value.length}` : "*/0",
+      } : {}),
+    },
+  });
 const mockFetch = (handler: (url: string, init?: RequestInit) => Promise<Response>): typeof fetch =>
   handler as unknown as typeof fetch;
 
@@ -105,6 +112,15 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
         new Response(JSON.stringify([validStoredGame, validStoredGame]), {
           status: 200, headers: { "content-range": contentRange },
         })));
+      await expect(backend.readExisting(["2026-11-17"]))
+        .rejects.toThrow("incomplete games");
+    }
+  });
+
+  it("rejects missing exact counts on even small or empty HTTP 200 history", async () => {
+    for (const rows of [[], [validStoredGame]]) {
+      const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+        new Response(JSON.stringify(rows), { status: 200 })));
       await expect(backend.readExisting(["2026-11-17"]))
         .rejects.toThrow("incomplete games");
     }

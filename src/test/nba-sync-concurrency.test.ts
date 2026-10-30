@@ -163,7 +163,12 @@ describe.skipIf(!enabled)("NBA lease concurrency (disposable CI database only)",
     const secret = "test-only-postgres-bridge-secret-at-least-32-characters";
     const token = randomUUID();
     const reply = (value: unknown) => new Response(JSON.stringify(value), {
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(Array.isArray(value) ? {
+          "content-range": value.length ? `0-${value.length - 1}/${value.length}` : "*/0",
+        } : {}),
+      },
     });
     const scheduleGame = {
       gameId: "0022600012", gameDateTimeUTC: startUtc,
