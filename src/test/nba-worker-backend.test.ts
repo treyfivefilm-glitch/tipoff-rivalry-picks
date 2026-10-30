@@ -73,6 +73,54 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
   });
 
 
+  it("requests exact history counts and rejects a silent HTTP 200 PostgREST cap", async () => {
+    let prefer: string | undefined;
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async (_url, init) => {
+      prefer = (init?.headers as Record<string, string>)?.["Prefer"];
+      // The backend's configured max_rows can be 1000 even when limit=3000.
+      return new Response(JSON.stringify(Array.from({ length: 1000 }, () => validStoredGame)), {
+        status: 200, headers: { "content-range": "0-999/1250" },
+      });
+    }));
+    await expect(backend.readExisting(["2026-11-17"]))
+      .rejects.toThrow("incomplete games");
+    expect(prefer).toBe("count=exact");
+  });
+
+  it("rejects an ambiguous HTTP 200 default-cap page without a reliable total", async () => {
+    for (const contentRange of [null, "0-999/*"]) {
+      const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+        new Response(JSON.stringify(Array.from({ length: 1000 }, () => validStoredGame)), {
+          status: 200,
+          headers: contentRange ? { "content-range": contentRange } : {},
+        })));
+      await expect(backend.readExisting(["2026-11-17"]))
+        .rejects.toThrow("incomplete games");
+    }
+  });
+
+  it("validates Content-Range against the returned history array", async () => {
+    for (const contentRange of ["0-1/3", "1-2/2", "0-2/2", "not-a-range"]) {
+      const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+        new Response(JSON.stringify([validStoredGame, validStoredGame]), {
+          status: 200, headers: { "content-range": contentRange },
+        })));
+      await expect(backend.readExisting(["2026-11-17"]))
+        .rejects.toThrow("incomplete games");
+    }
+  });
+
+  it("accepts complete PostgREST history ranges including an empty result", async () => {
+    const complete = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+      new Response(JSON.stringify([validStoredGame]), {
+        status: 200, headers: { "content-range": "0-0/1" },
+      })));
+    expect(await complete.readExisting(["2026-11-17"])).toEqual([validStoredGame]);
+    const empty = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+      new Response("[]", { status: 200, headers: { "content-range": "*/0" } })));
+    expect(await empty.readExisting(["2026-11-17"])).toEqual([]);
+  });
+
   it("rejects malformed rows inside an HTTP 200 history array before reconciliation", async () => {
     const invalidRows = [
       null, {}, { ...validStoredGame, id: null },
