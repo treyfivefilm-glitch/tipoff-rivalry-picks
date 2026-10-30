@@ -4,11 +4,11 @@
 const secret = "disposable-entrypoint-test-secret-at-least-32-characters";
 const url = "http://127.0.0.1:8000/";
 
-async function startEntrypoint(enabled: boolean) {
+async function startEntrypoint(enabled: boolean, backendUrl?: string) {
   const child = new Deno.Command(Deno.execPath(), {
     args: [
       "run", "--no-check",
-      "--allow-net=0.0.0.0:8000,127.0.0.1:8000",
+      `--allow-net=0.0.0.0:8000,127.0.0.1:8000${backendUrl ? ",127.0.0.1:" + new URL(backendUrl).port : ""}`,
       "--allow-env=NBA_SYNC_WORKER_ENABLED,NBA_SYNC_CRON_SECRET,SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY",
       "supabase/functions/nba-sync-worker/index.ts",
     ],
@@ -17,6 +17,10 @@ async function startEntrypoint(enabled: boolean) {
       HOME: Deno.env.get("HOME") ?? "/tmp",
       NBA_SYNC_WORKER_ENABLED: enabled ? "true" : "false",
       NBA_SYNC_CRON_SECRET: secret,
+      ...(backendUrl ? {
+        SUPABASE_URL: backendUrl,
+        SUPABASE_SERVICE_ROLE_KEY: "disposable-local-entrypoint-test-key",
+      } : {}),
     },
     stdout: "null",
     stderr: "piped",
@@ -86,5 +90,47 @@ Deno.test("Actual NBA Edge entrypoint is disabled by default and fails closed be
     }
   } finally {
     await stopEntrypoint(enabled);
+  }
+});
+
+Deno.test("Actual Edge entrypoint rejects bad methods and credentials before touching a configured backend", async () => {
+  // Unlike the missing-backend smoke test, this provides a reachable local
+  // privileged endpoint. Any accidental auth bypass would be observable.
+  // No external services, real keys or NBA feeds are contacted.
+  let backendRequests = 0;
+  const backend = Deno.serve({
+    hostname: "127.0.0.1", port: 0, onListen: () => {},
+  }, () => {
+    backendRequests++;
+    return new Response("{}", { headers: { "content-type": "application/json" } });
+  });
+  let worker: Deno.ChildProcess | undefined;
+  try {
+    worker = await startEntrypoint(true, `http://127.0.0.1:${backend.addr.port}`);
+    const cases = [
+      { method: "GET", authorization: "Bearer " + secret, status: 405, error: "POST required" },
+      { method: "POST", authorization: "Bearer incorrect", status: 401, error: "Unauthorized" },
+      { method: "POST", authorization: "Basic " + secret, status: 401, error: "Unauthorized" },
+      { method: "POST", authorization: "Bearer " + secret + ",other", status: 401, error: "Unauthorized" },
+    ];
+    for (const testCase of cases) {
+      const response = await fetch(url, {
+        method: testCase.method, headers: { authorization: testCase.authorization },
+      });
+      const body = await response.json() as { error?: string };
+      if (response.status !== testCase.status || body.error !== testCase.error) {
+        throw new Error("Unexpected entrypoint authorization result: " +
+          response.status + " " + JSON.stringify(body));
+      }
+      if (response.headers.get("cache-control") !== "no-store") {
+        throw new Error("Authorization errors must not be cached");
+      }
+    }
+    if (backendRequests !== 0) {
+      throw new Error("Rejected Edge entrypoint request contacted privileged backend");
+    }
+  } finally {
+    if (worker) await stopEntrypoint(worker);
+    await backend.shutdown();
   }
 });
