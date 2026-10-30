@@ -218,6 +218,72 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     });
   });
 
+  it("refreshes a matching imported official NBA schedule row in place", async () => {
+    expect(await claim(owner)).toBe(true);
+    // Imported official schedule rows can carry existing picks and wagers.
+    // The fenced writer must reuse their official game ID, not reject the
+    // source label or create a replacement row.
+    await db`INSERT INTO public.games (
+      id, start_utc, away_code, away_name, home_code, home_name,
+      away_score, home_score, state, status_detail, source
+    ) VALUES (
+      ${sampleGame.id}, ${sampleGame.start_utc}, 'LAL', 'Los Angeles Lakers',
+      'GSW', 'Golden State Warriors', NULL, NULL, 'scheduled',
+      '7:00 PM ET', 'nba_official_schedule'
+    )`;
+    expect(await commit(owner)).toBe(1);
+    const [stored] = await db`SELECT id, source, state, away_score, home_score
+      FROM public.games WHERE id=${sampleGame.id}`;
+    expect(stored).toMatchObject({
+      id: sampleGame.id, source: "nba", state: "final",
+      away_score: 103, home_score: 100,
+    });
+    const [fresh] = await db`SELECT game_count FROM public.sync_state WHERE day=${day}`;
+    expect(fresh?.['game_count']).toBe(1);
+  });
+
+  it("preserves a verified imported final when the official schedule lags", async () => {
+    expect(await claim(owner)).toBe(true);
+    await db`INSERT INTO public.games (
+      id, start_utc, away_code, away_name, home_code, home_name,
+      away_score, home_score, state, status_detail, source
+    ) VALUES (
+      ${sampleGame.id}, ${sampleGame.start_utc}, 'LAL', 'Los Angeles Lakers',
+      'GSW', 'Golden State Warriors', 103, 100, 'final',
+      'Final', 'nba_official_schedule'
+    )`;
+    expect(await commit(owner, [{
+      ...sampleGame, state: "scheduled", status_detail: "Scheduled",
+      away_score: null, home_score: null,
+    }])).toBe(1);
+    const [stored] = await db`SELECT source, state, away_score, home_score
+      FROM public.games WHERE id=${sampleGame.id}`;
+    expect(stored).toMatchObject({
+      source: "nba_official_schedule", state: "final",
+      away_score: 103, home_score: 100,
+    });
+    const [fresh] = await db`SELECT game_count FROM public.sync_state WHERE day=${day}`;
+    expect(fresh?.['game_count']).toBe(1);
+  });
+
+  it("still rejects an unrelated source collision on an official NBA ID", async () => {
+    expect(await claim(owner)).toBe(true);
+    await db`INSERT INTO public.games (
+      id, start_utc, away_code, away_name, home_code, home_name,
+      away_score, home_score, state, status_detail, source
+    ) VALUES (
+      ${sampleGame.id}, ${sampleGame.start_utc}, 'LAL', 'Los Angeles Lakers',
+      'GSW', 'Golden State Warriors', NULL, NULL, 'scheduled',
+      '7:00 PM ET', 'espn'
+    )`;
+    await db`SAVEPOINT unrelated_source_collision`;
+    await expect(commit(owner)).rejects.toThrow(/NBA game ID matchup or day collision/);
+    await db`ROLLBACK TO SAVEPOINT unrelated_source_collision`;
+    const [stored] = await db`SELECT source, state FROM public.games WHERE id=${sampleGame.id}`;
+    expect(stored).toMatchObject({ source: "espn", state: "scheduled" });
+    expect(await db`SELECT day FROM public.sync_state WHERE day=${day}`).toHaveLength(0);
+  });
+
   it("rejects stale owners without publishing any games or freshness", async () => {
     expect(await claim(owner)).toBe(true);
     expect(await claim(contender)).toBe(false);
