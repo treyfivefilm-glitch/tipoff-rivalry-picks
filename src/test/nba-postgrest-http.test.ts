@@ -143,4 +143,78 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
     expect(await release.json()).toBe(true);
     expect(await db`SELECT day FROM public.nba_sync_leases WHERE day=${leaseDay}::date`).toHaveLength(0);
   });
+  it("prevents overlapping full worker runs against real PostgREST leases", async () => {
+    if (!db) throw new Error("Database unavailable");
+    // Hold the first worker after it has claimed all three days but before
+    // its real PostgREST history read. The second worker must lose every
+    // lease and must never read history or attempt a fenced commit.
+    let signalHistory!: () => void;
+    let releaseHistory!: () => void;
+    const historyStarted = new Promise<void>(resolve => { signalHistory = resolve; });
+    const historyGate = new Promise<void>(resolve => { releaseHistory = resolve; });
+    const firstPaths: string[] = [];
+    const secondPaths: string[] = [];
+    const backendRequest = (paths: string[], pauseHistory: boolean) =>
+      (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const target = String(input);
+        if (target.includes("scheduleLeagueV2")) {
+          return reply({ leagueSchedule: { gameDates: [{ gameDate: day, games: [scheduleGame] }] } });
+        }
+        if (target.includes("todaysScoreboard")) {
+          return reply({ scoreboard: { gameDate: day, games: [finalGame] } });
+        }
+        if (!target.startsWith(restUrl + "/rest/v1/")) throw new Error("Unexpected outbound target");
+        const pathname = new URL(target).pathname;
+        paths.push(pathname);
+        if (pauseHistory && pathname === "/rest/v1/games") {
+          signalHistory();
+          await historyGate;
+        }
+        return fetch(restUrl + target.slice((restUrl + "/rest/v1").length), init);
+      }) as typeof fetch;
+    const worker = (paths: string[], pauseHistory: boolean) =>
+      createUnattendedNbaHandler({
+        env: name => ({
+          NBA_SYNC_WORKER_ENABLED: "true",
+          NBA_SYNC_CRON_SECRET: secret,
+          SUPABASE_URL: restUrl,
+          SUPABASE_SERVICE_ROLE_KEY: "sb_secret_ci-fake-postgrest-key",
+        } as Record<string, string>)[name],
+        request: backendRequest(paths, pauseHistory),
+        now: () => new Date("2026-11-17T12:00:00Z"),
+        newToken: () => randomUUID(),
+        log: { error: () => {}, warn: () => {}, info: () => {} },
+      });
+    const authorizedPost = () => new Request("http://worker.invalid", {
+      method: "POST", headers: { authorization: "Bearer " + secret },
+    });
+    const firstRun = worker(firstPaths, true)(authorizedPost());
+    await historyStarted;
+    let secondResponse: Response;
+    try {
+      secondResponse = await worker(secondPaths, false)(authorizedPost());
+    } finally {
+      // Always let the first worker finish, even if the second request fails.
+      releaseHistory();
+    }
+    const firstResponse = await firstRun;
+    expect(secondResponse.status).toBe(200);
+    expect(await secondResponse.json()).toEqual({
+      checked: 0, updated: 0, skipped: 3, failed: 0, errors: [],
+    });
+    expect(secondPaths.filter(p => p === "/rest/v1/rpc/try_claim_nba_sync")).toHaveLength(3);
+    expect(secondPaths).not.toContain("/rest/v1/games");
+    expect(secondPaths).not.toContain("/rest/v1/rpc/commit_nba_sync_day");
+    expect(secondPaths).not.toContain("/rest/v1/rpc/release_nba_sync");
+    expect(firstResponse.status).toBe(200);
+    expect(await firstResponse.json()).toEqual({
+      checked: 3, updated: 1, skipped: 0, failed: 0, errors: [],
+    });
+    expect(firstPaths.filter(p => p === "/rest/v1/rpc/commit_nba_sync_day")).toHaveLength(3);
+    expect(firstPaths.filter(p => p === "/rest/v1/rpc/release_nba_sync")).toHaveLength(3);
+    expect(await db`SELECT day FROM public.nba_sync_leases`).toHaveLength(0);
+    const [stored] = await db`SELECT state, away_score, home_score FROM public.games WHERE id=${gameId}`;
+    expect(stored).toMatchObject({ state: "final", away_score: 109, home_score: 107 });
+  });
+
 });
