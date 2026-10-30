@@ -150,6 +150,10 @@ jobs:
         # Only permit loopback traffic for the local Deno HTTP server smoke test.
         # All upstream NBA/backend calls remain synthetic injected mocks.
         run: deno test --allow-net=127.0.0.1 supabase/functions/nba-sync-worker/worker-runtime.test.ts
+      - name: Boot actual disabled Edge entrypoint and verify auth gates (no secrets)
+        # The child process gets a clean environment and loopback-only runtime access.
+        # No Supabase backend, NBA provider, scheduler, or deployment is contacted.
+        run: deno test --allow-run --allow-net=127.0.0.1 --allow-env=HOME supabase/functions/nba-sync-worker/entrypoint-smoke.test.ts
 
   # Real room departure/RLS checks against a disposable local PostgreSQL service.
   # Replays the actual room/wager migrations, not mocked RPC implementations.
