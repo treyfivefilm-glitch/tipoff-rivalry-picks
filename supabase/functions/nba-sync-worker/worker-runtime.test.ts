@@ -12,6 +12,7 @@ const assert = {
   },
 };
 import { createUnattendedNbaHandler } from "../_shared/nba-worker-handler.ts";
+import { createNbaWorkerBackend } from "../_shared/nba-worker-backend.ts";
 
 const secret = "test-only-deno-runtime-secret-at-least-32-characters";
 const config: Record<string, string> = {
@@ -219,5 +220,49 @@ Deno.test("Edge handler crosses a real loopback PostgREST HTTP boundary and fail
   } finally {
     await worker.shutdown();
     await backend.shutdown();
+  }
+});
+
+Deno.test("Privileged PostgREST requests never follow a redirect to another server", async () => {
+  // Real Deno fetch across two loopback servers: a misconfigured backend
+  // must not redirect the service-role apikey to a different origin.
+  let forwarded = 0;
+  const destination = Deno.serve({
+    hostname: "127.0.0.1", port: 0, onListen: () => {},
+  }, () => {
+    forwarded++;
+    return json({ error: "Unexpected credential forwarding" }, 500);
+  });
+  const redirector = Deno.serve({
+    hostname: "127.0.0.1", port: 0, onListen: () => {},
+  }, () => new Response(null, {
+    status: 307,
+    headers: { location: `http://127.0.0.1:${destination.addr.port}/capture` },
+  }));
+  try {
+    const backend = createNbaWorkerBackend(
+      `http://127.0.0.1:${redirector.addr.port}`,
+      config.SUPABASE_SERVICE_ROLE_KEY,
+    );
+    let rejectedRpc = false;
+    try {
+      await backend.rpc<boolean>("try_claim_nba_sync", {
+        p_day: "2026-11-17", p_owner_token: "test-only-token",
+      });
+    } catch {
+      rejectedRpc = true;
+    }
+    assert.equal(rejectedRpc, true);
+    let rejectedHistory = false;
+    try {
+      await backend.readExisting(["2026-11-17"]);
+    } catch {
+      rejectedHistory = true;
+    }
+    assert.equal(rejectedHistory, true);
+    assert.equal(forwarded, 0);
+  } finally {
+    await redirector.shutdown();
+    await destination.shutdown();
   }
 });
