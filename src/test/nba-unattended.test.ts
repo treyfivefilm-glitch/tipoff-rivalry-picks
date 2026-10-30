@@ -61,7 +61,7 @@ describe("unattended NBA worker pure preparation", () => {
     );
     // Feed timeouts are separate. Both backend REST paths must be bounded
     // so a stalled request cannot hold the leased day indefinitely.
-    expect(worker).toContain("createNbaWorkerBackend(endpoint, key, requestHttp)");
+    expect(worker).toContain("createNbaWorkerBackend(endpoint, key, requestHttp, deps.backendTimeoutMs)");
     expect(backend).toContain("export const NBA_BACKEND_REQUEST_TIMEOUT_MS = 10000;");
     expect(backend.match(/signal: AbortSignal\.timeout\(timeoutMs\)/g)).toHaveLength(2);
     expect(worker).toContain("finally {");
@@ -579,7 +579,7 @@ describe("unattended NBA worker pure preparation", () => {
     const backend = readFileSync(
       new URL("../../supabase/functions/_shared/nba-worker-backend.ts", import.meta.url), "utf8",
     );
-    expect(worker).toContain("createNbaWorkerBackend(endpoint, key, requestHttp)");
+    expect(worker).toContain("createNbaWorkerBackend(endpoint, key, requestHttp, deps.backendTimeoutMs)");
     expect(backend).toContain("state,status_detail,source");
   });
 
