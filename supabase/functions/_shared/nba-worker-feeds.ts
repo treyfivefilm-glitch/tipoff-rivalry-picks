@@ -11,6 +11,9 @@ const LIVE = BASE + "/liveData/scoreboard/todaysScoreboard_00.json";
 async function fetchJson(url: string, request: typeof fetch, timeoutMs: number): Promise<unknown> {
   const response = await request(url, {
     signal: AbortSignal.timeout(timeoutMs),
+    // Never follow an unexpected CDN redirect to another feed host. A valid
+    // JSON shape alone does not prove the redirected source is authoritative.
+    redirect: "error",
     headers: { accept: "application/json" },
   });
   // HTTP 206 can contain valid JSON while omitting games. A partial feed
