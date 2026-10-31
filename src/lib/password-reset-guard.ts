@@ -1,3 +1,22 @@
+/** A non-guest session alone is not proof that an account can be recovered.
+ * Only a verified email or an actually linked Google identity qualifies.
+ */
+export type AccountRecoveryStatus = "guest" | "verified-email" | "linked-google" | "unverified-email" | "unconfigured";
+export function accountRecoveryStatus({
+  isAnonymous, email, emailVerified, googleLinked,
+}: {
+  isAnonymous: boolean;
+  email: string | null;
+  emailVerified: boolean;
+  googleLinked: boolean;
+}): AccountRecoveryStatus {
+  if (isAnonymous) return "guest";
+  if (email?.trim() && emailVerified) return "verified-email";
+  if (googleLinked) return "linked-google";
+  if (email?.trim()) return "unverified-email";
+  return "unconfigured";
+}
+
 /** Password changes require a real email-account session, not a temporary guest. */
 export type PasswordResetAccess = "ready" | "guest" | "signed-out";
 

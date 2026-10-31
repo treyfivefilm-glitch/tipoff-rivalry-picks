@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { CheckCircle2, KeyRound, ShieldAlert, Link2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { verifyAccountMutation } from "@/lib/password-reset-guard";
+import { accountRecoveryStatus, verifyAccountMutation } from "@/lib/password-reset-guard";
 
 /** Makes account recovery and the temporary nature of guest sessions visible.
  * Supabase keeps the SAME user ID (and hence room/picks) when an anonymous
@@ -19,6 +19,12 @@ export function AccountSecurity() {
   const googleEnabled = import.meta.env["VITE_ENABLE_GOOGLE_OAUTH"] === "true";
   const [verificationSent, setVerificationSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const recoveryStatus = guest === null ? null : accountRecoveryStatus({
+    isAnonymous: guest,
+    email: currentEmail,
+    emailVerified,
+    googleLinked: linkedGoogle,
+  });
 
   useEffect(() => {
     let active = true;
@@ -144,9 +150,23 @@ export function AccountSecurity() {
             {googleEnabled ? " Linking Google preserves your room and pick history." : " Google linking is not configured yet."}
           </p>
         </> : <>
-          <p className="flex items-center gap-2 text-sm text-[#82dbac]">
-            <CheckCircle2 className="h-4 w-4" /> {emailVerified ? "Verified email account" : "Permanent sign-in configured"}
-          </p>
+          {recoveryStatus === "verified-email" || recoveryStatus === "linked-google" ? (
+            <p className="flex items-center gap-2 text-sm text-[#82dbac]">
+              <CheckCircle2 className="h-4 w-4" />
+              {recoveryStatus === "verified-email" ? "Verified email account" : "Google sign-in linked"}
+            </p>
+          ) : (
+            <div role="status" className="space-y-1 rounded-xl border border-[#ff882e]/40 bg-[#ff882e]/10 p-3">
+              <p className="flex items-center gap-2 text-sm font-semibold text-[#ffad69]">
+                <ShieldAlert className="h-4 w-4" /> Account recovery not verified
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {recoveryStatus === "unverified-email"
+                  ? "Your email is not verified yet. Check your verification email, keep this browser signed in, then refresh account status."
+                  : "No verified recovery method is attached. Keep this browser signed in to protect your rooms and wagers."}
+              </p>
+            </div>
+          )}
           <p className="break-all text-sm text-muted-foreground">{currentEmail ?? "Connected account"}</p>
           {googleEnabled && !linkedGoogle && (
             <button type="button" disabled={busy} onClick={() => void linkGoogle()}

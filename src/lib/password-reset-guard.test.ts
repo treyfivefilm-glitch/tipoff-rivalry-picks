@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { passwordResetAccess, validateResetPasswords, verifyAccountMutation, type AccountMutationUser } from "./password-reset-guard";
+import { accountRecoveryStatus, passwordResetAccess, validateResetPasswords, verifyAccountMutation, type AccountMutationUser } from "./password-reset-guard";
 
 describe("password reset account safety", () => {
   it("does not expose password changes without a session", () => {
@@ -60,5 +60,26 @@ describe("profile account recovery identity safety", () => {
     await expect(verifyAccountMutation(auth(permanent), permanent.id, "link-google")).resolves.toBeUndefined();
     await expect(verifyAccountMutation(auth(permanent), guest.id, "link-google"))
       .rejects.toThrow("account changed");
+  });
+});
+
+describe("profile recovery readiness", () => {
+  const status = (isAnonymous: boolean, email: string | null, emailVerified: boolean, googleLinked: boolean) =>
+    accountRecoveryStatus({ isAnonymous, email, emailVerified, googleLinked });
+
+  it("never calls a temporary guest recoverable even with a pending email", () => {
+    expect(status(true, "guest@example.com", true, true)).toBe("guest");
+  });
+
+  it("recognizes a verified email or an actually linked Google identity", () => {
+    expect(status(false, "player@example.com", true, false)).toBe("verified-email");
+    expect(status(false, null, false, true)).toBe("linked-google");
+    expect(status(false, "player@example.com", false, true)).toBe("linked-google");
+  });
+
+  it("warns when an email is unverified or no recovery method is attached", () => {
+    expect(status(false, "player@example.com", false, false)).toBe("unverified-email");
+    expect(status(false, "   ", false, false)).toBe("unconfigured");
+    expect(status(false, null, true, false)).toBe("unconfigured");
   });
 });
