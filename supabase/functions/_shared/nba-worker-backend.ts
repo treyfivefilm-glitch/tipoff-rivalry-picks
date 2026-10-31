@@ -5,6 +5,20 @@ import { syncUtcBounds } from "./sync-days.ts";
 
 export const NBA_BACKEND_REQUEST_TIMEOUT_MS = 10000;
 
+/** Date.parse normalizes impossible dates (e.g. February 30) into another
+ * month. Reject them before using stored history to certify score freshness.
+ */
+function hasRealIsoCalendarDate(value: string): boolean {
+  const match = /^(\\d{4})-(\\d{2})-(\\d{2})T/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1]!;
+}
+
 /** Never transmit a privileged service-role key over remote plaintext HTTP
  * or to a URL with embedded credentials, paths, queries, or fragments.
  * Local loopback HTTP is permitted for disposable integration testing.
@@ -51,6 +65,7 @@ export function isValidExistingNbaGame(value: unknown): value is ExistingNbaGame
     typeof row["start_utc"] === "string" &&
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(row["start_utc"]) &&
     Number.isFinite(Date.parse(row["start_utc"])) &&
+    hasRealIsoCalendarDate(row["start_utc"]) &&
     typeof row["away_code"] === "string" && row["away_code"].trim().length > 0 &&
     typeof row["home_code"] === "string" && row["home_code"].trim().length > 0 &&
     typeof row["state"] === "string" && row["state"].trim().length > 0 &&
