@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { CheckCircle2, ChevronRight, Loader2, ShieldAlert, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { isValidInviteCode, normalizeInviteCode } from "@/lib/invites";
-import { assertSameInviteAccount, ensureGuestSession, verifiedInviteAccountId } from "@/lib/guest-session-guard";
+import { assertSameInviteAccount, createInviteGuestIfSignedOut, InviteAccountChangedError, verifiedInviteAccountId } from "@/lib/guest-session-guard";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/join/$code")({
@@ -61,9 +61,10 @@ function JoinPage() {
     try {
       if (newGuest) {
         if (!guestEnabled) throw new Error("Guest sign-in isn't enabled. Sign in instead.");
-        // A second tab may have signed in since the invitation first loaded.
-        // Reuse that identity rather than orphaning its rooms and wagers.
-        await ensureGuestSession(supabase.auth);
+        // Another tab may have signed in after this page verified sign-out.
+        // Never silently attach this invitation to that different identity.
+        // Refresh the account check so the player can confirm it explicitly.
+        await createInviteGuestIfSignedOut(supabase.auth);
         setSignedIn(true);
       }
       // The invitation may have been open while a session expired in another tab.
@@ -95,6 +96,9 @@ function JoinPage() {
       toast.success("You're in! Make your first pick.");
       await nav({ to: "/room/$id", params: { id: data as string } });
     } catch (reason) {
+      if (reason instanceof InviteAccountChangedError) {
+        setSessionRetry(previous => previous + 1);
+      }
       const message = reason instanceof Error ? reason.message : "Couldn't join this battle";
       setError(message);
       toast.error(message);
