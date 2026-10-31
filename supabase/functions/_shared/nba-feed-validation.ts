@@ -70,6 +70,22 @@ const NBA_TEAM_CODES = new Set([
   "OKC", "ORL", "PHI", "PHX", "POR", "SAC", "SAS", "TOR", "UTA", "WAS",
 ]);
 
+/** JavaScript normalizes impossible dates (e.g. November 31) when parsing
+ * ISO timestamps. A provider row with a fabricated tipoff must not be
+ * assigned to another Pacific day or certify NBA score freshness.
+ */
+function hasRealNbaTipoff(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match || !Number.isFinite(Date.parse(value))) return false;
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  const hour = Number(match[4]), minute = Number(match[5]), second = Number(match[6]);
+  if (year < 1 || month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day >= 1 && day <= days[month - 1]!;
+}
+
 /** A malformed game inside an otherwise valid NBA feed must not crash the
  * entire refresh or replace a healthy schedule entry with a broken live row.
  */
@@ -119,7 +135,7 @@ export function isUsableNbaGame(value: unknown): boolean {
   // nonempty but malformed ID must not certify a provider feed as healthy or
   // create a phantom game that could later be picked or wagered on.
   return typeof value["gameId"] === "string" && /^\d{10}$/.test(value["gameId"]) &&
-    typeof tipoff === "string" && Number.isFinite(Date.parse(tipoff)) &&
+    hasRealNbaTipoff(tipoff) &&
     (value["gameStatusText"] == null || typeof value["gameStatusText"] === "string") &&
     teamsValid;
 }
