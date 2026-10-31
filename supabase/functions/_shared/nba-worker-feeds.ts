@@ -19,9 +19,23 @@ async function fetchJson(url: string, request: typeof fetch, timeoutMs: number):
   return await response.json();
 }
 
+/** A stale HTTP 200 "today" scoreboard must not be treated as a healthy
+ * live feed. NBA's scoreboard date can lead or lag UTC by one day around
+ * Pacific evening tipoffs; older/future dates indicate a provider outage.
+ */
+export function isTimelyNbaScoreboard(payload: unknown, now: Date): boolean {
+  if (!isValidNbaScoreboard(payload) || !Number.isFinite(now.getTime())) return false;
+  const day = (payload as { scoreboard: { gameDate: string } }).scoreboard.gameDate;
+  const utcToday = now.toISOString().slice(0, 10);
+  const dayMs = Date.parse(day + "T00:00:00Z");
+  const todayMs = Date.parse(utcToday + "T00:00:00Z");
+  return Math.abs(dayMs - todayMs) <= 86_400_000;
+}
+
 export async function loadUnattendedNbaFeeds(
   request: typeof fetch = fetch,
   timeoutMs = 11000,
+  now: Date = new Date(),
 ): Promise<{ schedule: unknown | null; live: unknown | null; errors: string[] }> {
   const [scheduleResult, liveResult] = await Promise.allSettled([
     fetchJson(SCHEDULE, request, timeoutMs),
@@ -30,7 +44,7 @@ export async function loadUnattendedNbaFeeds(
   const schedule = scheduleResult.status === "fulfilled" &&
     verifiedUnattendedNbaSchedule(scheduleResult.value) ? scheduleResult.value : null;
   const live = liveResult.status === "fulfilled" &&
-    isValidNbaScoreboard(liveResult.value) ? liveResult.value : null;
+    isTimelyNbaScoreboard(liveResult.value, now) ? liveResult.value : null;
   const errors: string[] = [];
   if (!schedule) errors.push("Season schedule unavailable");
   if (!live) errors.push("Live scoreboard unavailable");

@@ -11,6 +11,7 @@ const game = {
 };
 const schedule = { leagueSchedule: { gameDates: [{ gameDate: "2026-11-17", games: [game] }] } };
 const live = { scoreboard: { gameDate: "2026-11-18", games: [game] } };
+const now = new Date("2026-11-17T12:00:00Z");
 const reply = (value: unknown, status = 200) =>
   new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 const mockFetch = (handler: (url: string, init?: RequestInit) => Promise<Response>): typeof fetch =>
@@ -26,7 +27,7 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
       });
       return reply(url.includes("scheduleLeague") ? schedule : live);
     });
-    const result = await loadUnattendedNbaFeeds(fetcher, 100);
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
     expect(result).toEqual({ schedule, live, errors: [] });
     expect(unattendedNbaHttpStatus(0, result.errors)).toBe(200);
     expect(calls).toHaveLength(2);
@@ -38,7 +39,7 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
   it("preserves the valid live feed when the season provider returns HTTP 503", async () => {
     const fetcher = mockFetch(async url =>
       url.includes("scheduleLeague") ? reply({ error: "unavailable" }, 503) : reply(live));
-    const result = await loadUnattendedNbaFeeds(fetcher, 100);
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
     expect(result).toEqual({
       schedule: null, live, errors: ["Season schedule unavailable"],
     });
@@ -48,7 +49,7 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
   it("preserves the valid schedule when live provider returns invalid JSON", async () => {
     const fetcher = mockFetch(async url => url.includes("scheduleLeague")
       ? reply(schedule) : new Response("{invalid", { status: 200 }));
-    const result = await loadUnattendedNbaFeeds(fetcher, 100);
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
     expect(result).toEqual({
       schedule, live: null, errors: ["Live scoreboard unavailable"],
     });
@@ -57,7 +58,7 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
 
   it("rejects malformed HTTP 200 envelopes from both feeds", async () => {
     const fetcher = mockFetch(async () => reply({ error: "upstream error" }));
-    const result = await loadUnattendedNbaFeeds(fetcher, 100);
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
     expect(result).toEqual({
       schedule: null, live: null,
       errors: ["Season schedule unavailable", "Live scoreboard unavailable"],
@@ -74,16 +75,39 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
         signal.addEventListener("abort", () => reject(signal.reason), { once: true });
       });
     });
-    const result = await loadUnattendedNbaFeeds(fetcher, 50);
+    const result = await loadUnattendedNbaFeeds(fetcher, 50, now);
     expect(result).toEqual({
       schedule: null, live, errors: ["Season schedule unavailable"],
     });
     expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
   });
+  it("rejects stale or implausibly future HTTP 200 live scoreboard dates without losing the season", async () => {
+    for (const day of ["2026-11-15", "2026-11-20"]) {
+      const wrongDay = { scoreboard: { ...live.scoreboard, gameDate: day } };
+      const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+        ? reply(schedule) : reply(wrongDay));
+      const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+      expect(result).toEqual({
+        schedule, live: null, errors: ["Live scoreboard unavailable"],
+      });
+      expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+    }
+  });
+
+  it("allows one-day UTC/Pacific scoreboard offsets but fails closed on an invalid clock", async () => {
+    for (const day of ["2026-11-16", "2026-11-17", "2026-11-18"]) {
+      const offsetLive = { scoreboard: { ...live.scoreboard, gameDate: day } };
+      const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+        ? reply(schedule) : reply(offsetLive));
+      expect((await loadUnattendedNbaFeeds(fetcher, 100, now)).live).toEqual(offsetLive);
+      expect((await loadUnattendedNbaFeeds(fetcher, 100, new Date("invalid"))).live).toBeNull();
+    }
+  });
+
   it("rejects HTTP 206 partial season schedules even with a valid-looking body", async () => {
     const fetcher = mockFetch(async url => url.includes("scheduleLeague")
       ? reply(schedule, 206) : reply(live));
-    const result = await loadUnattendedNbaFeeds(fetcher, 100);
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
     expect(result).toEqual({
       schedule: null, live, errors: ["Season schedule unavailable"],
     });
@@ -93,7 +117,7 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
   it("rejects HTTP 206 partial live scoreboards without discarding a healthy schedule", async () => {
     const fetcher = mockFetch(async url => url.includes("scheduleLeague")
       ? reply(schedule) : reply(live, 206));
-    const result = await loadUnattendedNbaFeeds(fetcher, 100);
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
     expect(result).toEqual({
       schedule, live: null, errors: ["Live scoreboard unavailable"],
     });

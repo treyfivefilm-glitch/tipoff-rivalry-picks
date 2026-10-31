@@ -69,7 +69,7 @@ export function createUnattendedNbaHandler(deps: NbaWorkerDependencies) {
         }
       }
       if (claimed.length) {
-        const { schedule, live, errors: feedErrors } = await loadUnattendedNbaFeeds(requestHttp);
+        const { schedule, live, errors: feedErrors } = await loadUnattendedNbaFeeds(requestHttp, undefined, now());
         errors.push(...feedErrors);
         if (!schedule && !live) {
           failed += claimed.length;

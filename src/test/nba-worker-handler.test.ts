@@ -29,7 +29,7 @@ const env = {
   SUPABASE_SERVICE_ROLE_KEY: "test-only-service-role-placeholder",
 };
 type Options = {
-  feedsDown?: boolean; historyDown?: boolean; historyMalformed?: boolean;
+  feedsDown?: boolean; staleLive?: boolean; historyDown?: boolean; historyMalformed?: boolean;
   historyMissingCount?: boolean; historyTimeout?: boolean; commitDown?: string;
   releaseDown?: string; releaseDenied?: string; skipLease?: string;
 };
@@ -37,7 +37,8 @@ function fixture(options: Options = {}) {
   const calls: Array<{ operation: string; day: string | undefined; rows?: number | undefined }> = [];
   const request = mockFetch(async (url, init) => {
     if (url.includes("scheduleLeagueV2")) return options.feedsDown ? reply({}, 503) : reply(schedule);
-    if (url.includes("todaysScoreboard")) return options.feedsDown ? reply({}, 503) : reply(live);
+    if (url.includes("todaysScoreboard")) return options.feedsDown ? reply({}, 503) :
+      reply(options.staleLive ? { scoreboard: { ...live.scoreboard, gameDate: "2026-11-01" } } : live);
     if (url.includes("/rest/v1/games?")) {
       calls.push({ operation: "history", day: undefined });
       if (options.historyMissingCount) return new Response("[]", { status: 200 });
@@ -118,6 +119,17 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
       .map(call => call.rows)).toEqual([0, 1, 0]);
     expect(calls.filter(call => call.operation === "release_nba_sync")).toHaveLength(3);
     expect(calls.filter(call => call.operation === "history")).toHaveLength(1);
+  });
+
+  it("reports stale HTTP 200 live scoreboards as degraded while retaining verified schedule updates", async () => {
+    const { calls, post } = fixture({ staleLive: true });
+    const response = await post();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      checked: 3, updated: 1, failed: 0, errors: ["Live scoreboard unavailable"],
+    });
+    expect(calls.filter(call => call.operation === "commit_nba_sync_day")).toHaveLength(3);
+    expect(calls.filter(call => call.operation === "release_nba_sync")).toHaveLength(3);
   });
 
   it("does not certify freshness when both NBA feeds fail and still releases leases", async () => {
