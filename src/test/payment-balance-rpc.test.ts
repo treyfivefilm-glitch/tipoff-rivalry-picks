@@ -117,4 +117,56 @@ describe.skipIf(!url)("record_payment server-side outstanding cap", () => {
     await asUser(member);
     await reject(1,/exceeds outstanding/);
   });
+
+  it("rejects self-confirmation and lets a rejected payment be retried without reducing debt", async () => {
+    await asUser(member);
+    await record(400);
+    await db`RESET ROLE`;
+    const [first] = await db`SELECT id FROM public.payments WHERE room_id=${room}`;
+    const firstId = first?.['id'] as string;
+    expect(firstId).toBeTruthy();
+
+    await asUser(member);
+    await db`SAVEPOINT unauthorized_confirmation`;
+    try {
+      await expect(db`SELECT public.respond_payment(${firstId}::uuid,true)`).rejects.toThrow(/Only the recipient can respond once/);
+    } finally {
+      await db`ROLLBACK TO SAVEPOINT unauthorized_confirmation`;
+      await db`RELEASE SAVEPOINT unauthorized_confirmation`;
+    }
+
+    await asUser(owner);
+    await db`SELECT public.respond_payment(${firstId}::uuid,false)`;
+    expect((await db`SELECT status FROM public.payments WHERE id=${firstId}`)[0]?.['status']).toBe('rejected');
+
+    await asUser(member);
+    await record(1000);
+    const [retry] = await db`SELECT id FROM public.payments WHERE room_id=${room} AND status='pending'`;
+    const retryId = retry?.['id'] as string;
+    expect(retryId).toBeTruthy();
+    await asUser(owner);
+    await db`SELECT public.respond_payment(${retryId}::uuid,true)`;
+    expect((await db`SELECT status FROM public.payments WHERE id=${retryId}`)[0]?.['status']).toBe('confirmed');
+
+    await asUser(member);
+    await reject(1,/exceeds outstanding/);
+    expect((await db`SELECT status,count(*)::int AS total FROM public.payments WHERE room_id=${room} GROUP BY status ORDER BY status`)
+      .map(row => [row['status'],row['total']])).toEqual([['confirmed',1],['rejected',1]]);
+  });
+
+  it("nets wins and losses across final games before permitting a payment", async () => {
+    const secondGame = `payment-offset-${randomUUID()}`;
+    await db`INSERT INTO public.games(id,start_utc,away_code,away_name,home_code,home_name,state,away_score,home_score)
+      VALUES(${secondGame},now()-interval '1 day','LAL','Lakers','GSW','Warriors','final',99,110)`;
+    await db`INSERT INTO public.picks(room_id,game_id,user_id,team_code)
+      VALUES(${room},${secondGame},${owner},'LAL'),(${room},${secondGame},${member},'GSW')`;
+    await db`INSERT INTO public.wagers(room_id,game_id,stake_each_cents,proposed_by,accepted_by,status,kind)
+      VALUES(${room},${secondGame},600,${owner},${member},'accepted','cash')`;
+
+    // Member loses $10 on the first game but wins $6 on the second: net debt is $4.
+    await asUser(member);
+    await reject(401,/exceeds outstanding/);
+    await record(400);
+    expect((await db`SELECT cents FROM public.payments WHERE room_id=${room}`)[0]?.['cents']).toBe(400);
+  });
 });
