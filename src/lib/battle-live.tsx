@@ -10,6 +10,7 @@ import { syncGames } from "./sync.functions";
 import { scheduleSyncWarning } from "./sync-status";
 import { useServerFn } from '@tanstack/react-start';
 import type { WagerVersion, ChallengeSubmission } from './wagers';
+import { createLatestRequestGate } from "./latest-request-gate";
 
 const throwIf = (r: { error: { message: string } | null }) => {
   if (r.error) throw new Error(r.error.message);
@@ -21,6 +22,8 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
   const nav = useNavigate();
   const qc = useQueryClient();
   const departing = useRef(false);
+  // Only the newest room snapshot may update picks, wagers, and payment UI.
+  const boardRefreshGate = useRef(createLatestRequestGate());
   const sync = useServerFn(syncGames);
   const [room, setRoom] = useState<RoomInfo | null>(null);
   const [members, setMembers] = useState<Player[]>([]);
@@ -52,24 +55,38 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
 
   const loadBoard = useCallback(
     async (d: string) => {
-      const { data, error: be } = await supabase.rpc("get_board", {
-        p_room: roomId,
-        p_from: `${SEASON_START}T00:00:00Z`,
-        p_to: `${addDays(SEASON_END, 2)}T00:00:00Z`,
-      });
-      if (be) throw be;
-      const [vs, cs] = await Promise.all([
-        supabase.from('wager_versions').select('*').eq('room_id', roomId).order('version'),
-        supabase.from('challenge_submissions').select('*').eq('room_id', roomId).order('created_at', { ascending: false }),
-      ]);
-      throwIf(vs); throwIf(cs);
-      setVersions(vs.data ?? []); setChallenges(cs.data ?? []);
-      setGames((data ?? []) as unknown as BoardGame[]);
-      const { data: ps, error: pe } = await supabase.from("payments").select("*").eq("room_id", roomId).order("created_at", { ascending: false });
-      if (pe) throw pe;
-      setPayments((ps ?? []) as Payment[]);
-      const { data: ss } = await supabase.rpc("get_last_sync", { p_day: d });
-      setLastSync(ss ?? null);
+      const ticket = boardRefreshGate.current.begin();
+      try {
+        const { data, error: be } = await supabase.rpc("get_board", {
+          p_room: roomId,
+          p_from: `${SEASON_START}T00:00:00Z`,
+          p_to: `${addDays(SEASON_END, 2)}T00:00:00Z`,
+        });
+        if (be) throw be;
+        // Realtime, polling, manual refreshes and mutations can overlap.
+        // Stop obsolete reads early and publish a complete snapshot only once.
+        if (!boardRefreshGate.current.isCurrent(ticket)) return;
+        const [vs, cs] = await Promise.all([
+          supabase.from('wager_versions').select('*').eq('room_id', roomId).order('version'),
+          supabase.from('challenge_submissions').select('*').eq('room_id', roomId).order('created_at', { ascending: false }),
+        ]);
+        throwIf(vs); throwIf(cs);
+        if (!boardRefreshGate.current.isCurrent(ticket)) return;
+        const { data: ps, error: pe } = await supabase.from("payments").select("*").eq("room_id", roomId).order("created_at", { ascending: false });
+        if (pe) throw pe;
+        if (!boardRefreshGate.current.isCurrent(ticket)) return;
+        const { data: ss } = await supabase.rpc("get_last_sync", { p_day: d });
+        if (!boardRefreshGate.current.isCurrent(ticket)) return;
+        setVersions(vs.data ?? []);
+        setChallenges(cs.data ?? []);
+        setGames((data ?? []) as unknown as BoardGame[]);
+        setPayments((ps ?? []) as Payment[]);
+        setLastSync(ss ?? null);
+      } catch (error) {
+        // A superseded read must not surface an obsolete failure after a
+        // newer refresh has started; only the current read reports errors.
+        if (boardRefreshGate.current.isCurrent(ticket)) throw error;
+      }
     },
     [roomId],
   );
