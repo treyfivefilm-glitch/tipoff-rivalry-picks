@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CheckCircle2, CircleDollarSign, ClipboardCheck, Clock, XCircle } from "lucide-react";
 import { useBattle, errMsg } from "@/lib/battle-context";
-import { latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
+import { latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, wagerVersionStatusLabel, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
 import { computeStandings, h2hResult, winnerOf, type BoardGame, type Payment } from "@/lib/rules";
 import { fmtMoney, pacificTime } from "@/lib/time";
 import { Button } from "@/components/ui/button";
@@ -439,11 +439,7 @@ function LedgerWagerRow({ v, g }: { v: WagerVersion; g: BoardGame }) {
           : r.outcome === "void"
             ? { text: "Void · no obligation", cls: "text-muted-foreground" }
             : { text: "Awaiting result", cls: "text-muted-foreground" }
-      : v.status === "declined"
-        ? { text: "Declined", cls: "text-muted-foreground" }
-        : v.status === "withdrawn"
-          ? { text: "Withdrawn", cls: "text-muted-foreground" }
-          : { text: "Expired at tipoff", cls: "text-muted-foreground" };
+      : { text: v.status === "proposed" ? "Expired at tipoff" : wagerVersionStatusLabel(v.status), cls: "text-muted-foreground" };
 
   return (
     <div className="surface rounded-xl px-4 py-3 text-sm">
@@ -467,7 +463,7 @@ function LedgerWagerRow({ v, g }: { v: WagerVersion; g: BoardGame }) {
                 {h.category === "challenge" ? "a challenge" : `${fmtMoney(h.cents)} each${h.category === "both" ? " + challenge" : ""}`}
                 {h.terms ? ` · “${h.terms}”` : ""}
               </span>
-              <span className="shrink-0">{h.status}</span>
+              <span className="shrink-0">{wagerVersionStatusLabel(h.status)}</span>
             </li>
           ))}
         </ol>
