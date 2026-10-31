@@ -61,11 +61,27 @@ export class InviteAccountChangedError extends Error {
   }
 }
 
-export async function createInviteGuestIfSignedOut(
-  auth: Parameters<typeof ensureGuestSession>[0],
-): Promise<void> {
-  const result = await ensureGuestSession(auth);
-  if (result !== "created") throw new InviteAccountChangedError();
+export async function createInviteGuestIfSignedOut(auth: {
+  getSession: Parameters<typeof ensureGuestSession>[0]["getSession"];
+  signInAnonymously: () => Promise<{
+    data?: { user?: { id: string } | null } | null;
+    error: Error | null;
+  }>;
+}): Promise<string> {
+  const { data, error } = await auth.getSession();
+  if (error) throw error;
+  if (hasAccountSession(data.session)) throw new InviteAccountChangedError();
+  // Capture the identity returned by signup itself. A different tab may
+  // switch accounts before the next getUser check; never join as that user.
+  const { data: guest, error: guestError } = await auth.signInAnonymously();
+  if (guestError) throw guestError;
+  if (!guest?.user?.id) throw new InviteAccountChangedError();
+  return guest.user.id;
+}
+
+/** Verify the new guest is still the active account before sending join_room. */
+export function assertCreatedInviteGuest(expectedId: string | null, currentId: string | null): void {
+  if (!expectedId || expectedId !== currentId) throw new InviteAccountChangedError();
 }
 
 export const GUEST_SESSION_WARNING = "Signing in or creating another account here could disconnect this browser from your guest rooms and wagers. Return to your rooms and use Profile to attach a permanent account before switching identities.";
