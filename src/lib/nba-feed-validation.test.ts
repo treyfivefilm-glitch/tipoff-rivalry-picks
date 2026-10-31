@@ -134,6 +134,32 @@ describe("NBA individual game integrity", () => {
     expect(isUsableNbaGame({ ...game, gameDateTimeUTC: "not-a-date" })).toBe(false);
     expect(isUsableNbaGame({ ...game, gameStatusText: { broken: true } })).toBe(false);
   });
+  it("rejects impossible provider tipoffs instead of silently shifting game dates", () => {
+    // Date.parse normalizes November 31 into December 1. An impossible
+    // provider tipoff must not create a game or refresh a different day.
+    for (const tipoff of [
+      "2026-11-31T03:00:00Z",
+      "2026-02-29T03:00:00Z",
+      "2026-11-18T24:00:00Z",
+      "2026-11-18T03:61:00Z",
+      "2026-00-18T03:00:00Z",
+    ]) {
+      const malformed = { ...game, gameDateTimeUTC: tipoff };
+      expect(isUsableNbaGame(malformed)).toBe(false);
+      expect(groupUsableNbaGamesByPacificDay([malformed], ["2026-11-17", "2026-12-01"]).size)
+        .toBe(0);
+    }
+    for (const tipoff of [
+      "2028-02-29T03:00:00Z",
+      "2026-11-18T03:00:00+00:00",
+      "2026-11-18T03:00:00.123Z",
+    ]) {
+      expect(isUsableNbaGame({ ...game, gameDateTimeUTC: tipoff })).toBe(true);
+    }
+    const { gameDateTimeUTC: _canonical, ...legacy } = game;
+    expect(isUsableNbaGame({ ...legacy, gameTimeUTC: "2026-11-31T03:00:00Z" })).toBe(false);
+  });
+
   it("rejects missing, unknown, and fractional NBA statuses before trusting feed freshness", () => {
     for (const status of [undefined, null, 0, -1, 4, 99, 1.5, "2"]) {
       expect(isUsableNbaGame({ ...game, gameStatus: status })).toBe(false);
