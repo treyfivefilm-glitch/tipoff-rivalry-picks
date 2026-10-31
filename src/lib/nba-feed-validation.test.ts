@@ -235,6 +235,26 @@ describe("NBA individual game integrity", () => {
       })).toBe(true);
     }
   });
+  it("rejects implausibly large provider scores before live or final settlement", () => {
+    // A syntactically valid decimal can still be a corrupted score. A
+    // generous 500-point ceiling avoids mistaking bad data for a winner.
+    for (const bad of [501, "501", 9999, "999999999999"]) {
+      for (const status of [2, 3]) {
+        expect(isUsableNbaGame({
+          ...game, gameStatus: status, gameStatusText: status === 3 ? "Final" : "Q4",
+          awayTeam: { ...game.awayTeam, score: bad },
+          homeTeam: { ...game.homeTeam, score: 104 },
+        })).toBe(false);
+      }
+    }
+    for (const accepted of [500, "500"]) {
+      expect(isUsableNbaGame({
+        ...game, gameStatus: 3, gameStatusText: "Final",
+        awayTeam: { ...game.awayTeam, score: accepted },
+        homeTeam: { ...game.homeTeam, score: 104 },
+      })).toBe(true);
+    }
+  });
   it("rejects invalid supplied scores but permits missing scheduled/live scores", () => {
     expect(isUsableNbaGame({ ...game, gameStatus: 1 })).toBe(true);
     expect(isUsableNbaGame(game)).toBe(true);
