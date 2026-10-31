@@ -24,7 +24,7 @@ export function filterCounts(games: BoardGame[], now = Date.now()): Record<GameF
   return c;
 }
 
-export interface RoomRow { id: string; name: string; owner_id: string; invites_closed: boolean }
+export interface RoomRow { id: string; name: string; owner_id: string; invites_closed: boolean; invite_code?: string }
 export interface MemberRow { room_id: string; user_id: string; display_name: string }
 export interface RoomCard {
   id: string;
@@ -34,6 +34,7 @@ export interface RoomCard {
   otherName: string | null;
   inviteState: "open" | "full" | "closed";
   youOwn: boolean;
+  inviteCode: string | null;
 }
 
 export function buildRoomCards(rooms: RoomRow[], members: MemberRow[], meId: string | null): RoomCard[] {
@@ -49,6 +50,7 @@ export function buildRoomCards(rooms: RoomRow[], members: MemberRow[], meId: str
       otherName: other?.display_name ?? null,
       inviteState: r.invites_closed ? "closed" : ms.length >= 2 ? "full" : "open",
       youOwn: r.owner_id === meId,
+      inviteCode: r.invite_code ?? null,
     };
   });
 }

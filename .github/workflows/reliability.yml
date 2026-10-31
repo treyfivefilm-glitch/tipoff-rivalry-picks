@@ -41,3 +41,182 @@ jobs:
         run: bunx vitest run
       - name: Compile only (no deploy or migrations)
         run: bun run build
+
+  # Local disposable Postgres: tests real SQL/RPC behavior without Supabase
+  # credentials, network databases, production migrations, or paid services.
+  nba-db-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tipoff_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tipoff_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # Disposable HTTP-to-SQL bridge. The local service intentionally uses
+      # an anonymous service_role for integration tests ONLY: this is not a
+      # production authentication configuration or an Edge deployment.
+      postgrest:
+        image: postgrest/postgrest:v12.2.3
+        env:
+          PGRST_DB_URI: postgres://postgres:postgres@postgres:5432/tipoff_test
+          PGRST_DB_SCHEMAS: public
+          PGRST_DB_ANON_ROLE: anon
+          # Fixed CI-only JWT signing key, never a production credential.
+          PGRST_JWT_SECRET: tipoff-disposable-ci-jwt-secret-not-production-2026
+          PGRST_SERVER_PORT: 3000
+        ports:
+          - 3000:3000
+    env:
+      CI: 'true'
+      RUN_STAGING_DB_TESTS: 'true'
+      RUN_DISPOSABLE_NBA_CONCURRENCY_TESTS: 'true'
+      RUN_DISPOSABLE_NBA_POSTGREST_TESTS: 'true'
+      STAGING_TEST_DB_URL: 'postgres://postgres:postgres@127.0.0.1:5432/tipoff_test'
+      PGPASSWORD: postgres
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      SUPABASE_DB_URL: ''
+      LOVABLE_DB_MIGRATION_URL: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.12'
+      - name: Remove app connection files from the CI checkout only
+        run: rm -f .env .env.*
+      - run: bun install --frozen-lockfile
+      - name: Bootstrap disposable test schema and apply ONLY worker migrations
+        run: |
+          psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -f src/test/fixtures/nba-worker-ci-schema.sql
+          psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -f drizzle/migrations/0013_nba_sync_leases.sql
+          psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -f drizzle/migrations/0014_fenced_nba_sync_commit.sql
+      - name: NBA worker SQL/RPC integration tests (disposable DB only)
+        run: bunx vitest run src/test/nba-sync-leases.test.ts
+      - name: Concurrent NBA worker sessions (disposable DB only)
+        run: bunx vitest run src/test/nba-sync-concurrency.test.ts
+      - name: Refresh disposable PostgREST schema and wait for HTTP readiness
+        run: |
+          psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA public TO service_role; NOTIFY pgrst, 'reload schema';"
+          for attempt in $(seq 1 30); do
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' "http://127.0.0.1:3000/games?select=id&limit=0" || true)"
+            # Anonymous access must be denied; 404 means schema is not ready.
+            if [ "$status" = "401" ] || [ "$status" = "403" ]; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Disposable PostgREST did not become ready" >&2
+          exit 1
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Actual Edge entrypoint through real PostgREST/PostgreSQL (outage and synthetic final)
+        # The child worker is restricted to loopback. External NBA feed access
+        # is denied; success fixtures are injected in a test-only child loader.
+        # All database writes are to disposable PostgreSQL only.
+        run: deno test --allow-run --allow-net=127.0.0.1 --allow-env=CI,RUN_DISPOSABLE_NBA_POSTGREST_TESTS,HOME supabase/functions/nba-sync-worker/entrypoint-postgrest.test.ts
+      - name: Real PostgREST HTTP to PostgreSQL worker integration (disposable only)
+        run: bunx vitest run src/test/nba-postgrest-http.test.ts
+
+  # Exercise the real Deno runtime, not just Node/Vitest simulations.
+  # This is a typecheck and synthetic local-HTTP smoke test only:
+  # no Supabase credentials, Edge deployment, scheduler or migrations.
+  nba-deno-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      NBA_SYNC_WORKER_ENABLED: 'false'
+      NBA_SYNC_CRON_SECRET: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      SUPABASE_URL: 'http://127.0.0.1:54321'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Typecheck isolated Edge handler with Deno
+        # The Supabase JSR entrypoint declaration references an unrelated npm
+        # package; checking the handler itself avoids implicit npm installs.
+        run: deno check supabase/functions/_shared/nba-worker-handler.ts
+      - name: Execute isolated worker request flow in Deno
+        # Only permit loopback traffic for the local Deno HTTP server smoke test.
+        # All upstream NBA/backend calls remain synthetic injected mocks.
+        run: deno test --allow-net=127.0.0.1 supabase/functions/nba-sync-worker/worker-runtime.test.ts
+      - name: Boot actual disabled Edge entrypoint and verify auth gates (no secrets)
+        # The child process gets a clean environment and loopback-only runtime access.
+        # No Supabase backend, NBA provider, scheduler, or deployment is contacted.
+        run: deno test --allow-run --allow-net=127.0.0.1 --allow-env=HOME supabase/functions/nba-sync-worker/entrypoint-smoke.test.ts
+
+  # Real room departure/RLS checks against a disposable local PostgreSQL service.
+  # Replays the actual room/wager migrations, not mocked RPC implementations.
+  # No production URL, Supabase credentials, live migrations, or user data.
+  room-db-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tipoff_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d tipoff_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CI: 'true'
+      RUN_STAGING_DB_TESTS: 'true'
+      STAGING_TEST_DB_URL: 'postgres://postgres:postgres@127.0.0.1:5432/tipoff_test'
+      PGPASSWORD: postgres
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      SUPABASE_DB_URL: ''
+      LOVABLE_DB_MIGRATION_URL: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.12'
+      - name: Remove app connection files from the CI checkout only
+        run: rm -f .env .env.*
+      - run: bun install --frozen-lockfile
+      - name: Bootstrap isolated Supabase auth shim and apply room/wager migrations
+        run: |
+          psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -f src/test/fixtures/room-departure-ci-bootstrap.sql
+          for migration in \
+            0000_pick_battle_schema \
+            0002_wager_terms \
+            0003_versioned_wager_center \
+            0004_cascade_wager_center_fks \
+            0005_tighten_sync_state_read \
+            0006_lock_down_sync_state \
+            0007_safe_room_departure \
+            0008_restrict_last_sync_rpc \
+            0015_cap_recorded_payments; do
+            psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -f "drizzle/migrations/${migration}.sql"
+          done
+      - name: Room departure/RLS regression tests (rollback-only disposable DB)
+        run: bunx vitest run src/test/leave-room.test.ts src/test/payment-balance-rpc.test.ts

@@ -1,0 +1,19 @@
+name: League RLS integration smoke
+on:
+  push:
+    branches: [feature/complete-product-roadmap-2026-10-27]
+    paths: [.github/workflows/league-smoke.yml]
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: https://dpujooxxocujnpygmtbf.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_n9kqzuPy7MwJE1sFrjaxOQ_Muhu83ie
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Check league invitations and protected picks
+        run: bun scripts/league-smoke.ts

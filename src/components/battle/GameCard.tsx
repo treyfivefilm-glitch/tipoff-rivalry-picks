@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { EyeOff, Lock, Loader2 } from "lucide-react";
+import { Activity, ChevronDown, ChevronUp, Clock3, EyeOff, Lock, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { TeamBadge } from "./TeamBadge";
 import { TipoffCountdown } from "./TipoffCountdown";
@@ -28,6 +28,7 @@ export function GameCard({ g }: { g: BoardGame }) {
   }, [g.start_utc, g.state]);
   const locked = isLocked(g, clockNow);
   const [busy, setBusy] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const winner = winnerOf(g);
 
   async function run(key: string, fn: () => Promise<void>, ok?: string) {
@@ -58,10 +59,54 @@ export function GameCard({ g }: { g: BoardGame }) {
         <TeamButton g={g} side="home" busy={busy === "home"} locked={locked} winner={winner}
           onPick={() => run("home", () => b.pick(g.game_id, g.home_code), `Picked ${g.home_code}`)} />
       </div>
+      <button type="button" aria-expanded={showDetails} onClick={() => setShowDetails(!showDetails)}
+        className="flex min-h-11 w-full items-center justify-between gap-2 border-t border-border/70 px-4 font-cond text-sm font-bold text-primary">
+        <span className="flex items-center gap-2"><Activity className="h-4 w-4" /> Matchup details</span>
+        {showDetails ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+      </button>
+      {showDetails && <MatchupDetails g={g} />}
       <div className="border-t border-border/70 bg-background/30 px-4 py-3">
         <WagerArea g={g} locked={locked} busy={busy} run={run} />
       </div>
     </article>
+  );
+}
+
+function MatchupDetails({ g }: { g: BoardGame }) {
+  const result = h2hResult(g);
+  const winner = winnerOf(g);
+  const picked = g.my_pick ? (g.my_pick === g.home_code ? g.home_name : g.away_name) : "No pick saved";
+  return (
+    <section className="space-y-3 bg-[#081728]/80 px-4 pb-4 pt-2" aria-label="Matchup details">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Clock3 className="h-4 w-4 text-primary" />
+        <span>Tipoff: {pacificTime(g.start_utc)} · Picks {isLocked(g) ? "locked" : "open"}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {([
+          { label: g.away_code, score: g.away_score, name: g.away_name },
+          { label: g.home_code, score: g.home_score, name: g.home_name },
+        ]).map(team => (
+          <div key={team.label} className="rounded-xl border border-border bg-card/60 p-3">
+            <p className="truncate font-cond text-xs text-muted-foreground">{team.name}</p>
+            <p className="font-display text-3xl tabular-nums">{team.score ?? "—"}</p>
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-2 rounded-xl border border-border bg-card/40 p-3 text-xs">
+        <p><span className="text-muted-foreground">Status:</span> <b className="ml-2 uppercase">{g.status_detail || g.state}</b></p>
+        <p><span className="text-muted-foreground">Your pick:</span> <b className="ml-2">{picked}</b></p>
+        <p><span className="text-muted-foreground">Friend's pick:</span> <b className="ml-2">{g.opp_pick ?? (g.opp_has_picked ? "Hidden until reveal" : "Not submitted")}</b></p>
+        {winner && <p><span className="text-muted-foreground">Winner:</span> <b className="ml-2 text-win">{winner}</b></p>}
+        {g.wager_status && <p><span className="text-muted-foreground">Wager:</span> <b className="ml-2 capitalize">{g.wager_status}</b></p>}
+        {(result.outcome === "win" || result.outcome === "loss" || result.outcome === "void") && (
+          <p><span className="text-muted-foreground">Your result:</span> <b className="ml-2 capitalize">{result.outcome}</b></p>
+        )}
+      </div>
+      <p className="font-cond text-[11px] text-muted-foreground">
+        Scores and game status are supplied by the public NBA feed and may be delayed. Picks are locked by the database at tipoff.
+      </p>
+    </section>
   );
 }
 

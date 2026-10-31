@@ -7,8 +7,10 @@ import { BattleContext, type BattleApi, type Player, type RoomInfo, type WagerTe
 import type { BoardGame, Payment } from "./rules";
 import { SEASON_END, SEASON_START, addDays, clampSeason, todayPacific } from "./time";
 import { syncGames } from "./sync.functions";
+import { scheduleSyncWarning } from "./sync-status";
 import { useServerFn } from '@tanstack/react-start';
 import type { WagerVersion, ChallengeSubmission } from './wagers';
+import { applyLatestSnapshot, createLatestRequestGate } from "./latest-request-gate";
 
 const throwIf = (r: { error: { message: string } | null }) => {
   if (r.error) throw new Error(r.error.message);
@@ -20,6 +22,9 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
   const nav = useNavigate();
   const qc = useQueryClient();
   const departing = useRef(false);
+  // Only the newest room snapshot may update picks, wagers, and payment UI.
+  const boardRefreshGate = useRef(createLatestRequestGate());
+  const staticRefreshGate = useRef(createLatestRequestGate());
   const sync = useServerFn(syncGames);
   const [room, setRoom] = useState<RoomInfo | null>(null);
   const [members, setMembers] = useState<Player[]>([]);
@@ -38,37 +43,64 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
   const syncedRef = useRef(new Set<string>());
 
   const loadStatic = useCallback(async () => {
-    const { data: u } = await supabase.auth.getUser();
-    if (!u.user) throw new Error("Not signed in");
-    setMeId(u.user.id);
-    const { data: r, error: re } = await supabase.from("rooms").select("id,name,owner_id,invite_code,invites_closed").eq("id", roomId).single();
-    if (re) throw re;
-    setRoom(r as RoomInfo);
-    const { data: ms, error: mErr } = await supabase.from("room_members").select("user_id,display_name").eq("room_id", roomId);
-    if (mErr) throw mErr;
-    setMembers((ms ?? []).map((m) => ({ id: m.user_id, name: m.display_name })));
+    await applyLatestSnapshot(staticRefreshGate.current, async () => {
+      const { data: u, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!u.user) throw new Error("Not signed in");
+      // Fetch both resources before publishing; never display a new room
+      // with members still belonging to the previous room.
+      const [r, ms] = await Promise.all([
+        supabase.from("rooms").select("id,name,owner_id,invite_code,invites_closed").eq("id", roomId).single(),
+        supabase.from("room_members").select("user_id,display_name").eq("room_id", roomId),
+      ]);
+      if (r.error) throw r.error;
+      if (ms.error) throw ms.error;
+      return {
+        userId: u.user.id,
+        room: r.data as RoomInfo,
+        members: (ms.data ?? []).map((m) => ({ id: m.user_id, name: m.display_name })),
+      };
+    }, snapshot => {
+      setMeId(snapshot.userId);
+      setRoom(snapshot.room);
+      setMembers(snapshot.members);
+    });
   }, [roomId]);
 
   const loadBoard = useCallback(
     async (d: string) => {
-      const { data, error: be } = await supabase.rpc("get_board", {
-        p_room: roomId,
-        p_from: `${SEASON_START}T00:00:00Z`,
-        p_to: `${addDays(SEASON_END, 2)}T00:00:00Z`,
-      });
-      if (be) throw be;
-      const [vs, cs] = await Promise.all([
-        supabase.from('wager_versions').select('*').eq('room_id', roomId).order('version'),
-        supabase.from('challenge_submissions').select('*').eq('room_id', roomId).order('created_at', { ascending: false }),
-      ]);
-      throwIf(vs); throwIf(cs);
-      setVersions(vs.data ?? []); setChallenges(cs.data ?? []);
-      setGames((data ?? []) as unknown as BoardGame[]);
-      const { data: ps, error: pe } = await supabase.from("payments").select("*").eq("room_id", roomId).order("created_at", { ascending: false });
-      if (pe) throw pe;
-      setPayments((ps ?? []) as Payment[]);
-      const { data: ss } = await supabase.rpc("get_last_sync", { p_day: d });
-      setLastSync(ss ?? null);
+      const ticket = boardRefreshGate.current.begin();
+      try {
+        const { data, error: be } = await supabase.rpc("get_board", {
+          p_room: roomId,
+          p_from: `${SEASON_START}T00:00:00Z`,
+          p_to: `${addDays(SEASON_END, 2)}T00:00:00Z`,
+        });
+        if (be) throw be;
+        // Realtime, polling, manual refreshes and mutations can overlap.
+        // Stop obsolete reads early and publish a complete snapshot only once.
+        if (!boardRefreshGate.current.isCurrent(ticket)) return;
+        const [vs, cs] = await Promise.all([
+          supabase.from('wager_versions').select('*').eq('room_id', roomId).order('version'),
+          supabase.from('challenge_submissions').select('*').eq('room_id', roomId).order('created_at', { ascending: false }),
+        ]);
+        throwIf(vs); throwIf(cs);
+        if (!boardRefreshGate.current.isCurrent(ticket)) return;
+        const { data: ps, error: pe } = await supabase.from("payments").select("*").eq("room_id", roomId).order("created_at", { ascending: false });
+        if (pe) throw pe;
+        if (!boardRefreshGate.current.isCurrent(ticket)) return;
+        const { data: ss } = await supabase.rpc("get_last_sync", { p_day: d });
+        if (!boardRefreshGate.current.isCurrent(ticket)) return;
+        setVersions(vs.data ?? []);
+        setChallenges(cs.data ?? []);
+        setGames((data ?? []) as unknown as BoardGame[]);
+        setPayments((ps ?? []) as Payment[]);
+        setLastSync(ss ?? null);
+      } catch (error) {
+        // A superseded read must not surface an obsolete failure after a
+        // newer refresh has started; only the current read reports errors.
+        if (boardRefreshGate.current.isCurrent(ticket)) throw error;
+      }
     },
     [roomId],
   );
@@ -82,14 +114,9 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
       sync({ data: { days: missing } })
         .then(async (result) => {
           await loadBoard(dayRef.current);
-          if (result.errors.length) {
-            missing.forEach((d) => syncedRef.current.delete(d));
-            setError(`Schedule refresh: ${result.errors.slice(0, 2).join("; ")}`);
-          } else if (result.checked === 0 && result.updated === 0) {
-            setError("The schedule server did not check any dates. Please tap Refresh.");
-          } else {
-            setError(null);
-          }
+          const warning = scheduleSyncWarning(result);
+          if (warning) missing.forEach((d) => syncedRef.current.delete(d));
+          setError(warning);
         })
         .catch((e) => { missing.forEach((d) => syncedRef.current.delete(d)); setError(e instanceof Error ? e.message : 'Schedule unavailable'); })
         .finally(() => setSyncing(false));
@@ -109,15 +136,14 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
         let syncWarning: string | null = null;
         try {
           const result = await sync({ data: { days: first } });
-          if (result.errors.length) syncWarning = result.errors.slice(0, 2).join("; ");
-          else if (result.checked === 0 && result.updated === 0) syncWarning = "No schedule dates were checked";
+          syncWarning = scheduleSyncWarning(result);
           if (!syncWarning) first.forEach((x) => syncedRef.current.add(x));
         } catch (e) {
           syncWarning = e instanceof Error ? e.message : "Schedule service unavailable";
         }
         if (!alive) return;
         await loadBoard(d);
-        if (syncWarning) setError(`Schedule refresh: ${syncWarning}`);
+        if (syncWarning) setError(syncWarning);
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : "Failed to load room");
       } finally {
@@ -146,8 +172,7 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
       try {
         const result = await sync({ data: { days: [addDays(today, -1), today, addDays(today, 1)] } });
         await loadBoard(dayRef.current);
-        if (result.errors.length) setError(`Live scores: ${result.errors.slice(0, 2).join("; ")}`);
-        else setError(null);
+        setError(scheduleSyncWarning(result, "Live scores"));
       } catch (e) {
         setError(e instanceof Error ? e.message : "Live score updates unavailable");
       } finally {
@@ -215,9 +240,7 @@ export function LiveBattle({ roomId, children }: { roomId: string; children: Rea
           const d = dayRef.current;
           const result = await sync({ data: { days: [addDays(d, -1), d, addDays(d, 1)], force: force ?? false } });
           await loadBoard(d);
-          if (result.errors.length) setError(`Schedule refresh: ${result.errors.slice(0, 2).join("; ")}`);
-          else if (result.checked === 0 && result.updated === 0) setError("The schedule server did not check any dates.");
-          else setError(null);
+          setError(scheduleSyncWarning(result));
         } catch (e) {
           setError(e instanceof Error ? e.message : "Schedule service unavailable");
         } finally {
