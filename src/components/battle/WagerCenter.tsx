@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CheckCircle2, CircleDollarSign, ClipboardCheck, Clock, XCircle } from "lucide-react";
 import { useBattle, errMsg } from "@/lib/battle-context";
-import { latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, wagerVersionStatusLabel, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
+import { latestChallengeSubmission, latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, wagerVersionStatusLabel, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
 import { computeStandings, h2hResult, winnerOf, type BoardGame, type Payment } from "@/lib/rules";
 import { fmtMoney, pacificTime } from "@/lib/time";
 import { Button } from "@/components/ui/button";
@@ -314,7 +314,7 @@ function ChallengeSection({ items, gamesById }: { items: { v: WagerVersion; g: B
   if (!resolved.length) return null;
 
   const latestSub = (v: WagerVersion): ChallengeSubmission | undefined =>
-    b.challenges.find((c) => c.game_id === v.game_id && c.version === v.version);
+    latestChallengeSubmission(b.challenges, v.game_id, v.version);
 
   return (
     <section className="space-y-2">

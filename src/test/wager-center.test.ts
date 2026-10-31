@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, wagerVersionStatusLabel, type WagerVersion } from "@/lib/wagers";
+import { latestChallengeSubmission, latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, wagerVersionStatusLabel, type WagerVersion } from "@/lib/wagers";
 import type { BoardGame } from "@/lib/rules";
 
 const future = new Date(Date.now() + 86400_000).toISOString();
@@ -123,5 +123,31 @@ describe("pending payment reservation", () => {
     expect(unrecordedPaymentCents(Number.NaN, [], "me", "friend")).toBe(0);
     expect(unrecordedPaymentCents(100, [], "me", null)).toBe(0);
     expect(unrecordedPaymentCents(100, [], "me", "me")).toBe(0);
+  });
+});
+
+describe("challenge resubmission history", () => {
+  const submission = (id: string, created_at: string, game_id = "g1", version = 2) =>
+    ({ id, created_at, game_id, version });
+
+  it("shows the newest submission after a disputed attempt regardless of API ordering", () => {
+    const disputed = submission("first", "2026-10-30T20:00:00Z");
+    const resubmitted = submission("second", "2026-10-30T20:05:00Z");
+    const otherGame = submission("unrelated", "2026-10-30T21:00:00Z", "g2");
+    const otherVersion = submission("old-version", "2026-10-30T22:00:00Z", "g1", 1);
+    for (const submissions of [
+      [disputed, resubmitted, otherGame, otherVersion],
+      [otherVersion, resubmitted, disputed, otherGame],
+    ]) {
+      expect(latestChallengeSubmission(submissions, "g1", 2)).toEqual(resubmitted);
+    }
+  });
+
+  it("returns no submission for an unmatched wager and handles equal timestamps consistently", () => {
+    const first = submission("a", "2026-10-30T20:00:00Z");
+    const second = submission("b", "2026-10-30T20:00:00Z");
+    expect(latestChallengeSubmission([first, second], "missing", 2)).toBeUndefined();
+    expect(latestChallengeSubmission([first, second], "g1", 2)).toEqual(second);
+    expect(latestChallengeSubmission([second, first], "g1", 2)).toEqual(second);
   });
 });

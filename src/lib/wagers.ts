@@ -21,6 +21,24 @@ export function wagerVersionStatusLabel(status: WagerVersion["status"]): string 
   }
 }
 
+/** A disputed challenge may be resubmitted. Never rely on the order of
+ * a room's fetched submissions when deciding which attempt to display or
+ * confirm. A stable ID tie-break makes identical timestamps deterministic.
+ */
+export function latestChallengeSubmission<T extends Pick<ChallengeSubmission, 'id' | 'game_id' | 'version' | 'created_at'>>(
+  submissions: readonly T[], gameId: string, version: number,
+): T | undefined {
+  let latest: T | undefined;
+  for (const submission of submissions) {
+    if (submission.game_id !== gameId || submission.version !== version) continue;
+    if (!latest || submission.created_at > latest.created_at ||
+        (submission.created_at === latest.created_at && submission.id > latest.id)) {
+      latest = submission;
+    }
+  }
+  return latest;
+}
+
 export function latestWagers(versions: WagerVersion[]) {
   const map = new Map<string, WagerVersion>();
   for (const v of versions) if ((map.get(v.game_id)?.version ?? 0) < v.version) map.set(v.game_id, v);
