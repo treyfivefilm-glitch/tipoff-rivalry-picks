@@ -44,7 +44,9 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
         if (isSchedule === redirectSchedule) {
           // Simulate fetch's redirect:error behavior rather than following
           // a CDN Location to an unexpected origin.
-          expect(init?.redirect).toBe("error");
+          // Without redirect:error, the mock follows to a valid-looking
+          // payload and this regression test must fail.
+          if (init?.redirect !== "error") return reply(isSchedule ? schedule : live);
           throw new TypeError("redirect blocked");
         }
         return reply(isSchedule ? schedule : live);
