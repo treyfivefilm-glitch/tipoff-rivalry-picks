@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, InviteAccountChangedError, assertSameInviteAccount, createInviteGuestIfSignedOut, ensureGuestSession, hasAccountSession, hasGuestSession, runWithoutGuestAccountSwitch, verifiedInviteAccountId } from "./guest-session-guard";
+import { GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, InviteAccountChangedError, assertCreatedInviteGuest, assertSameInviteAccount, createInviteGuestIfSignedOut, ensureGuestSession, hasAccountSession, hasGuestSession, runWithoutGuestAccountSwitch, verifiedInviteAccountId } from "./guest-session-guard";
 
 describe("guest account protection on email sign-in", () => {
   it("blocks switching away from an existing guest session", () => {
@@ -51,9 +51,23 @@ describe("guest account protection on email sign-in", () => {
     let guestCreates = 0;
     await expect(createInviteGuestIfSignedOut({
       getSession: async () => ({ data: { session: null }, error: null }),
-      signInAnonymously: async () => { guestCreates++; return { error: null }; },
-    })).resolves.toBeUndefined();
+      signInAnonymously: async () => {
+        guestCreates++;
+        return { data: { user: { id: "new-guest" } }, error: null };
+      },
+    })).resolves.toBe("new-guest");
     expect(guestCreates).toBe(1);
+  });
+  it("refuses a missing signup identity or a guest replaced by another tab", async () => {
+    await expect(createInviteGuestIfSignedOut({
+      getSession: async () => ({ data: { session: null }, error: null }),
+      signInAnonymously: async () => ({ data: { user: null }, error: null }),
+    })).rejects.toBeInstanceOf(InviteAccountChangedError);
+    expect(() => assertCreatedInviteGuest("new-guest", "new-guest")).not.toThrow();
+    expect(() => assertCreatedInviteGuest("new-guest", "other-account"))
+      .toThrow(InviteAccountChangedError);
+    expect(() => assertCreatedInviteGuest("new-guest", null))
+      .toThrow(InviteAccountChangedError);
   });
   it("does not bypass failed guest creation or failed session verification", async () => {
     let guestCreates = 0;
