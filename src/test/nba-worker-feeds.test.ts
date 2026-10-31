@@ -19,10 +19,10 @@ const mockFetch = (handler: (url: string, init?: RequestInit) => Promise<Respons
 
 describe("unattended NBA feed HTTP boundary (no network, credentials or database)", () => {
   it("accepts both verified feeds with independent abort signals", async () => {
-    const calls: Array<{ url: string; signal: AbortSignal | null | undefined; accept: string | undefined }> = [];
+    const calls: Array<{ url: string; signal: AbortSignal | null | undefined; accept: string | undefined; redirect: RequestRedirect | undefined }> = [];
     const fetcher = mockFetch(async (url, init) => {
       calls.push({
-        url, signal: init?.signal,
+        url, signal: init?.signal, redirect: init?.redirect,
         accept: (init?.headers as Record<string, string> | undefined)?.["accept"],
       });
       return reply(url.includes("scheduleLeague") ? schedule : live);
@@ -31,9 +31,30 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
     expect(result).toEqual({ schedule, live, errors: [] });
     expect(unattendedNbaHttpStatus(0, result.errors)).toBe(200);
     expect(calls).toHaveLength(2);
-    expect(calls.every(call => call.signal instanceof AbortSignal && call.accept === "application/json"))
+    expect(calls.every(call => call.signal instanceof AbortSignal &&
+      call.accept === "application/json" && call.redirect === "error"))
       .toBe(true);
     expect(calls[0]?.signal).not.toBe(calls[1]?.signal);
+  });
+
+  it("fails a redirected provider request without losing the independent healthy feed", async () => {
+    for (const redirectSchedule of [true, false]) {
+      const fetcher = mockFetch(async (url, init) => {
+        const isSchedule = url.includes("scheduleLeague");
+        if (isSchedule === redirectSchedule) {
+          // Simulate fetch's redirect:error behavior rather than following
+          // a CDN Location to an unexpected origin.
+          expect(init?.redirect).toBe("error");
+          throw new TypeError("redirect blocked");
+        }
+        return reply(isSchedule ? schedule : live);
+      });
+      const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+      expect(result).toEqual(redirectSchedule
+        ? { schedule: null, live, errors: ["Season schedule unavailable"] }
+        : { schedule, live: null, errors: ["Live scoreboard unavailable"] });
+      expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+    }
   });
 
   it("preserves the valid live feed when the season provider returns HTTP 503", async () => {
