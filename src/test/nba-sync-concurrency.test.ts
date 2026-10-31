@@ -67,6 +67,71 @@ describe.skipIf(!enabled)("NBA lease concurrency (disposable CI database only)",
     expect(await pool`SELECT day FROM public.nba_sync_leases WHERE day=${day}::date`).toHaveLength(0);
   });
 
+  it("fences an expired worker after a second database session reclaims its lease", async () => {
+    if (!pool) throw new Error("Test pool unavailable.");
+    const staleWorker = await pool.reserve();
+    const replacement = await pool.reserve();
+    const staleToken = randomUUID();
+    const replacementToken = randomUUID();
+    // Synthetic future day unique to this test, in an ephemeral CI database.
+    const expiryDay = "2032-07-13";
+    try {
+      expect(await staleWorker`SELECT day FROM public.nba_sync_leases
+        WHERE day=${expiryDay}::date`).toHaveLength(0);
+      expect(await staleWorker`SELECT day FROM public.sync_state
+        WHERE day=${expiryDay}::date`).toHaveLength(0);
+      const [first] = await staleWorker`SELECT public.try_claim_nba_sync(
+        ${expiryDay}::date, ${staleToken}::uuid, 180
+      ) AS claimed`;
+      expect(first?.["claimed"]).toBe(true);
+
+      // Simulate a worker exceeding its deadline. A different committed
+      // session reclaims the lease before the original worker can write.
+      await replacement`UPDATE public.nba_sync_leases
+        SET expires_at = clock_timestamp() - interval '1 second'
+        WHERE day=${expiryDay}::date AND owner_token=${staleToken}::uuid`;
+      const [second] = await replacement`SELECT public.try_claim_nba_sync(
+        ${expiryDay}::date, ${replacementToken}::uuid, 180
+      ) AS claimed`;
+      expect(second?.["claimed"]).toBe(true);
+      const [ownerRow] = await replacement`SELECT owner_token
+        FROM public.nba_sync_leases WHERE day=${expiryDay}::date`;
+      expect(ownerRow?.["owner_token"]).toBe(replacementToken);
+
+      // A stale owner cannot publish even an empty day's freshness after
+      // losing its lease; a failed statement must not affect the successor.
+      await expect(staleWorker`SELECT public.commit_nba_sync_day(
+        ${expiryDay}::date, ${staleToken}::uuid, '[]'::jsonb
+      ) AS written`).rejects.toThrow(/lease is missing or expired/);
+      expect(await replacement`SELECT day FROM public.sync_state
+        WHERE day=${expiryDay}::date`).toHaveLength(0);
+      const [staleRelease] = await staleWorker`SELECT public.release_nba_sync(
+        ${expiryDay}::date, ${staleToken}::uuid
+      ) AS released`;
+      expect(staleRelease?.["released"]).toBe(false);
+
+      const [written] = await replacement`SELECT public.commit_nba_sync_day(
+        ${expiryDay}::date, ${replacementToken}::uuid, '[]'::jsonb
+      ) AS written`;
+      expect(written?.["written"]).toBe(0);
+      const [fresh] = await replacement`SELECT game_count FROM public.sync_state
+        WHERE day=${expiryDay}::date`;
+      expect(fresh?.["game_count"]).toBe(0);
+    } finally {
+      // The entire CI database is disposable; release only our test leases.
+      await staleWorker`SELECT public.release_nba_sync(
+        ${expiryDay}::date, ${staleToken}::uuid
+      )`;
+      await replacement`SELECT public.release_nba_sync(
+        ${expiryDay}::date, ${replacementToken}::uuid
+      )`;
+      staleWorker.release();
+      replacement.release();
+    }
+    expect(await pool`SELECT day FROM public.nba_sync_leases
+      WHERE day=${expiryDay}::date`).toHaveLength(0);
+  });
+
   it("rejects a stale score snapshot after another session advances the live game", async () => {
     if (!pool) throw new Error("Test pool unavailable.");
     const worker = await pool.reserve();
