@@ -66,18 +66,19 @@ export function unattendedNbaHttpStatus(failed: number, errors: readonly string[
   return failed > 0 || errors.length > 0 ? 503 : 200;
 }
 
-/** A season schedule can stay "scheduled" after tipoff when the live feed
- * is delayed or unavailable. Do not certify that day's cache as fresh until
- * a verified live/final (or postponed/canceled) state replaces the placeholder.
- * A short grace window allows normal provider/tipoff latency.
+/** A schedule may remain "scheduled" after tipoff, or a scoreboard may
+ * remain "live" long after a game should have ended during a provider outage.
+ * Neither is proof of a current result: do not advance freshness indefinitely.
+ * Allow 30 minutes for tipoff latency and six hours for long/overtime games.
+ * A stale live game remains visible in storage; this only rejects cache renewal.
  */
 export function hasOverdueScheduledNbaGame(rows: readonly FencedNbaRow[], now: Date): boolean {
   const nowMs = now.getTime();
   if (!Number.isFinite(nowMs)) return true;
-  const graceMs = 30 * 60 * 1000;
   return rows.some(row => {
-    if (row.state !== "scheduled") return false;
+    if (row.state !== "scheduled" && row.state !== "live") return false;
     const tipoffMs = Date.parse(row.start_utc);
+    const graceMs = (row.state === "live" ? 6 * 60 : 30) * 60 * 1000;
     return !Number.isFinite(tipoffMs) || nowMs > tipoffMs + graceMs;
   });
 }
