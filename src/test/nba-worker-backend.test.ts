@@ -126,6 +126,26 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     }
   });
 
+  it("rejects impossible stored calendar days instead of silently rolling them into another month", async () => {
+    // JavaScript Date.parse accepts 2026-02-30 as March 2. A malformed
+    // stored tipoff must never be used to certify unattended score freshness.
+    for (const timestamp of [
+      "2026-02-30T03:00:00Z",
+      "2026-02-29T03:00:00+00:00",
+      "2026-11-31T03:00:00Z",
+      "2026-00-18T03:00:00Z",
+    ]) {
+      const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+        reply([{ ...validStoredGame, start_utc: timestamp }])));
+      await expect(backend.readExisting(["2026-11-17"]))
+        .rejects.toThrow("malformed games");
+    }
+    // Leap days and offset-aware timestamps from PostgreSQL remain valid.
+    const validLeap = { ...validStoredGame, start_utc: "2028-02-29T03:00:00+00:00" };
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply([validLeap])));
+    expect(await backend.readExisting(["2028-02-29"])).toEqual([validLeap]);
+  });
+
   it("accepts complete PostgREST history ranges including an empty result", async () => {
     const complete = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
       new Response(JSON.stringify([validStoredGame]), {
