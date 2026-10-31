@@ -79,7 +79,7 @@ describe.skipIf(!enabled)("NBA lease concurrency (disposable CI database only)",
       expect(await staleWorker`SELECT day FROM public.nba_sync_leases
         WHERE day=${expiryDay}::date`).toHaveLength(0);
       expect(await staleWorker`SELECT day FROM public.sync_state
-        WHERE day=${expiryDay}::date`).toHaveLength(0);
+        WHERE day=${expiryDay}`).toHaveLength(0);
       const [first] = await staleWorker`SELECT public.try_claim_nba_sync(
         ${expiryDay}::date, ${staleToken}::uuid, 180
       ) AS claimed`;
@@ -104,7 +104,7 @@ describe.skipIf(!enabled)("NBA lease concurrency (disposable CI database only)",
         ${expiryDay}::date, ${staleToken}::uuid, '[]'::jsonb
       ) AS written`).rejects.toThrow(/lease is missing or expired/);
       expect(await replacement`SELECT day FROM public.sync_state
-        WHERE day=${expiryDay}::date`).toHaveLength(0);
+        WHERE day=${expiryDay}`).toHaveLength(0);
       const [staleRelease] = await staleWorker`SELECT public.release_nba_sync(
         ${expiryDay}::date, ${staleToken}::uuid
       ) AS released`;
@@ -115,7 +115,7 @@ describe.skipIf(!enabled)("NBA lease concurrency (disposable CI database only)",
       ) AS written`;
       expect(written?.["written"]).toBe(0);
       const [fresh] = await replacement`SELECT game_count FROM public.sync_state
-        WHERE day=${expiryDay}::date`;
+        WHERE day=${expiryDay}`;
       expect(fresh?.["game_count"]).toBe(0);
     } finally {
       // The entire CI database is disposable; release only our test leases.
