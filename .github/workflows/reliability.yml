@@ -214,8 +214,9 @@ jobs:
             0005_tighten_sync_state_read \
             0006_lock_down_sync_state \
             0007_safe_room_departure \
-            0008_restrict_last_sync_rpc; do
+            0008_restrict_last_sync_rpc \
+            0015_cap_recorded_payments; do
             psql -h 127.0.0.1 -U postgres -d tipoff_test -v ON_ERROR_STOP=1 -f "drizzle/migrations/${migration}.sql"
           done
       - name: Room departure/RLS regression tests (rollback-only disposable DB)
-        run: bunx vitest run src/test/leave-room.test.ts
+        run: bunx vitest run src/test/leave-room.test.ts src/test/payment-balance-rpc.test.ts
