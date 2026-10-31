@@ -640,3 +640,21 @@ describe("unattended NBA worker pure preparation", () => {
   });
 
 });
+
+
+describe("unattended NBA malformed live timestamp fallback", () => {
+  it("does not certify a scheduled game when the same-ID live final has an impossible tipoff", () => {
+    for (const invalidTipoff of [
+      "2026-11-31T03:00:00Z",
+      "2026-11-18T24:00:00Z",
+      "2026-11-18T24:00:00+00:00",
+    ]) {
+      const invalidFinal = { ...game(3, 109, 107), gameDateTimeUTC: invalidTipoff };
+      const result = prepareUnattendedNbaDay(
+        "2026-11-17", schedule([game()]), live([invalidFinal]), [],
+      );
+      expect(result.rows).toMatchObject([{ id: "nba:0022600012", state: "scheduled" }]);
+      expect(result.cacheable).toBe(false);
+    }
+  });
+});

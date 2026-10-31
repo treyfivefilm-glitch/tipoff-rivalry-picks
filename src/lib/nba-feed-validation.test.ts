@@ -401,3 +401,25 @@ describe("stored NBA matchup reuse safety", () => {
     expect(sync).toContain("!isStoredNbaMatchCandidate(sameId)");
   });
 });
+
+
+describe("malformed NBA tipoff attribution must not normalize impossible dates", () => {
+  const game = {
+    gameId: "0022600012", gameDateTimeUTC: "2026-11-18T03:00:00Z",
+    gameStatus: 3, gameStatusText: "Final",
+    awayTeam: { teamTricode: "LAL", score: 108 },
+    homeTeam: { teamTricode: "GSW", score: 103 },
+  };
+  it("leaves impossible calendar days and 24:00 unattributed instead of poisoning a different Pacific day", () => {
+    for (const bad of [
+      "2026-11-31T03:00:00Z",
+      "2026-02-29T03:00:00Z",
+      "2026-11-18T24:00:00Z",
+      "2026-11-18T24:00:00+00:00",
+    ]) {
+      expect(malformedNbaGamePacificDay({ ...game, gameDateTimeUTC: bad })).toBeNull();
+    }
+    expect(malformedNbaGamePacificDay({ ...game, awayTeam: { teamTricode: "XYZ" } }))
+      .toBe("2026-11-17");
+  });
+});

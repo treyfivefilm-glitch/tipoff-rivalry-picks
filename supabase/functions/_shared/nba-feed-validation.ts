@@ -74,7 +74,7 @@ const NBA_TEAM_CODES = new Set([
  * ISO timestamps. A provider row with a fabricated tipoff must not be
  * assigned to another Pacific day or certify NBA score freshness.
  */
-function hasRealNbaTipoff(value: unknown): value is string {
+export function hasRealNbaTipoff(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
   if (!match || !Number.isFinite(Date.parse(value))) return false;
@@ -146,7 +146,11 @@ export function isUsableNbaGame(value: unknown): boolean {
  */
 export function malformedNbaGamePacificDay(value: unknown): string | null {
   if (isUsableNbaGame(value) || !record(value)) return null;
-  return safeNbaPacificDay(value["gameDateTimeUTC"] ?? value["gameTimeUTC"]);
+  const tipoff = value["gameDateTimeUTC"] ?? value["gameTimeUTC"];
+  // Date.parse normalizes impossible calendar days and 24:00 into a different
+  // Pacific day. Keep those malformed rows unattributed so their official ID
+  // can block a same-ID scheduled fallback instead of certifying stale scores.
+  return hasRealNbaTipoff(tipoff) ? safeNbaPacificDay(tipoff) : null;
 }
 
 /** A structurally valid season envelope is not proof of a healthy schedule

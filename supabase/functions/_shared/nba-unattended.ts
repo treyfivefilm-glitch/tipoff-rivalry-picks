@@ -1,6 +1,6 @@
 // Pure preparation for owner-approved unattended NBA refresh.
 // Caller must hold a lease and commit via commit_nba_sync_day.
-import { hasConflictingNbaFeedMatchup, hasVerifiedNbaSeasonGame, isStoredNbaMatchCandidate, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
+import { hasConflictingNbaFeedMatchup, hasVerifiedNbaSeasonGame, isStoredNbaMatchCandidate, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, malformedNbaGamePacificDay, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "./nba-feed-validation.ts";
 import { safeNbaPacificDay } from "./sync-days.ts";
 
 const START = "2026-10-20";
@@ -120,7 +120,7 @@ export function prepareUnattendedNbaDay(
       // Rows without a parseable tipoff cannot safely be assigned to a day.
       if (value !== null && typeof value === "object") {
         const raw = value as { gameId?: unknown; gameDateTimeUTC?: unknown; gameTimeUTC?: unknown };
-        const malformedDay = safeNbaPacificDay(raw.gameDateTimeUTC ?? raw.gameTimeUTC);
+        const malformedDay = malformedNbaGamePacificDay(value);
         if (malformedDay === day) {
           malformedDayGame = true;
         } else if (malformedDay === null && typeof raw.gameId === "string" &&
