@@ -294,8 +294,10 @@ export function prepareUnattendedNbaDay(
       incomingAway !== null && incomingHome !== null &&
       (prior.away_score > prior.home_score) !== (incomingAway > incomingHome);
     if (reversedFinalWinner || (scoredUpdate && (
-      (incomingAway !== null && prior.away_score !== null && incomingAway < prior.away_score) ||
-      (incomingHome !== null && prior.home_score !== null && incomingHome < prior.home_score)
+      // A partial live response must not silently inherit yesterday's
+      // verified points and certify an unscored provider update as fresh.
+      (prior.away_score !== null && (incomingAway === null || incomingAway < prior.away_score)) ||
+      (prior.home_score !== null && (incomingHome === null || incomingHome < prior.home_score))
     ))) {
       identityConflict = true;
       continue;
