@@ -9,7 +9,7 @@ export const NBA_BACKEND_REQUEST_TIMEOUT_MS = 10000;
  * month. Reject them before using stored history to certify score freshness.
  */
 function hasRealIsoCalendarDate(value: string): boolean {
-  const match = /^(\\d{4})-(\\d{2})-(\\d{2})T/.exec(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})T/.exec(value);
   if (!match) return false;
   const year = Number(match[1]);
   const month = Number(match[2]);
