@@ -26,8 +26,17 @@ describe("unattended NBA overdue-score freshness", () => {
     expect(hasOverdueScheduledNbaGame(rows(), new Date("2026-11-18T03:30:01Z"))).toBe(true);
   });
 
-  it("does not block verified live, final or postponed states", () => {
-    for (const state of ["live", "final", "postponed", "canceled"]) {
+  it("rejects live results that remain unverified more than six hours after tipoff", () => {
+    const inProgress = rows().map(row => ({ ...row, state: "live" }));
+    expect(hasOverdueScheduledNbaGame(inProgress, new Date("2026-11-18T08:59:59Z"))).toBe(false);
+    expect(hasOverdueScheduledNbaGame(inProgress, new Date("2026-11-18T09:00:00Z"))).toBe(false);
+    expect(hasOverdueScheduledNbaGame(inProgress, new Date("2026-11-18T09:00:01Z"))).toBe(true);
+    // A stalled live feed must not repeatedly certify the day as fresh.
+    expect(hasOverdueScheduledNbaGame(inProgress, new Date("2026-11-19T03:00:00Z"))).toBe(true);
+  });
+
+  it("does not block final, postponed or canceled states after tipoff", () => {
+    for (const state of ["final", "postponed", "canceled"]) {
       const verified = rows().map(row => ({ ...row, state }));
       expect(hasOverdueScheduledNbaGame(verified, new Date("2026-11-19T03:00:00Z"))).toBe(false);
     }
