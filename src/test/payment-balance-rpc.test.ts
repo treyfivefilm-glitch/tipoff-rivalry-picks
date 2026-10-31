@@ -222,6 +222,9 @@ describe.skipIf(!url)("record_payment server-side outstanding cap", () => {
     await reject(1001, /exceeds outstanding/);
     await record(1000);
 
+    // Inspect fixture tables as the disposable DB owner, not the limited
+    // authenticated role used to call the public payment RPC.
+    await db`RESET ROLE`;
     const [stored] = await db`SELECT id,state,away_score,home_score FROM public.games WHERE id=${game}`;
     expect(stored).toMatchObject({ id: game, state: 'final', away_score: 109, home_score: 107 });
     expect((await db`SELECT user_id,team_code FROM public.picks
