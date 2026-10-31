@@ -203,6 +203,29 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     }
   });
 
+  it("rejects impossible stored official NBA scores without blocking other sports", async () => {
+    // An HTTP 200 history row with an impossible NBA score cannot be
+    // trusted to preserve a final winner or refresh score freshness.
+    for (const state of ["live", "final"]) {
+      for (const bad of [501, 9999, Number.MAX_SAFE_INTEGER]) {
+        const corrupted = { ...validStoredGame, state, away_score: bad };
+        const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+          reply([corrupted])));
+        await expect(backend.readExisting(["2026-11-17"]))
+          .rejects.toThrow("malformed games");
+      }
+    }
+    const valid = [
+      { ...validStoredGame, away_score: 500 },
+      { ...validStoredGame, id: "nba:0022600013", state: "live",
+        away_score: null, home_score: 0 },
+      { ...validStoredGame, id: "other-sport:historical", source: "espn",
+        away_score: 501, home_score: 101 },
+    ];
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(valid)));
+    expect(await backend.readExisting(["2026-11-17"])).toEqual(valid);
+  });
+
   it("accepts complete history rows with nullable scores, source and status", async () => {
     const rows = [
       validStoredGame,
