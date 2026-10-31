@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, assertSameInviteAccount, ensureGuestSession, hasAccountSession, hasGuestSession, runWithoutGuestAccountSwitch, verifiedInviteAccountId } from "./guest-session-guard";
+import { GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, InviteAccountChangedError, assertSameInviteAccount, createInviteGuestIfSignedOut, ensureGuestSession, hasAccountSession, hasGuestSession, runWithoutGuestAccountSwitch, verifiedInviteAccountId } from "./guest-session-guard";
 
 describe("guest account protection on email sign-in", () => {
   it("blocks switching away from an existing guest session", () => {
@@ -34,6 +34,40 @@ describe("guest account protection on email sign-in", () => {
     });
     expect(result).toBe("created");
     expect(guestCreates).toBe(1);
+  });
+  it("does not join from a stale guest invitation after another tab signed in", async () => {
+    for (const anonymous of [true, false]) {
+      let guestCreates = 0;
+      await expect(createInviteGuestIfSignedOut({
+        getSession: async () => ({
+          data: { session: { user: { is_anonymous: anonymous } } }, error: null,
+        }),
+        signInAnonymously: async () => { guestCreates++; return { error: null }; },
+      })).rejects.toBeInstanceOf(InviteAccountChangedError);
+      expect(guestCreates).toBe(0);
+    }
+  });
+  it("allows a newly created invitation guest after a verified signed-out check", async () => {
+    let guestCreates = 0;
+    await expect(createInviteGuestIfSignedOut({
+      getSession: async () => ({ data: { session: null }, error: null }),
+      signInAnonymously: async () => { guestCreates++; return { error: null }; },
+    })).resolves.toBeUndefined();
+    expect(guestCreates).toBe(1);
+  });
+  it("does not bypass failed guest creation or failed session verification", async () => {
+    let guestCreates = 0;
+    await expect(createInviteGuestIfSignedOut({
+      getSession: async () => ({
+        data: { session: null }, error: new Error("Account check unavailable"),
+      }),
+      signInAnonymously: async () => { guestCreates++; return { error: null }; },
+    })).rejects.toThrow("Account check unavailable");
+    expect(guestCreates).toBe(0);
+    await expect(createInviteGuestIfSignedOut({
+      getSession: async () => ({ data: { session: null }, error: null }),
+      signInAnonymously: async () => ({ error: new Error("Guest signup failed") }),
+    })).rejects.toThrow("Guest signup failed");
   });
   it("does not replace an account when session lookup fails", async () => {
     let guestCreates = 0;
