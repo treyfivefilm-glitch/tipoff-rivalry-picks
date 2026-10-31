@@ -169,4 +169,32 @@ describe.skipIf(!url)("record_payment server-side outstanding cap", () => {
     await record(400);
     expect((await db`SELECT cents FROM public.payments WHERE room_id=${room}`)[0]?.['cents']).toBe(400);
   });
+
+  it("recalculates the payer after a corrected result without forgetting confirmed partial payments", async () => {
+    // Member initially loses $10 and sends $4, which the owner confirms.
+    await asUser(member);
+    await record(400);
+    await db`RESET ROLE`;
+    const [partial] = await db`SELECT id FROM public.payments WHERE room_id=${room}`;
+    const partialId = partial?.['id'] as string;
+    expect(partialId).toBeTruthy();
+    await asUser(owner);
+    await db`SELECT public.respond_payment(${partialId}::uuid,true)`;
+
+    // A room result correction reverses the winner. The previous $4 was
+    // already confirmed, so the owner now owes $10 + $4 = $14 net.
+    await db`RESET ROLE`;
+    await db`INSERT INTO public.result_overrides(room_id,game_id,away_score,home_score,state,entered_by)
+      VALUES(${room},${game},101,110,'final',${owner})`;
+
+    await asUser(member);
+    await reject(1,/exceeds outstanding/);
+    await asUser(owner);
+    await reject(1401,/exceeds outstanding/);
+    await record(1400);
+
+    const payments = await db`SELECT payer_id,cents,status FROM public.payments WHERE room_id=${room} ORDER BY cents`;
+    expect(payments.map(row => [row['payer_id'],row['cents'],row['status']]))
+      .toEqual([[member,400,'confirmed'],[owner,1400,'pending']]);
+  });
 });
