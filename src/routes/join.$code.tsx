@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { CheckCircle2, ChevronRight, Loader2, ShieldAlert, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { isValidInviteCode, normalizeInviteCode } from "@/lib/invites";
-import { assertSameInviteAccount, createInviteGuestIfSignedOut, InviteAccountChangedError, verifiedInviteAccountId } from "@/lib/guest-session-guard";
+import { assertCreatedInviteGuest, assertSameInviteAccount, createInviteGuestIfSignedOut, InviteAccountChangedError, verifiedInviteAccountId } from "@/lib/guest-session-guard";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/join/$code")({
@@ -59,13 +59,12 @@ function JoinPage() {
     setBusy(true);
     setError(null);
     try {
+      let createdGuestId: string | null = null;
       if (newGuest) {
         if (!guestEnabled) throw new Error("Guest sign-in isn't enabled. Sign in instead.");
-        // Another tab may have signed in after this page verified sign-out.
-        // Never silently attach this invitation to that different identity.
-        // Refresh the account check so the player can confirm it explicitly.
-        await createInviteGuestIfSignedOut(supabase.auth);
-        setSignedIn(true);
+        // Remember the identity returned by signup, not just a later session
+        // lookup that another tab may have switched to a different player.
+        createdGuestId = await createInviteGuestIfSignedOut(supabase.auth);
       }
       // The invitation may have been open while a session expired in another tab.
       // Never submit a join under an unverified or missing identity.
@@ -75,7 +74,16 @@ function JoinPage() {
         setVerifiedPlayerId(null);
         throw new Error("Your session expired. Sign in again before joining this battle.");
       }
-      if (!newGuest) {
+      if (newGuest) {
+        try {
+          assertCreatedInviteGuest(createdGuestId, currentPlayerId);
+        } catch (error) {
+          setSignedIn(null);
+          setVerifiedPlayerId(null);
+          throw error;
+        }
+        setSignedIn(true);
+      } else {
         // A different account may have signed in after the invitation loaded.
         // Joining as that account could attach room history to the wrong player.
         try {
