@@ -108,6 +108,10 @@ export function prepareUnattendedNbaDay(
   // matches a valid game on this day, do not certify the scheduled fallback
   // as fresh while that game's live result is unusable.
   const unattributedMalformedIds = new Set<string>();
+  // A malformed live row with no usable tipoff may also have a changed or
+  // missing ID. If its teams match a scheduled game on this day, do not
+  // certify that scheduled fallback as current score information.
+  const unattributedMalformedMatchups = new Set<string>();
   // A rescheduled game can briefly have different tipoff dates in the
   // season and live feeds. Never certify either day until they agree:
   // otherwise sequential per-day commits can move the same game ID twice.
@@ -123,9 +127,21 @@ export function prepareUnattendedNbaDay(
         const malformedDay = malformedNbaGamePacificDay(value);
         if (malformedDay === day) {
           malformedDayGame = true;
-        } else if (malformedDay === null && typeof raw.gameId === "string" &&
-                   /^\d{10}$/.test(raw.gameId)) {
-          unattributedMalformedIds.add(raw.gameId);
+        } else if (malformedDay === null) {
+          if (typeof raw.gameId === "string" && /^\d{10}$/.test(raw.gameId)) {
+            unattributedMalformedIds.add(raw.gameId);
+          }
+          if (live) {
+            const teams = value as {
+              awayTeam?: { teamTricode?: unknown };
+              homeTeam?: { teamTricode?: unknown };
+            };
+            const away = norm(teams.awayTeam?.teamTricode);
+            const home = norm(teams.homeTeam?.teamTricode);
+            if (away && home && away !== home) {
+              unattributedMalformedMatchups.add(away + ":" + home);
+            }
+          }
         }
       }
       return;
@@ -320,8 +336,13 @@ export function prepareUnattendedNbaDay(
   // verified season. Otherwise it could falsely mark every day as refreshed.
   // A legitimate no-game day remains cacheable when other season games validate.
   const unattributedCurrentGame = [...unattributedMalformedIds].some(id => games.has(id));
+  const unattributedCurrentMatchup = [...games.values()].some(game =>
+    unattributedMalformedMatchups.has(
+      norm(game.awayTeam.teamTricode) + ":" + norm(game.homeTeam.teamTricode),
+    ));
   const verifiedSeason = seasonValid && validSeasonGames > 0;
-  return { rows: [...rows.values()], cacheable: !unattributedCurrentGame && !omittedStoredNbaGame &&
+  return { rows: [...rows.values()], cacheable: !unattributedCurrentGame &&
+    !unattributedCurrentMatchup && !omittedStoredNbaGame &&
     !malformedDayGame && !identityConflict &&
     !conflictingGameDays.has(day) && (verifiedSeason || (validLiveGames > 0 && rows.size > 0)) };
 }

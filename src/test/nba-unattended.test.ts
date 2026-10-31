@@ -503,9 +503,19 @@ describe("unattended NBA worker pure preparation", () => {
     expect(result.rows[0]).toMatchObject({ id: "nba:0022600012", state: "scheduled" });
     expect(result.cacheable).toBe(false);
 
-    // A malformed game with no date and a different ID cannot be assigned
-    // to this Pacific day; it must not poison an unrelated valid matchup.
-    const unrelated = { ...brokenLive, gameId: "0022600099" };
+    // A changed official ID must not let a broken live result certify the
+    // same scheduled matchup as fresh, even without a parseable tipoff.
+    const changedId = { ...brokenLive, gameId: "0022600099" };
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([changedId]), [],
+    ).cacheable).toBe(false);
+
+    // The broken live row cannot be attributed to an unrelated matchup.
+    const unrelated = {
+      ...changedId,
+      awayTeam: { ...changedId.awayTeam, teamTricode: "BOS" },
+      homeTeam: { ...changedId.homeTeam, teamTricode: "NYK" },
+    };
     expect(prepareUnattendedNbaDay(
       "2026-11-17", schedule([game()]), live([unrelated]), [],
     ).cacheable).toBe(true);
