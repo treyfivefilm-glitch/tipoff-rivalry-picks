@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, type WagerVersion } from "@/lib/wagers";
+import { latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, wagerVersionStatusLabel, type WagerVersion } from "@/lib/wagers";
 import type { BoardGame } from "@/lib/rules";
 
 const future = new Date(Date.now() + 86400_000).toISOString();
@@ -39,6 +39,21 @@ describe("wagerLane", () => {
   it("declined and withdrawn offers are in the ledger", () => {
     expect(wagerLane(version({ status: "declined" }), game({}))).toBe("ledger");
     expect(wagerLane(version({ status: "withdrawn" }), game({}))).toBe("ledger");
+  });
+});
+
+describe("versioned wager history labels", () => {
+  it("distinguishes a withdrawn or voided wager from an offer expired at tipoff", () => {
+    expect(wagerVersionStatusLabel("withdrawn")).toBe("Withdrawn");
+    expect(wagerVersionStatusLabel("void")).toBe("Voided");
+    expect(wagerVersionStatusLabel("superseded")).toBe("Replaced by newer offer");
+    expect(wagerVersionStatusLabel("proposed")).toBe("Pending");
+  });
+
+  it("keeps accepted and declined statuses understandable on mobile", () => {
+    expect(wagerVersionStatusLabel("accepted")).toBe("Accepted");
+    expect(wagerVersionStatusLabel("declined")).toBe("Declined");
+    expect(wagerVersionStatusLabel("unexpected")).toBe("Unknown status");
   });
 });
 
