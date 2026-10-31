@@ -113,7 +113,10 @@ export function isUsableNbaGame(value: unknown): boolean {
   if (status !== 1 && status !== 2 && status !== 3) return false;
   const scoreValid = (score: unknown): boolean => {
     if (typeof score !== "number" && typeof score !== "string") return false;
-    if (typeof score === "string" && score.trim() === "") return false;
+    // Number() accepts hex, exponent and signed strings (e.g. "0x64",
+    // "1e2", "+100"). NBA feed score strings must be plain decimal points;
+    // never reinterpret malformed provider text as a wager-settling score.
+    if (typeof score === "string" && !/^\\d+$/.test(score.trim())) return false;
     const number = Number(score);
     return Number.isSafeInteger(number) && number >= 0;
   };
