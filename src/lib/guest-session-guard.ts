@@ -49,6 +49,25 @@ export async function runWithoutGuestAccountSwitch<T>(
   return action();
 }
 
+/** An invitation's guest button is only valid after a verified signed-out
+ * check. If another tab signed in meanwhile, do not silently join a battle
+ * using that other identity; refresh the account check and ask the player
+ * to confirm it instead. This also avoids creating a second guest account.
+ */
+export class InviteAccountChangedError extends Error {
+  constructor() {
+    super("Your account changed while this invitation was open. Check the signed-in account before joining.");
+    this.name = "InviteAccountChangedError";
+  }
+}
+
+export async function createInviteGuestIfSignedOut(
+  auth: Parameters<typeof ensureGuestSession>[0],
+): Promise<void> {
+  const result = await ensureGuestSession(auth);
+  if (result !== "created") throw new InviteAccountChangedError();
+}
+
 export const GUEST_SESSION_WARNING = "Signing in or creating another account here could disconnect this browser from your guest rooms and wagers. Return to your rooms and use Profile to attach a permanent account before switching identities.";
 
 /** A failed account check is not evidence that a visitor is signed out.
