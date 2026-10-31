@@ -214,6 +214,27 @@ describe("NBA individual game integrity", () => {
       })).toBe(false);
     }
   });
+  it("rejects non-decimal score strings before trusting live or final results", () => {
+    // Number() would silently accept these as integers, potentially
+    // certifying an incorrect final and changing a wager winner.
+    for (const malformed of ["0x64", "1e2", "+100", "-0", "0b1100100", "1_00"]) {
+      for (const status of [2, 3]) {
+        expect(isUsableNbaGame({
+          ...game, gameStatus: status, gameStatusText: status === 3 ? "Final" : "Q4",
+          awayTeam: { ...game.awayTeam, score: malformed },
+          homeTeam: { ...game.homeTeam, score: 101 },
+        })).toBe(false);
+      }
+    }
+    // The official provider may send scores as numbers or decimal strings.
+    for (const decimal of ["0", "100", " 100 "]) {
+      expect(isUsableNbaGame({
+        ...game, gameStatus: 3, gameStatusText: "Final",
+        awayTeam: { ...game.awayTeam, score: decimal },
+        homeTeam: { ...game.homeTeam, score: 101 },
+      })).toBe(true);
+    }
+  });
   it("rejects invalid supplied scores but permits missing scheduled/live scores", () => {
     expect(isUsableNbaGame({ ...game, gameStatus: 1 })).toBe(true);
     expect(isUsableNbaGame(game)).toBe(true);
