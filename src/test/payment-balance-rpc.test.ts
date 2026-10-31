@@ -197,4 +197,39 @@ describe.skipIf(!url)("record_payment server-side outstanding cap", () => {
     expect(payments.map(row => [row['payer_id'],row['cents'],row['status']]))
       .toEqual([[member,400,'confirmed'],[owner,1400,'pending']]);
   });
+
+  it("keeps accepted picks and wagers payable only after an NBA game becomes final", async () => {
+    // Simulate the official NBA game retaining its ID as a feed progresses
+    // from scheduled to live to final. A wager must not settle early.
+    await db`UPDATE public.games
+      SET state='scheduled', away_score=NULL, home_score=NULL
+      WHERE id=${game}`;
+    await asUser(member);
+    await reject(1, /exceeds outstanding/);
+
+    await db`RESET ROLE`;
+    await db`UPDATE public.games
+      SET state='live', away_score=58, home_score=55
+      WHERE id=${game}`;
+    await asUser(member);
+    await reject(1, /exceeds outstanding/);
+
+    await db`RESET ROLE`;
+    await db`UPDATE public.games
+      SET state='final', away_score=109, home_score=107, source='nba'
+      WHERE id=${game}`;
+    await asUser(member);
+    await reject(1001, /exceeds outstanding/);
+    await record(1000);
+
+    const [stored] = await db`SELECT id,state,away_score,home_score FROM public.games WHERE id=${game}`;
+    expect(stored).toMatchObject({ id: game, state: 'final', away_score: 109, home_score: 107 });
+    expect((await db`SELECT user_id,team_code FROM public.picks
+      WHERE room_id=${room} AND game_id=${game}`)).toHaveLength(2);
+    expect((await db`SELECT status,stake_each_cents FROM public.wagers
+      WHERE room_id=${room} AND game_id=${game}`)[0])
+      .toMatchObject({ status: 'accepted', stake_each_cents: 1000 });
+    expect((await db`SELECT payer_id,cents,status FROM public.payments WHERE room_id=${room}`)[0])
+      .toMatchObject({ payer_id: member, cents: 1000, status: 'pending' });
+  });
 });
