@@ -29,7 +29,7 @@ export const Route = createFileRoute("/_authenticated/room/$id")({
 function RoomPage() {
   const { id } = Route.useParams();
   return (
-    <LiveBattle roomId={id}>
+    <LiveBattle key={id} roomId={id}>
       <RoomInner />
     </LiveBattle>
   );
