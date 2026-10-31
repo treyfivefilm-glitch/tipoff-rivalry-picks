@@ -118,7 +118,9 @@ export function isUsableNbaGame(value: unknown): boolean {
     // never reinterpret malformed provider text as a wager-settling score.
     if (typeof score === "string" && !/^\d+$/.test(score.trim())) return false;
     const number = Number(score);
-    return Number.isSafeInteger(number) && number >= 0;
+    // An HTTP 200 provider response with a fantastical score must not settle
+    // a wager. 500 is intentionally far above any real NBA team total.
+    return Number.isSafeInteger(number) && number >= 0 && number <= 500;
   };
   const scores = [value["awayTeam"], value["homeTeam"]].map(team =>
     record(team) ? team["score"] : undefined,
