@@ -366,6 +366,26 @@ describe("unattended NBA worker pure preparation", () => {
     )).toMatchObject({ cacheable: true, rows: [{ state: "live", away_score: 92, home_score: 86 }] });
   });
 
+  it("does not renew freshness when live updates omit previously verified points", () => {
+    const prior = {
+      id: "nba:0022600012", source: "nba", start_utc: "2026-11-18T03:00:00Z",
+      away_code: "LAL", home_code: "GSW", away_score: 90, home_score: 85,
+      state: "live", status_detail: "Q4",
+    };
+    // A provider outage may return a valid live row but drop one or both
+    // scores. Reusing stored points must not make that feed appear current.
+    for (const incomplete of [game(2, null, 85), game(2, 90, null), game(2, null, null)]) {
+      expect(prepareUnattendedNbaDay(
+        "2026-11-17", schedule([game()]), live([incomplete]), [prior],
+      )).toEqual({ rows: [], cacheable: false });
+    }
+    // Missing scores are still legitimate at the start of live play when
+    // there are no previously verified points to protect.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([game(2, null, null)]), [],
+    )).toMatchObject({ cacheable: true, rows: [{ state: "live", away_score: null, home_score: null }] });
+  });
+
   it("rejects a final-score correction that reverses an already verified winner", () => {
     const prior = {
       id: "nba:0022600012", source: "nba", start_utc: "2026-11-18T03:00:00Z",
