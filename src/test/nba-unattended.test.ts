@@ -47,9 +47,10 @@ describe("unattended NBA worker pure preparation", () => {
     const feeds = readFileSync(
       new URL("../../supabase/functions/_shared/nba-worker-feeds.ts", import.meta.url), "utf8",
     );
-    expect(worker).toContain("await loadUnattendedNbaFeeds(requestHttp)");
+    expect(worker).toContain("await loadUnattendedNbaFeeds(requestHttp, undefined, now())");
     expect(feeds).toContain("verifiedUnattendedNbaSchedule(scheduleResult.value)");
-    expect(feeds).toContain("isValidNbaScoreboard(liveResult.value)");
+    expect(feeds).toContain("isTimelyNbaScoreboard(liveResult.value, now)");
+    expect(feeds).toContain("isValidNbaScoreboard(payload)");
   });
 
   it("bounds every unattended worker backend request to avoid hanging leases", () => {
