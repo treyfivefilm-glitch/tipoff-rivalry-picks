@@ -6,6 +6,21 @@ export type ChallengeSubmission = Database['public']['Tables']['challenge_submis
 export type WagerCategory = 'cash' | 'challenge' | 'both';
 export type DeadlineRule = 'none' | '24h' | '7d' | 'meeting';
 export const deadlineLabels: Record<string, string> = { none: 'No deadline', '24h': '24 hours after final', '7d': '7 days after final', meeting: 'Next meeting', date: 'Agreed date' };
+/** Friendly, precise labels for the immutable version history. A superseded
+ * counteroffer and a voided pick are not wagers that simply expired at tipoff.
+ */
+export function wagerVersionStatusLabel(status: WagerVersion["status"]): string {
+  switch (status) {
+    case "proposed": return "Pending";
+    case "accepted": return "Accepted";
+    case "declined": return "Declined";
+    case "withdrawn": return "Withdrawn";
+    case "superseded": return "Replaced by newer offer";
+    case "void": return "Voided";
+    default: return "Unknown status";
+  }
+}
+
 export function latestWagers(versions: WagerVersion[]) {
   const map = new Map<string, WagerVersion>();
   for (const v of versions) if ((map.get(v.game_id)?.version ?? 0) < v.version) map.set(v.game_id, v);
