@@ -48,8 +48,13 @@ export function normalizeNbaWorkerBackendUrl(endpoint: string): string {
 export function isValidExistingNbaGame(value: unknown): value is ExistingNbaGame {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const row = value as Record<string, unknown>;
-  const validScore = (score: unknown) => score === null ||
-    (typeof score === "number" && Number.isSafeInteger(score) && score >= 0);
+  // Do not trust an impossible stored NBA total just because PostgREST
+  // returned HTTP 200. A corrupt historical final could otherwise preserve
+  // the wrong winner when the unattended worker reconciles a fresh feed.
+  // Other sports share this table and are validated by their own rules.
+  const validScore = (score: unknown, officialNba: boolean) => score === null ||
+    (typeof score === "number" && Number.isSafeInteger(score) && score >= 0 &&
+      (!officialNba || score <= 500));
   // History includes other sports, so validate shared states but only apply
   // NBA-specific final-score rules to official NBA IDs. A corrupt NBA final
   // must not certify freshness or silently affect existing wager outcomes.
@@ -75,7 +80,7 @@ export function isValidExistingNbaGame(value: unknown): value is ExistingNbaGame
     typeof row["state"] === "string" && row["state"].trim().length > 0 &&
     (row["status_detail"] === null || typeof row["status_detail"] === "string") &&
     (row["source"] == null || typeof row["source"] === "string") &&
-    validScore(row["away_score"]) && validScore(row["home_score"]);
+    validScore(row["away_score"], officialNba) && validScore(row["home_score"], officialNba);
 }
 
 
