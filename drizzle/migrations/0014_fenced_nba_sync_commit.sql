@@ -57,6 +57,25 @@ BEGIN
     RAISE EXCEPTION 'NBA sync lease is missing or expired';
   END IF;
 
+  -- JSONB recordset casts can normalize numeric-looking strings into SQL
+  -- integers. Reject those values at the raw JSON boundary so a privileged
+  -- caller cannot certify a score that the official NBA validator rejects.
+  -- Scheduled/early-live games may legitimately omit a score or use null.
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(p_rows) AS raw(game)
+    WHERE
+      (jsonb_typeof(raw.game->'away_score') IS NOT NULL
+       AND jsonb_typeof(raw.game->'away_score') NOT IN ('number', 'null'))
+      OR (jsonb_typeof(raw.game->'home_score') IS NOT NULL
+          AND jsonb_typeof(raw.game->'home_score') NOT IN ('number', 'null'))
+      OR (jsonb_typeof(raw.game->'away_score') = 'number'
+          AND raw.game->>'away_score' !~ '^(0|[1-9][0-9]*)$')
+      OR (jsonb_typeof(raw.game->'home_score') = 'number'
+          AND raw.game->>'home_score' !~ '^(0|[1-9][0-9]*)$')
+  ) THEN
+    RAISE EXCEPTION 'Invalid NBA score JSON type or precision';
+  END IF;
+
   -- Reject the entire batch on any malformed row, including non-official
   -- NBA game IDs. A bad day must not become fresh or partially overwrite
   -- a verified result.

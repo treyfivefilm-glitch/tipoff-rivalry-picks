@@ -74,6 +74,19 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
     );
   });
 
+  it("rejects numeric-looking JSON score strings before integer conversion", () => {
+    const rawGuard = migration.split("-- JSONB recordset casts can normalize")[1]
+      ?.split("-- Reject the entire batch on any malformed row")[0];
+    expect(rawGuard).toBeDefined();
+    for (const side of ["away", "home"]) {
+      expect(rawGuard).toContain(`jsonb_typeof(raw.game->'${side}_score') NOT IN ('number', 'null')`);
+      expect(rawGuard).toContain(`raw.game->>'${side}_score' !~ '^(0|[1-9][0-9]*)$'`);
+    }
+    expect(rawGuard).toContain("Invalid NBA score JSON type or precision");
+    expect(migration.indexOf("Invalid NBA score JSON type or precision"))
+      .toBeLessThan(migration.indexOf("INSERT INTO public.games"));
+  });
+
   it("rejects duplicate daily matchups before writes, including aliases and reversed teams", () => {
     const guard = migration.split("-- Even a privileged caller must not publish")[1]
       ?.split("INSERT INTO public.games")[0];

@@ -117,6 +117,26 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(await commit(owner, [{ ...sampleGame, away_score: 500, home_score: 499 }])).toBe(1);
   });
 
+  it("rejects JSON string and fractional scores before any fenced write", async () => {
+    expect(await claim(owner)).toBe(true);
+    const malformed = [
+      { ...sampleGame, away_score: "103" },
+      { ...sampleGame, home_score: "100" },
+      { ...sampleGame, away_score: 103.5 },
+      { ...sampleGame, home_score: 100.5 },
+    ];
+    for (const row of malformed) {
+      await db`SAVEPOINT malformed_score_json`;
+      await expect(commit(owner, [row]))
+        .rejects.toThrow(/Invalid NBA score JSON type or precision/);
+      await db`ROLLBACK TO SAVEPOINT malformed_score_json`;
+      expect(await db`SELECT id FROM public.games WHERE id=${sampleGame.id}`).toHaveLength(0);
+      expect(await db`SELECT day FROM public.sync_state WHERE day=${day}`).toHaveLength(0);
+    }
+    // A real integer-valued JSON number remains accepted.
+    expect(await commit(owner)).toBe(1);
+  });
+
   it("rejects duplicate NBA matchup IDs and aliases without certifying freshness", async () => {
     expect(await claim(owner)).toBe(true);
     const duplicate = { ...sampleGame, id: "nba:0022600099" };
