@@ -206,6 +206,9 @@ function PaymentForm({ max }: { max: number }) {
   const [amount, setAmount] = useState((max / 100).toFixed(2));
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  // The RPC may succeed before the room's payment subscription refreshes.
+  // Keep this form locked after success so a second tap cannot resend it.
+  const [submitted, setSubmitted] = useState(false);
   const cents = paymentCentsWithinBalance(amount, max);
   const valid = cents !== null;
   return (
@@ -213,10 +216,11 @@ function PaymentForm({ max }: { max: number }) {
       className="mt-3 space-y-2"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (cents === null || busy) return;
+        if (cents === null || busy || submitted) return;
         setBusy(true);
         try {
           await b.recordPayment(cents, note.trim());
+          setSubmitted(true);
           toast.success("Marked as sent — your friend confirms receipt");
           setNote("");
         } catch (err) {
@@ -247,8 +251,8 @@ function PaymentForm({ max }: { max: number }) {
         />
       </div>
       <p className="text-xs text-muted-foreground">Record between $0.01 and {fmtMoney(max)}. This tracks payment confirmation; it does not transfer money.</p>
-      <Button type="submit" variant="gold" className="w-full" disabled={!valid || busy}>
-        <CircleDollarSign className="h-4 w-4" /> {busy ? "Saving…" : "Mark payment sent"}
+      <Button type="submit" variant="gold" className="w-full" disabled={!valid || busy || submitted}>
+        <CircleDollarSign className="h-4 w-4" /> {submitted ? "Awaiting confirmation…" : busy ? "Saving…" : "Mark payment sent"}
       </Button>
     </form>
   );
