@@ -13,11 +13,14 @@ export function OfferForm({ g, current, onClose }: { g: BoardGame; current?: Wag
   const [terms, setTerms] = useState(current?.terms ?? '');
   const [deadline, setDeadline] = useState<DeadlineRule>(current?.deadline_rule === '7d' ? '7d' : current?.deadline_rule === '24h' ? '24h' : current?.deadline_rule === 'meeting' ? 'meeting' : 'none');
   const [busy, setBusy] = useState(false);
+  // A successful RPC can precede the room subscription update. Keep this
+  // version locked until the parent renders the next server state.
+  const [sent, setSent] = useState(false);
   const cents = kind === 'challenge' ? 0 : wagerCentsFromDollars(amount);
   const valid = (kind === 'challenge' || cents !== null) && (kind === 'cash' || terms.trim().length > 0);
   return <form className="space-y-3" onSubmit={async e => {
-    e.preventDefault(); if (!valid || busy || cents === null) return; setBusy(true);
-    try { await b.propose(g.game_id, cents, { kind, terms: terms.trim(), deadline }, current?.version ?? 0); toast.success('Offer sent for your friend to review'); onClose?.(); }
+    e.preventDefault(); if (!valid || busy || sent || cents === null) return; setBusy(true);
+    try { await b.propose(g.game_id, cents, { kind, terms: terms.trim(), deadline }, current?.version ?? 0); setSent(true); toast.success('Offer sent for your friend to review'); onClose?.(); }
     catch(e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   }}>
     <div className="grid grid-cols-3 gap-1" role="group" aria-label="Wager category">
@@ -30,7 +33,7 @@ export function OfferForm({ g, current, onClose }: { g: BoardGame; current?: Wag
     </>}
     <label className="block text-xs text-muted-foreground">{kind === 'cash' ? 'Written terms (optional)' : 'Challenge terms (required)'}<textarea aria-label="Written wager terms" className={`${input} py-2`} maxLength={280} value={terms} onChange={e => setTerms(e.target.value)} /></label>
     <label className="block text-xs text-muted-foreground">Settlement deadline<select aria-label="Settlement deadline" className={input} value={deadline} onChange={e => { const v = e.target.value; if (v === 'none' || v === '24h' || v === '7d' || v === 'meeting') setDeadline(v); }}>{(['none','24h','7d','meeting'] as const).map(k => <option key={k} value={k}>{deadlineLabels[k]}</option>)}</select></label>
-    <div className="flex gap-2"><Button type="submit" variant="gold" className="flex-1" disabled={!valid || busy}>{busy ? 'Sending…' : current?.status === 'proposed' ? 'Send counteroffer' : 'Propose wager'}</Button>{onClose && <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>}</div>
+    <div className="flex gap-2"><Button type="submit" variant="gold" className="flex-1" disabled={!valid || busy || sent}>{sent ? 'Awaiting room update…' : busy ? 'Sending…' : current?.status === 'proposed' ? 'Send counteroffer' : 'Propose wager'}</Button>{onClose && <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>}</div>
   </form>;
 }
 export function OfferActions({ g, v }: { g: BoardGame; v: WagerVersion }) {
