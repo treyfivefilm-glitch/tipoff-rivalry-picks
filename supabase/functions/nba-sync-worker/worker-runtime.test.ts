@@ -441,9 +441,12 @@ Deno.test("Concurrent real HTTP worker requests cannot both commit the same leas
     await historyEntered;
     // The first request still owns all three days until history is released.
     const second = await post();
-    assert.equal(second.status, 200);
+    // The second worker cannot prove freshness while all leases are held.
+    // It must signal degraded monitoring without interfering with the owner.
+    assert.equal(second.status, 503);
     assert.deepEqual(await second.json(), {
-      checked: 0, updated: 0, skipped: 3, failed: 0, errors: [],
+      checked: 0, updated: 0, skipped: 3, failed: 1,
+      errors: ["No NBA days checked: all leases held by another worker"],
     });
     assert.equal(calls.filter(call => call.startsWith("commit:")).length, 0);
     unblockHistory();
