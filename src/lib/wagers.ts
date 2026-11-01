@@ -77,3 +77,11 @@ export function unrecordedPaymentCents(
   if (payments.some((payment) => payment.status === 'pending' && payment.payer_id === payerId)) return 0;
   return owedCents;
 }
+
+/** Wager amounts must be exact whole cents, not rounded from fractional cents.
+ * Match the server's $1–$1,000 per-player bounds before sending an offer.
+ */
+export function wagerCentsFromDollars(raw: string): number | null {
+  const cents = paymentCentsWithinBalance(raw, 100_000);
+  return cents !== null && cents >= 100 ? cents : null;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestChallengeSubmission, latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, wagerVersionStatusLabel, type WagerVersion } from "@/lib/wagers";
+import { latestChallengeSubmission, latestWagers, paymentCentsWithinBalance, wagerCentsFromDollars, unrecordedPaymentCents, wagerLane, wagerVersionStatusLabel, type WagerVersion } from "@/lib/wagers";
 import type { BoardGame } from "@/lib/rules";
 
 const future = new Date(Date.now() + 86400_000).toISOString();
@@ -149,5 +149,27 @@ describe("challenge resubmission history", () => {
     expect(latestChallengeSubmission([first, second], "missing", 2)).toBeUndefined();
     expect(latestChallengeSubmission([first, second], "g1", 2)).toEqual(second);
     expect(latestChallengeSubmission([second, first], "g1", 2)).toEqual(second);
+  });
+});
+
+
+describe("wager amount exact-cent validation", () => {
+  it("accepts only exact cents within the $1 to $1,000 per-player range", () => {
+    expect(wagerCentsFromDollars("1")).toBe(100);
+    expect(wagerCentsFromDollars("1.01")).toBe(101);
+    expect(wagerCentsFromDollars("12.30")).toBe(1230);
+    expect(wagerCentsFromDollars("1000")).toBe(100000);
+  });
+
+  it("rejects fractional cents instead of silently rounding a different wager", () => {
+    for (const input of ["1.005", "1.999", "999.999", "0.999"]) {
+      expect(wagerCentsFromDollars(input)).toBeNull();
+    }
+  });
+
+  it("rejects malformed, exponent, nonfinite, below-minimum and above-maximum amounts", () => {
+    for (const input of ["", " ", "1.", "-1", "0.99", "1000.01", "1e2", "Infinity", "NaN", "1,000"]) {
+      expect(wagerCentsFromDollars(input)).toBeNull();
+    }
   });
 });

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useBattle, errMsg } from '@/lib/battle-context';
 import type { BoardGame } from '@/lib/rules';
 import { fmtMoney } from '@/lib/time';
-import { deadlineLabels, type WagerVersion, type WagerCategory, type DeadlineRule } from '@/lib/wagers';
+import { deadlineLabels, wagerCentsFromDollars, type WagerVersion, type WagerCategory, type DeadlineRule } from '@/lib/wagers';
 const input = 'min-h-11 w-full rounded-lg border border-input bg-background px-3 text-sm';
 export function OfferForm({ g, current, onClose }: { g: BoardGame; current?: WagerVersion; onClose?: () => void }) {
   const b = useBattle();
@@ -13,10 +13,10 @@ export function OfferForm({ g, current, onClose }: { g: BoardGame; current?: Wag
   const [terms, setTerms] = useState(current?.terms ?? '');
   const [deadline, setDeadline] = useState<DeadlineRule>(current?.deadline_rule === '7d' ? '7d' : current?.deadline_rule === '24h' ? '24h' : current?.deadline_rule === 'meeting' ? 'meeting' : 'none');
   const [busy, setBusy] = useState(false);
-  const cents = kind === 'challenge' ? 0 : Math.round(Number(amount) * 100);
-  const valid = (kind === 'challenge' || (Number.isFinite(cents) && cents >= 100 && cents <= 100000)) && (kind === 'cash' || terms.trim().length > 0);
+  const cents = kind === 'challenge' ? 0 : wagerCentsFromDollars(amount);
+  const valid = (kind === 'challenge' || cents !== null) && (kind === 'cash' || terms.trim().length > 0);
   return <form className="space-y-3" onSubmit={async e => {
-    e.preventDefault(); if (!valid || busy) return; setBusy(true);
+    e.preventDefault(); if (!valid || busy || cents === null) return; setBusy(true);
     try { await b.propose(g.game_id, cents, { kind, terms: terms.trim(), deadline }, current?.version ?? 0); toast.success('Offer sent for your friend to review'); onClose?.(); }
     catch(e) { toast.error(errMsg(e)); } finally { setBusy(false); }
   }}>
@@ -26,7 +26,7 @@ export function OfferForm({ g, current, onClose }: { g: BoardGame; current?: Wag
     {kind !== 'challenge' && <>
       <div className="grid grid-cols-4 gap-1">{[5,10,20,50].map(n => <Button key={n} type="button" variant={amount === String(n) ? 'gold' : 'outline'} onClick={() => setAmount(String(n))}>${n}</Button>)}</div>
       <label className="block text-xs text-muted-foreground">Custom dollars each<input aria-label="Dollars each" className={input} type="number" step="0.01" min="1" max="1000" value={amount} onChange={e => setAmount(e.target.value)} /></label>
-      {valid && <p className="text-xs text-muted-foreground">{fmtMoney(cents)} each · pot {fmtMoney(2*cents)} · winner nets {fmtMoney(cents)}</p>}
+      {valid && cents !== null && <p className="text-xs text-muted-foreground">{fmtMoney(cents)} each · pot {fmtMoney(2*cents)} · winner nets {fmtMoney(cents)}</p>}
     </>}
     <label className="block text-xs text-muted-foreground">{kind === 'cash' ? 'Written terms (optional)' : 'Challenge terms (required)'}<textarea aria-label="Written wager terms" className={`${input} py-2`} maxLength={280} value={terms} onChange={e => setTerms(e.target.value)} /></label>
     <label className="block text-xs text-muted-foreground">Settlement deadline<select aria-label="Settlement deadline" className={input} value={deadline} onChange={e => { const v = e.target.value; if (v === 'none' || v === '24h' || v === '7d' || v === 'meeting') setDeadline(v); }}>{(['none','24h','7d','meeting'] as const).map(k => <option key={k} value={k}>{deadlineLabels[k]}</option>)}</select></label>
