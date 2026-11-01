@@ -19,11 +19,12 @@ const mockFetch = (handler: (url: string, init?: RequestInit) => Promise<Respons
 
 describe("unattended NBA feed HTTP boundary (no network, credentials or database)", () => {
   it("accepts both verified feeds with independent abort signals", async () => {
-    const calls: Array<{ url: string; signal: AbortSignal | null | undefined; accept: string | undefined; redirect: RequestRedirect | undefined }> = [];
+    const calls: Array<{ url: string; signal: AbortSignal | null | undefined; accept: string | undefined; redirect: RequestRedirect | undefined; cache: RequestCache | undefined; cacheControl: string | undefined }> = [];
     const fetcher = mockFetch(async (url, init) => {
       calls.push({
-        url, signal: init?.signal, redirect: init?.redirect,
+        url, signal: init?.signal, redirect: init?.redirect, cache: init?.cache,
         accept: (init?.headers as Record<string, string> | undefined)?.["accept"],
+        cacheControl: (init?.headers as Record<string, string> | undefined)?.["cache-control"],
       });
       return reply(url.includes("scheduleLeague") ? schedule : live);
     });
@@ -32,9 +33,25 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
     expect(unattendedNbaHttpStatus(0, result.errors)).toBe(200);
     expect(calls).toHaveLength(2);
     expect(calls.every(call => call.signal instanceof AbortSignal &&
-      call.accept === "application/json" && call.redirect === "error"))
+      call.accept === "application/json" && call.redirect === "error" &&
+      call.cache === "no-store" && call.cacheControl === "no-cache"))
       .toBe(true);
     expect(calls[0]?.signal).not.toBe(calls[1]?.signal);
+  });
+
+  it("requests uncached live scores even when the season schedule provider fails", async () => {
+    const options: Array<{ cache: RequestCache | undefined; cacheControl: string | undefined }> = [];
+    const fetcher = mockFetch(async (url, init) => {
+      const headers = init?.headers as Record<string, string> | undefined;
+      options.push({ cache: init?.cache, cacheControl: headers?.["cache-control"] });
+      return url.includes("scheduleLeague") ? reply({}, 503) : reply(live);
+    });
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({ schedule: null, live, errors: ["Season schedule unavailable"] });
+    expect(options).toEqual([
+      { cache: "no-store", cacheControl: "no-cache" },
+      { cache: "no-store", cacheControl: "no-cache" },
+    ]);
   });
 
   it("fails a redirected provider request without losing the independent healthy feed", async () => {
