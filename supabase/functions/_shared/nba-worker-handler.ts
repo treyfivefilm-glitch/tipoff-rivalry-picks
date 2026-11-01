@@ -131,7 +131,14 @@ export function createUnattendedNbaHandler(deps: NbaWorkerDependencies) {
         }
       }
     }
-    // An all-skipped run did not verify a single score. Another worker may\n    // be healthy, but this invocation must not report false-green monitoring\n    // when stale leases prevent every day from being refreshed.\n    if (skipped === days.length && checked === 0 && failed === 0) {\n      failed = 1;\n      errors.push("No NBA days checked: all leases held by another worker");\n    }\n    log.info("[nba-unattended]", JSON.stringify({ checked, updated, skipped, failed }));
+    // An all-skipped run did not verify a single score. Another worker may
+    // be healthy, but this invocation must not report false-green monitoring
+    // when stale leases prevent every day from being refreshed.
+    if (skipped === days.length && checked === 0 && failed === 0) {
+      failed = 1;
+      errors.push("No NBA days checked: all leases held by another worker");
+    }
+    log.info("[nba-unattended]", JSON.stringify({ checked, updated, skipped, failed }));
     return json({ checked, updated, skipped, failed, errors }, unattendedNbaHttpStatus(failed, errors));
   };
 }
