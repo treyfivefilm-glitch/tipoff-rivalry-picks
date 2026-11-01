@@ -297,14 +297,41 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     }
   });
 
-  it("accepts ordinary PostgREST row-range metadata on a complete RPC reply", async () => {
-    // PostgREST can emit Content-Range for RPC results. It is not an HTTP
-    // byte range and must not strand an otherwise healthy worker's leases.
-    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
-      new Response("true", {
-        status: 200, headers: { "content-range": "0-0/*" },
-      })));
-    expect(await backend.rpc<boolean>("try_claim_nba_sync", {})).toBe(true);
+  it("rejects contradictory HTTP 200 scalar RPC row ranges", async () => {
+    // A scalar result cannot certify two rows, a nonzero starting offset,
+    // an empty page, or an unrecognized range. Fail closed for all three
+    // privileged operations, even if the JSON value itself looks valid.
+    for (const [name, value] of [
+      ["try_claim_nba_sync", true],
+      ["release_nba_sync", true],
+      ["commit_nba_sync_day", 1],
+    ] as const) {
+      for (const range of ["0-0/2", "1-1/2", "*/0", "0-1/*", "not-a-range"]) {
+        const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+          new Response(JSON.stringify(value), {
+            status: 200, headers: { "content-range": range },
+          })));
+        await expect(backend.rpc(name, {})).rejects.toThrow("returned partial result");
+      }
+    }
+  });
+
+  it("accepts ordinary PostgREST scalar row ranges on complete RPC replies", async () => {
+    // PostgREST may report an unknown or exact single-row total. Both are
+    // valid; rejecting them would strand otherwise healthy worker leases.
+    for (const range of ["0-0/*", "0-0/1"]) {
+      for (const [name, value] of [
+        ["try_claim_nba_sync", true],
+        ["release_nba_sync", false],
+        ["commit_nba_sync_day", 1],
+      ] as const) {
+        const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+          new Response(JSON.stringify(value), {
+            status: 200, headers: { "content-range": range },
+          })));
+        expect(await backend.rpc(name, {})).toBe(value);
+      }
+    }
   });
 
   it("rejects malformed HTTP 200 lease replies rather than claiming ownership", async () => {
