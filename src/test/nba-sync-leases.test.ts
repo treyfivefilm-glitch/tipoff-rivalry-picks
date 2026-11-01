@@ -103,6 +103,20 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(fresh?.['game_count']).toBe(1);
   });
 
+  it("rejects impossible NBA scores without inserting games or refreshing the day", async () => {
+    expect(await claim(owner)).toBe(true);
+    for (const side of ["away_score", "home_score"] as const) {
+      await db`SAVEPOINT impossible_score`;
+      await expect(commit(owner, [{ ...sampleGame, [side]: 501 }]))
+        .rejects.toThrow(/Invalid NBA game row or day mismatch/);
+      await db`ROLLBACK TO SAVEPOINT impossible_score`;
+      expect(await db`SELECT id FROM public.games WHERE id=${sampleGame.id}`).toHaveLength(0);
+      expect(await db`SELECT day FROM public.sync_state WHERE day=${day}`).toHaveLength(0);
+    }
+    // The generous 500-point ceiling remains inclusive.
+    expect(await commit(owner, [{ ...sampleGame, away_score: 500, home_score: 499 }])).toBe(1);
+  });
+
   it("does not downgrade a verified final to a stale scheduled snapshot", async () => {
     expect(await claim(owner)).toBe(true);
     expect(await commit(owner)).toBe(1);

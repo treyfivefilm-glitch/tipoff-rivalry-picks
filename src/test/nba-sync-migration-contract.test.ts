@@ -63,6 +63,17 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
     expect(upsert).toContain("incoming.home_score IS NULL");
   });
 
+  it("rejects impossible NBA scores at the SQL boundary before certifying freshness", () => {
+    // A privileged caller must not bypass the 500-point provider limit.
+    // Runtime SQL behavior is also tested against disposable staging.
+    const validation = migration.split("IF EXISTS (")[1]
+      ?.split("INSERT INTO public.games")[0];
+    expect(validation).toContain("OR g.away_score > 500 OR g.home_score > 500");
+    expect(migration.indexOf("OR g.away_score > 500")).toBeLessThan(
+      migration.indexOf("INSERT INTO public.games"),
+    );
+  });
+
   it("rejects canonical same-team aliases before any fenced write", () => {
     // The database must reject malformed RPC callers even if Edge validation
     // was bypassed. GS and GSW identify the same team despite distinct text.
