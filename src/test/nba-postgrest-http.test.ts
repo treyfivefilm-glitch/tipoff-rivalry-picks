@@ -240,9 +240,12 @@ describe.skipIf(!enabled)("NBA worker through real PostgREST and disposable Post
       releaseHistory();
     }
     const firstResponse = await firstRun;
-    expect(secondResponse.status).toBe(200);
+    // All leases are owned by the first worker, so this invocation cannot
+    // certify freshness. It must fail visibly without touching those leases.
+    expect(secondResponse.status).toBe(503);
     expect(await secondResponse.json()).toEqual({
-      checked: 0, updated: 0, skipped: 3, failed: 0, errors: [],
+      checked: 0, updated: 0, skipped: 3, failed: 1,
+      errors: ["No NBA days checked: all leases held by another worker"],
     });
     expect(secondPaths.filter(p => p === "/rest/v1/rpc/try_claim_nba_sync")).toHaveLength(3);
     expect(secondPaths).not.toContain("/rest/v1/games");
