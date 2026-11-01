@@ -131,12 +131,14 @@ export function createUnattendedNbaHandler(deps: NbaWorkerDependencies) {
         }
       }
     }
-    // An all-skipped run did not verify a single score. Another worker may
-    // be healthy, but this invocation must not report false-green monitoring
-    // when stale leases prevent every day from being refreshed.
-    if (skipped === days.length && checked === 0 && failed === 0) {
-      failed = 1;
-      errors.push("No NBA days checked: all leases held by another worker");
+    // A partially skipped window also cannot certify all requested days.
+    // Another worker may be healthy, but a stale lease could hide a game
+    // indefinitely; monitoring must see incomplete coverage, not HTTP 200.
+    if (skipped > 0) {
+      failed++;
+      errors.push(skipped === days.length && checked === 0
+        ? "No NBA days checked: all leases held by another worker"
+        : skipped + " NBA day(s) not checked: lease held by another worker");
     }
     log.info("[nba-unattended]", JSON.stringify({ checked, updated, skipped, failed }));
     return json({ checked, updated, skipped, failed, errors }, unattendedNbaHttpStatus(failed, errors));
