@@ -6,6 +6,9 @@ import { safeNbaPacificDay } from "./sync-days.ts";
 const START = "2026-10-20";
 const END = "2027-04-12";
 const norm = normalizeNbaTeamCode;
+// A matchup's identity is independent of home/away orientation. Feed or
+// historical ID conflicts must not certify freshness after a team swap.
+const matchupPair = (away: string, home: string) => [norm(away), norm(home)].sort().join(":");
 
 type Team = { teamTricode: string; teamCity?: string; teamName?: string; score?: number | string | null };
 type Game = {
@@ -139,7 +142,7 @@ export function prepareUnattendedNbaDay(
             const away = norm(teams.awayTeam?.teamTricode);
             const home = norm(teams.homeTeam?.teamTricode);
             if (away && home && away !== home) {
-              unattributedMalformedMatchups.add(away + ":" + home);
+              unattributedMalformedMatchups.add(matchupPair(away, home));
             }
           }
         }
@@ -222,14 +225,14 @@ export function prepareUnattendedNbaDay(
   // from the result users see. Fail the whole day closed until feeds agree.
   const officialMatchupIds = new Map<string, string>();
   for (const game of games.values()) {
-    const matchup = [norm(game.awayTeam.teamTricode), norm(game.homeTeam.teamTricode)].join(":");
+    const matchup = matchupPair(game.awayTeam.teamTricode, game.homeTeam.teamTricode);
     const previousId = officialMatchupIds.get(matchup);
     if (previousId && previousId !== game.gameId) identityConflict = true;
     else officialMatchupIds.set(matchup, game.gameId);
   }
 
   const matchupKey = (g: ExistingNbaGame) =>
-    [safeNbaPacificDay(g.start_utc), norm(g.away_code), norm(g.home_code)].join(":");
+    [safeNbaPacificDay(g.start_utc), matchupPair(g.away_code, g.home_code)].join(":");
   // Historical ESPN IDs may carry picks and wagers. The fenced SQL RPC
   // currently accepts only official nba: IDs, so fail the whole day closed
   // rather than create a duplicate NBA game with detached obligations.
@@ -275,12 +278,12 @@ export function prepareUnattendedNbaDay(
       identityConflict = true;
       continue;
     }
-    if (legacyMatchups.has([day, away, home].join(":"))) {
+    if (legacyMatchups.has(day + ":" + matchupPair(away, home))) {
       identityConflict = true;
       continue;
     }
     const providerId = "nba:" + game.gameId;
-    const storedMatchups = byMatch.get([day, away, home].join(":")) ?? [];
+    const storedMatchups = byMatch.get(day + ":" + matchupPair(away, home)) ?? [];
     if (storedMatchups.some(stored => stored.id !== providerId)) {
       // Different official IDs for the same day/matchup are not interchangeable:
       // preserve the existing identity and fail freshness closed.
@@ -353,7 +356,7 @@ export function prepareUnattendedNbaDay(
   const unattributedCurrentGame = [...unattributedMalformedIds].some(id => games.has(id));
   const unattributedCurrentMatchup = [...games.values()].some(game =>
     unattributedMalformedMatchups.has(
-      norm(game.awayTeam.teamTricode) + ":" + norm(game.homeTeam.teamTricode),
+      matchupPair(game.awayTeam.teamTricode, game.homeTeam.teamTricode),
     ));
   const verifiedSeason = seasonValid && validSeasonGames > 0;
   return { rows: [...rows.values()], cacheable: !unattributedCurrentGame &&

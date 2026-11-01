@@ -174,6 +174,56 @@ describe("unattended NBA worker pure preparation", () => {
     ).cacheable).toBe(true);
   });
 
+  it("rejects different official IDs for a reversed home/away matchup", () => {
+    const original = game();
+    const reversed = {
+      ...game(3, 109, 107), gameId: "0022600099",
+      awayTeam: original.homeTeam, homeTeam: original.awayTeam,
+    };
+    const result = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([original]), live([reversed]), [],
+    );
+    expect(result.rows).toHaveLength(2);
+    expect(result.cacheable).toBe(false);
+  });
+
+  it("does not certify a fallback when malformed live teams are reversed and the ID changed", () => {
+    const original = game();
+    const malformed = {
+      ...game(3, 109, 107), gameId: "0022600099",
+      gameDateTimeUTC: "not-a-valid-tipoff",
+      awayTeam: original.homeTeam, homeTeam: original.awayTeam,
+    };
+    const result = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([original]), live([malformed]), [],
+    );
+    expect(result.rows).toMatchObject([{ id: "nba:0022600012", state: "scheduled" }]);
+    expect(result.cacheable).toBe(false);
+
+    // An unrelated malformed matchup must not block a healthy scheduled day.
+    const unrelated = {
+      ...malformed,
+      awayTeam: { ...malformed.awayTeam, teamTricode: "BOS" },
+      homeTeam: { ...malformed.homeTeam, teamTricode: "NYK" },
+    };
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([original]), live([unrelated]), [],
+    ).cacheable).toBe(true);
+  });
+
+  it("rejects reversed historical ESPN matchup IDs before the SQL commit", () => {
+    const prior = {
+      id: "espn:401234567", source: "espn",
+      start_utc: "2026-11-18T03:00:00Z",
+      away_code: "GSW", home_code: "LAL",
+      away_score: null, home_score: null,
+      state: "scheduled", status_detail: null,
+    };
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), null, [prior],
+    ).cacheable).toBe(false);
+  });
+
   it("rejects duplicate matchup IDs within the season schedule itself", () => {
     const alternateId = { ...game(), gameId: "0022600099" };
     expect(prepareUnattendedNbaDay(
