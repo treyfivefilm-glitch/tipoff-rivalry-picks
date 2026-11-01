@@ -1,8 +1,17 @@
 # Unattended NBA refresh — disabled preparation
 
 This development branch contains a separate Supabase Edge function at
-supabase/functions/nba-sync-worker/index.ts. It is NOT deployed or scheduled
-by this commit and does not change the existing signed-in sync-games endpoint.
+supabase/functions/nba-sync-worker/index.ts. **It is NOT deployed, enabled or
+scheduled.** The existing signed-in sync-games endpoint is separate.
+
+**Status as of 2026-11-01:** The owner-authorized independent TIPOFF release
+published frontend SHA `292d9da` and applied migrations 0013 and 0014
+(and payment migration 0015) to independent Supabase project
+`dpujooxxocujnpygmtbf`. This does **not** activate the unattended worker.
+Do not repeat these production migrations or assume that the worker has run.
+The worker's regular-season-only window is 2026-10-20 through 2027-04-12;
+outside that window it returns HTTP 503 without making backend/feed requests,
+rather than reporting a false successful refresh.
 
 ## Security and activation handoff (requires owner approval)
 
@@ -21,9 +30,10 @@ by this commit and does not change the existing signed-in sync-games endpoint.
 5. With owner approval, enable NBA_SYNC_WORKER_ENABLED=true in staging and
    send a single POST. Test competing workers, provider outages, accurate
    scores and duplicate prevention before any production consideration.
-6. Production migration, deployment and recurring scheduler activation
-   require separate explicit owner approval. No cron or paid service is
-   configured in this commit.
+6. Any **additional** production migration, unattended worker deployment,
+   enabling or recurring scheduler activation requires separate explicit
+   owner approval. The 0013/0014 database preparation was already applied
+   in the authorized independent release; no cron or paid service is enabled.
 
 The worker selects Pacific yesterday/today/tomorrow within the 2026-27
 regular-season window, atomically claims each day, validates NBA feeds,

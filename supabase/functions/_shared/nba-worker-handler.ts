@@ -36,6 +36,15 @@ export function createUnattendedNbaHandler(deps: NbaWorkerDependencies) {
     if (!await authorizedNbaCron(request.headers.get("authorization"), secret)) {
       return json({ error: "Unauthorized" }, 401);
     }
+    // An empty day window is not a successful score refresh. In particular,
+    // this worker does not support playoffs or a later NBA season yet.
+    // Fail visibly before opening a privileged backend connection so a
+    // future scheduler cannot report false-green off-season health.
+    const days = unattendedNbaDays(now());
+    if (days.length === 0) return json({
+      checked: 0, updated: 0, skipped: 0, failed: 1,
+      errors: ["No supported NBA regular-season days"],
+    }, 503);
     const endpoint = deps.env("SUPABASE_URL");
     const key = deps.env("SUPABASE_SERVICE_ROLE_KEY");
     if (!endpoint || !key) return json({ error: "Backend configuration missing" }, 503);
@@ -49,7 +58,6 @@ export function createUnattendedNbaHandler(deps: NbaWorkerDependencies) {
     }
     const { rpc, readExisting } = backend;
 
-    const days = unattendedNbaDays(now());
     const token = newToken();
     const claimed: string[] = [];
     let checked = 0, updated = 0, skipped = 0, failed = 0;

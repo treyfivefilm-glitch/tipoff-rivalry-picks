@@ -105,6 +105,35 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
     expect(requests).toBe(0);
   });
 
+  it("reports unsupported season dates as degraded without any backend or feed requests", async () => {
+    let requests = 0;
+    const request = mockFetch(async () => {
+      requests++;
+      throw new Error("Off-season worker must not contact the network");
+    });
+    for (const date of [
+      "2026-10-01T12:00:00Z", // before the regular season
+      "2027-04-16T12:00:00Z", // playoffs are not supported yet
+      "invalid", // an invalid clock cannot certify a refresh
+    ]) {
+      const handler = createUnattendedNbaHandler({
+        env: name => env[name as keyof typeof env],
+        request,
+        now: () => new Date(date),
+        log: { error: () => {}, warn: () => {}, info: () => {} },
+      });
+      const response = await handler(new Request("https://worker.invalid/", {
+        method: "POST", headers: { authorization: "Bearer " + secret },
+      }));
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({
+        checked: 0, updated: 0, skipped: 0, failed: 1,
+        errors: ["No supported NBA regular-season days"],
+      });
+    }
+    expect(requests).toBe(0);
+  });
+
   it("claims, verifies, commits and releases three Pacific days without a browser", async () => {
     const { calls, post } = fixture();
     const response = await post();
