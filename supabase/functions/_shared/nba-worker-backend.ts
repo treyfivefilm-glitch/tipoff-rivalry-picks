@@ -112,7 +112,10 @@ export function createNbaWorkerBackend(
     // A partial PostgREST/proxy reply is not evidence of a completed lease
     // operation or fenced score commit, even if its JSON scalar looks valid.
     // Never count a truncated success as an acquired lease or saved result.
-    if (response.status !== 200 || response.headers.has("content-range")) {
+    // PostgREST may attach an ordinary row-range header to successful RPCs;
+    // only an HTTP partial status or an explicit byte-range is suspect.
+    const range = response.headers.get("content-range");
+    if (response.status !== 200 || (range !== null && /^bytes\s/i.test(range))) {
       throw new Error("NBA sync RPC " + name + " returned partial result");
     }
     // A successful HTTP status is not proof that PostgREST returned the
