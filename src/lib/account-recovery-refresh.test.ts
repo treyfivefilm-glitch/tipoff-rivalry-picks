@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountRecoverySnapshot, refreshLatestAccountRecovery, type AccountRecoverySnapshot, type AccountRecoveryUser } from "./account-recovery-refresh";
+import { accountRecoverySnapshot, refreshLatestAccountRecovery, draftAfterAccountChange, emptyAccountSecurityDraft, type AccountRecoverySnapshot, type AccountRecoveryUser } from "./account-recovery-refresh";
 import { createLatestRequestGate } from "./latest-request-gate";
 
 function deferred<T>() {
@@ -70,5 +70,30 @@ describe("account recovery refresh ordering", () => {
     expect(accountRecoverySnapshot(playerA).emailVerified).toBe(true);
     expect(accountRecoverySnapshot(playerB).linkedGoogle).toBe(true);
     expect(accountRecoverySnapshot(null).accountId).toBeNull();
+  });
+});
+
+describe("account security draft isolation", () => {
+  const draft = {
+    email: "guest@example.invalid",
+    password: "typed-private-password",
+    verificationSent: true,
+  };
+
+  it("clears every pending recovery field when another player signs in", () => {
+    expect(draftAfterAccountChange(draft, "guest-A", "player-B"))
+      .toEqual(emptyAccountSecurityDraft());
+  });
+
+  it("clears pending credentials on sign-out and on a new login", () => {
+    expect(draftAfterAccountChange(draft, "player-A", null))
+      .toEqual(emptyAccountSecurityDraft());
+    expect(draftAfterAccountChange(draft, null, "player-B"))
+      .toEqual(emptyAccountSecurityDraft());
+  });
+
+  it("preserves an in-progress form on same-player token refresh", () => {
+    expect(draftAfterAccountChange(draft, "player-A", "player-A")).toBe(draft);
+    expect(draftAfterAccountChange(draft, null, null)).toBe(draft);
   });
 });

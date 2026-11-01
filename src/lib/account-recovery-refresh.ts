@@ -51,3 +51,25 @@ export async function refreshLatestAccountRecovery(
     return null;
   }
 }
+
+/** Never carry typed recovery email/password or a pending verification notice
+ * into another player's Profile after a cross-tab sign-in/sign-out.
+ * Same-account token refreshes must not erase an in-progress form.
+ */
+export type AccountSecurityDraft = {
+  email: string;
+  password: string;
+  verificationSent: boolean;
+};
+
+export function emptyAccountSecurityDraft(): AccountSecurityDraft {
+  return { email: "", password: "", verificationSent: false };
+}
+
+export function draftAfterAccountChange(
+  draft: AccountSecurityDraft,
+  previousAccountId: string | null,
+  nextAccountId: string | null,
+): AccountSecurityDraft {
+  return previousAccountId === nextAccountId ? draft : emptyAccountSecurityDraft();
+}

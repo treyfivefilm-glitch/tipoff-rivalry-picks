@@ -3,7 +3,7 @@ import { CheckCircle2, KeyRound, ShieldAlert, Link2, RefreshCw } from "lucide-re
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { accountRecoveryStatus, verifyAccountMutation } from "@/lib/password-reset-guard";
-import { accountRecoverySnapshot, refreshLatestAccountRecovery, type AccountRecoverySnapshot } from "@/lib/account-recovery-refresh";
+import { accountRecoverySnapshot, refreshLatestAccountRecovery, draftAfterAccountChange, emptyAccountSecurityDraft, type AccountRecoverySnapshot, type AccountSecurityDraft } from "@/lib/account-recovery-refresh";
 import { createLatestRequestGate } from "@/lib/latest-request-gate";
 
 /** Makes account recovery and the temporary nature of guest sessions visible.
@@ -15,13 +15,13 @@ export function AccountSecurity() {
   const [accountId, setAccountId] = useState<string | null>(null);
   const [currentEmail, setCurrentEmail] = useState<string | null>(null);
   const [emailVerified, setEmailVerified] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [draft, setDraft] = useState<AccountSecurityDraft>(emptyAccountSecurityDraft);
+  const { email, password, verificationSent } = draft;
   const [linkedGoogle, setLinkedGoogle] = useState(false);
   const googleEnabled = import.meta.env["VITE_ENABLE_GOOGLE_OAUTH"] === "true";
-  const [verificationSent, setVerificationSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const refreshGate = useRef(createLatestRequestGate());
+  const identityRef = useRef<string | null>(null);
   const recoveryStatus = guest === null ? null : accountRecoveryStatus({
     isAnonymous: guest,
     email: currentEmail,
@@ -30,6 +30,7 @@ export function AccountSecurity() {
   });
 
   const publishAccount = (snapshot: AccountRecoverySnapshot) => {
+    if (snapshot.accountId) identityRef.current = snapshot.accountId;
     setAccountId(snapshot.accountId);
     setGuest(snapshot.guest);
     setCurrentEmail(snapshot.currentEmail);
@@ -51,8 +52,13 @@ export function AccountSecurity() {
       void refreshLatestAccountRecovery(refreshGate.current, readAccount, publishIfActive);
     };
     refresh();
-    const { data } = supabase.auth.onAuthStateChange(() => {
-      // Hide the previous player's recovery details immediately on an account switch.
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Auth changes can arrive from another tab. Never show the previous
+      // player's typed email/password or verification notice in this profile.
+      const nextAccountId = session?.user?.id ?? null;
+      const previousAccountId = identityRef.current;
+      identityRef.current = nextAccountId;
+      setDraft(current => draftAfterAccountChange(current, previousAccountId, nextAccountId));
       publishIfActive(accountRecoverySnapshot(null));
       refresh();
     });
@@ -109,7 +115,9 @@ export function AccountSecurity() {
         emailRedirectTo: window.location.origin + "/rooms",
       });
       if (error) throw error;
-      setVerificationSent(true);
+      if (identityRef.current === accountId) {
+        setDraft(current => ({ ...current, verificationSent: true }));
+      }
       toast.success("If email delivery is configured, a verification message is on its way.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not begin account recovery");
@@ -123,7 +131,7 @@ export function AccountSecurity() {
       await verifyAccountMutation(supabase.auth, accountId, "set-password");
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
-      setPassword("");
+      setDraft(current => ({ ...current, password: "" }));
       toast.success("Account password saved.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Password could not be saved");
@@ -149,7 +157,7 @@ export function AccountSecurity() {
           </p>
           <label className="block text-xs font-bold text-foreground" htmlFor="recovery-email">Email for permanent access</label>
           <input id="recovery-email" type="email" autoComplete="email" value={email}
-            onChange={e => setEmail(e.target.value)}
+            onChange={e => setDraft(current => ({ ...current, email: e.target.value, verificationSent: false }))}
             placeholder="you@example.com"
             className="h-12 w-full rounded-xl border border-input bg-background/70 px-3 outline-none focus:border-primary" />
           <button type="button" disabled={busy || !email.trim()} onClick={() => void attachEmail()}
@@ -201,7 +209,7 @@ export function AccountSecurity() {
           {emailVerified && <>
             <label className="block text-xs font-bold" htmlFor="update-password">Set or change password</label>
             <input id="update-password" type="password" autoComplete="new-password" minLength={8}
-              value={password} onChange={e => setPassword(e.target.value)}
+              value={password} onChange={e => setDraft(current => ({ ...current, password: e.target.value }))}
               placeholder="At least 8 characters"
               className="h-12 w-full rounded-xl border border-input bg-background/70 px-3 outline-none focus:border-primary" />
             <button type="button" disabled={busy || password.length < 8} onClick={() => void addPassword()}
