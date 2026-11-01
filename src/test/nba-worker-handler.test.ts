@@ -331,10 +331,14 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
     const results = await Promise.all(responses.map(response => response.json())) as Array<{
       checked: number; skipped: number; failed: number; updated: number;
     }>;
-    expect(responses.map(response => response.status)).toEqual([200, 200]);
+    // Which worker owns a day is nondeterministic. An invocation that
+    // obtained zero leases is degraded, while the actual owner succeeds.
+    for (let i = 0; i < results.length; i++) {
+      expect(responses[i]!.status).toBe(results[i]!.checked === 0 ? 503 : 200);
+      expect(results[i]!.failed).toBe(results[i]!.checked === 0 ? 1 : 0);
+    }
     expect(results.reduce((sum, result) => sum + result.checked, 0)).toBe(3);
     expect(results.reduce((sum, result) => sum + result.skipped, 0)).toBe(3);
-    expect(results.reduce((sum, result) => sum + result.failed, 0)).toBe(0);
     expect(results.reduce((sum, result) => sum + result.updated, 0)).toBe(1);
     expect([...committed.values()]).toEqual([1, 1, 1]);
     expect(released).toHaveLength(3);
