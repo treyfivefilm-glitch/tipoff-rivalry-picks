@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CheckCircle2, CircleDollarSign, ClipboardCheck, Clock, XCircle } from "lucide-react";
 import { useBattle, errMsg } from "@/lib/battle-context";
-import { latestChallengeSubmission, latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, wagerLane, wagerVersionStatusLabel, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
+import { latestChallengeSubmission, latestWagers, paymentCentsWithinBalance, unrecordedPaymentCents, paymentFormRevision, wagerLane, wagerVersionStatusLabel, type WagerVersion, type ChallengeSubmission } from "@/lib/wagers";
 import { computeStandings, h2hResult, winnerOf, type BoardGame, type Payment } from "@/lib/rules";
 import { fmtMoney, pacificTime } from "@/lib/time";
 import { Button } from "@/components/ui/button";
@@ -159,7 +159,7 @@ function LedgerLane({ items, gamesById }: { items: { v: WagerVersion; g: BoardGa
             Pending payments are awaiting your friend's confirmation and cannot be marked sent again.
           </p>
         )}
-        {recordableCents > 0 && <PaymentForm key={recordableCents} max={recordableCents} />}
+        {recordableCents > 0 && <PaymentForm key={`${recordableCents}:${paymentFormRevision(b.payments, b.me.id)}`} max={recordableCents} />}
       </section>
 
       {pending.length > 0 && (
