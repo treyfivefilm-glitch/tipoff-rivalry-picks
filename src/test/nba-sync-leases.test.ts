@@ -199,8 +199,8 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
 
     const otherGame = {
       ...sampleGame, id: "nba:0022600016",
-      away_code: "BOS", away_name: "Boston Celtics",
-      home_code: "NYK", home_name: "New York Knicks",
+      away_code: "MIA", away_name: "Miami Heat",
+      home_code: "ORL", home_name: "Orlando Magic",
     };
     const collision = {
       ...sampleGame,
