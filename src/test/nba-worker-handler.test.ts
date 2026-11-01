@@ -31,7 +31,7 @@ const env = {
 type Options = {
   feedsDown?: boolean; staleLive?: boolean; historyDown?: boolean; historyMalformed?: boolean;
   historyMissingCount?: boolean; historyTimeout?: boolean; commitDown?: string;
-  releaseDown?: string; releaseDenied?: string; skipLease?: string;
+  releaseDown?: string; releaseDenied?: string; skipLease?: string; skipAllLeases?: boolean;
 };
 function fixture(options: Options = {}) {
   const calls: Array<{ operation: string; day: string | undefined; rows?: number | undefined }> = [];
@@ -59,7 +59,7 @@ function fixture(options: Options = {}) {
       p_day?: string; p_rows?: unknown[];
     };
     calls.push({ operation, day: body.p_day, rows: body.p_rows?.length });
-    if (operation === "try_claim_nba_sync") return reply(body.p_day !== options.skipLease);
+    if (operation === "try_claim_nba_sync") return reply(!options.skipAllLeases && body.p_day !== options.skipLease);
     if (operation === "release_nba_sync") {
       if (body.p_day === options.releaseDown) return reply({}, 503);
       return reply(body.p_day !== options.releaseDenied);
@@ -235,6 +235,20 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
       errors: ["2026-11-17: lease release failed"],
     });
     expect(calls.filter(call => call.operation === "release_nba_sync")).toHaveLength(3);
+  });
+
+  it("reports an all-skipped lease window as degraded instead of a healthy refresh", async () => {
+    const { calls, post } = fixture({ skipAllLeases: true });
+    const response = await post();
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      checked: 0, updated: 0, skipped: 3, failed: 1,
+      errors: ["No NBA days checked: all leases held by another worker"],
+    });
+    expect(calls.filter(call => call.operation === "try_claim_nba_sync")).toHaveLength(3);
+    expect(calls.some(call => call.operation === "history" ||
+      call.operation === "commit_nba_sync_day" ||
+      call.operation === "release_nba_sync")).toBe(false);
   });
 
   it("never commits or releases a day owned by another worker", async () => {
