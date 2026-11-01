@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestChallengeSubmission, latestWagers, paymentCentsWithinBalance, wagerCentsFromDollars, unrecordedPaymentCents, wagerLane, wagerVersionStatusLabel, type WagerVersion } from "@/lib/wagers";
+import { latestChallengeSubmission, latestWagers, paymentCentsWithinBalance, wagerCentsFromDollars, unrecordedPaymentCents, paymentFormRevision, wagerLane, wagerVersionStatusLabel, type WagerVersion } from "@/lib/wagers";
 import type { BoardGame } from "@/lib/rules";
 
 const future = new Date(Date.now() + 86400_000).toISOString();
@@ -171,5 +171,32 @@ describe("wager amount exact-cent validation", () => {
     for (const input of ["", " ", "1.", "-1", "0.99", "1000.01", "1e2", "Infinity", "NaN", "1,000"]) {
       expect(wagerCentsFromDollars(input)).toBeNull();
     }
+  });
+});
+
+describe("payment form revision after settlement updates", () => {
+  const payment = (id: string, payer_id: string, status: "pending" | "confirmed" | "rejected") =>
+    ({ id, payer_id, status });
+
+  it("changes when a payment is disputed so an unchanged balance can be sent again", () => {
+    const pending = payment("p1", "me", "pending");
+    const rejected = payment("p1", "me", "rejected");
+    expect(paymentFormRevision([pending], "me")).not.toBe(paymentFormRevision([rejected], "me"));
+    // If the pending record was never observed due to a delayed room refresh,
+    // receiving the rejection must still remount the locked form.
+    expect(paymentFormRevision([], "me")).not.toBe(paymentFormRevision([rejected], "me"));
+  });
+
+  it("changes on confirmation or another outgoing payment but not incoming payments", () => {
+    const outgoing = payment("p1", "me", "confirmed");
+    const incoming = payment("p2", "friend", "pending");
+    expect(paymentFormRevision([], "me")).not.toBe(paymentFormRevision([outgoing], "me"));
+    expect(paymentFormRevision([outgoing, incoming], "me")).toBe(paymentFormRevision([outgoing], "me"));
+  });
+
+  it("is independent of payment ordering to avoid losing an unfinished form", () => {
+    const first = payment("p1", "me", "rejected");
+    const second = payment("p2", "me", "confirmed");
+    expect(paymentFormRevision([first, second], "me")).toBe(paymentFormRevision([second, first], "me"));
   });
 });
