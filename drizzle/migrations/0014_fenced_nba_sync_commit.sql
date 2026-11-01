@@ -94,6 +94,25 @@ BEGIN
     RAISE EXCEPTION 'Invalid NBA game row or day mismatch';
   END IF;
 
+  -- Even a privileged caller must not publish two different game records
+  -- for one matchup on the same Pacific day. Treat swapped home/away teams
+  -- and historical aliases as the same pairing before touching game history
+  -- or certifying freshness. The Edge worker has its own identity guard.
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_to_recordset(p_rows) AS g(
+      id text, away_code text, home_code text
+    )
+    GROUP BY
+      LEAST(public.nba_canonical_team_code(g.away_code),
+            public.nba_canonical_team_code(g.home_code)),
+      GREATEST(public.nba_canonical_team_code(g.away_code),
+               public.nba_canonical_team_code(g.home_code))
+    HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'Duplicate NBA matchup in sync day';
+  END IF;
+
   INSERT INTO public.games AS current_game (
     id, start_utc, away_code, away_name, home_code, home_name,
     away_score, home_score, state, status_detail, source, updated_at

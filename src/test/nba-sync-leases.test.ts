@@ -117,6 +117,31 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(await commit(owner, [{ ...sampleGame, away_score: 500, home_score: 499 }])).toBe(1);
   });
 
+  it("rejects duplicate NBA matchup IDs and aliases without certifying freshness", async () => {
+    expect(await claim(owner)).toBe(true);
+    const duplicate = { ...sampleGame, id: "nba:0022600099" };
+    const aliases = [
+      duplicate,
+      { ...duplicate, home_code: "GS" },
+      { ...duplicate, away_code: "GSW", home_code: "LAL" },
+    ];
+    for (const conflicting of aliases) {
+      await db`SAVEPOINT duplicate_nba_matchup`;
+      await expect(commit(owner, [sampleGame, conflicting]))
+        .rejects.toThrow(/Duplicate NBA matchup in sync day/);
+      await db`ROLLBACK TO SAVEPOINT duplicate_nba_matchup`;
+      expect(await db`SELECT id FROM public.games WHERE id IN (${sampleGame.id}, ${duplicate.id})`)
+        .toHaveLength(0);
+      expect(await db`SELECT day FROM public.sync_state WHERE day=${day}`).toHaveLength(0);
+    }
+    // Two genuinely different matchups on the same day are still permitted.
+    const other = {
+      ...duplicate, away_code: "BOS", away_name: "Boston Celtics",
+      home_code: "NYK", home_name: "New York Knicks",
+    };
+    expect(await commit(owner, [sampleGame, other])).toBe(2);
+  });
+
   it("does not downgrade a verified final to a stale scheduled snapshot", async () => {
     expect(await claim(owner)).toBe(true);
     expect(await commit(owner)).toBe(1);

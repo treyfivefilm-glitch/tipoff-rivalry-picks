@@ -74,6 +74,17 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
     );
   });
 
+  it("rejects duplicate daily matchups before writes, including aliases and reversed teams", () => {
+    const guard = migration.split("IF EXISTS (").slice(-1)[0]
+      ?.split("INSERT INTO public.games")[0];
+    expect(guard).toContain("LEAST(public.nba_canonical_team_code(g.away_code)");
+    expect(guard).toContain("GREATEST(public.nba_canonical_team_code(g.away_code)");
+    expect(guard).toContain("HAVING count(*) > 1");
+    expect(guard).toContain("RAISE EXCEPTION 'Duplicate NBA matchup in sync day'");
+    expect(migration.indexOf("Duplicate NBA matchup in sync day"))
+      .toBeLessThan(migration.indexOf("INSERT INTO public.games"));
+  });
+
   it("rejects canonical same-team aliases before any fenced write", () => {
     // The database must reject malformed RPC callers even if Edge validation
     // was bypassed. GS and GSW identify the same team despite distinct text.
