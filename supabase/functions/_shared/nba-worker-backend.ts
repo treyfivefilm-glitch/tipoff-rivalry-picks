@@ -109,6 +109,12 @@ export function createNbaWorkerBackend(
       redirect: "error", signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) throw new Error("NBA sync RPC " + name + " failed (HTTP " + response.status + ")");
+    // A partial PostgREST/proxy reply is not evidence of a completed lease
+    // operation or fenced score commit, even if its JSON scalar looks valid.
+    // Never count a truncated success as an acquired lease or saved result.
+    if (response.status !== 200 || response.headers.has("content-range")) {
+      throw new Error("NBA sync RPC " + name + " returned partial result");
+    }
     // A successful HTTP status is not proof that PostgREST returned the
     // expected scalar. In particular, a truthy object must never be treated
     // as an acquired lease, and a malformed commit count must not be reported
