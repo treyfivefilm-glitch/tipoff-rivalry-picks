@@ -165,22 +165,35 @@ export function prepareUnattendedNbaDay(
       identityConflict = true;
       return;
     }
-    // A first-time final can arrive with contradictory winners in the
-    // season and live feeds, before any saved final exists to protect.
-    // Do not choose one feed arbitrarily and certify wager settlement.
-    if (previous && gameState(previous) === "final" && gameState(game) === "final") {
+    const overlay = shouldOverlayNbaGame(previous, game);
+    // Even before a game has been saved, the season and live feeds may
+    // disagree about points. Do not let a lagging live snapshot overwrite
+    // verified in-progress/final points or certify the day as freshly synced.
+    // Ignore stale *states* that would not overlay (e.g. final -> live).
+    const beforeState = previous && gameState(previous);
+    const afterState = gameState(game);
+    if (previous && overlay &&
+        (beforeState === "live" || beforeState === "final") &&
+        (afterState === "live" || afterState === "final")) {
       const beforeAway = score(previous.awayTeam.score);
       const beforeHome = score(previous.homeTeam.score);
       const afterAway = score(game.awayTeam.score);
       const afterHome = score(game.homeTeam.score);
-      if (beforeAway !== null && beforeHome !== null &&
-          afterAway !== null && afterHome !== null &&
-          (beforeAway > beforeHome) !== (afterAway > afterHome)) {
+      const missingOrLower = (before: number | null, after: number | null) =>
+        before !== null && (after === null || after < before);
+      // A first-time final with opposite winners must also fail closed,
+      // even if neither team score went backwards.
+      const oppositeFinalWinner = beforeState === "final" && afterState === "final" &&
+        beforeAway !== null && beforeHome !== null &&
+        afterAway !== null && afterHome !== null &&
+        (beforeAway > beforeHome) !== (afterAway > afterHome);
+      if (missingOrLower(beforeAway, afterAway) ||
+          missingOrLower(beforeHome, afterHome) || oppositeFinalWinner) {
         identityConflict = true;
         return;
       }
     }
-    if (shouldOverlayNbaGame(previous, game)) games.set(game.gameId, game);
+    if (overlay) games.set(game.gameId, game);
     if (live) validLiveGames++;
   };
   if (seasonValid) {
