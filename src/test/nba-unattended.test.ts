@@ -176,9 +176,10 @@ describe("unattended NBA worker pure preparation", () => {
 
   it("rejects different official IDs for a reversed home/away matchup", () => {
     const original = game();
+    const scored = game(3, 109, 107);
     const reversed = {
-      ...game(3, 109, 107), gameId: "0022600099",
-      awayTeam: original.homeTeam, homeTeam: original.awayTeam,
+      ...scored, gameId: "0022600099",
+      awayTeam: scored.homeTeam, homeTeam: scored.awayTeam,
     };
     const result = prepareUnattendedNbaDay(
       "2026-11-17", schedule([original]), live([reversed]), [],
