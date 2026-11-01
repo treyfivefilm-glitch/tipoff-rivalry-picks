@@ -3,7 +3,7 @@ import { CheckCircle2, KeyRound, ShieldAlert, Link2, RefreshCw } from "lucide-re
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { accountRecoveryStatus, verifyAccountMutation } from "@/lib/password-reset-guard";
-import { accountRecoverySnapshot, refreshLatestAccountRecovery, draftAfterAccountChange, emptyAccountSecurityDraft, type AccountRecoverySnapshot, type AccountSecurityDraft } from "@/lib/account-recovery-refresh";
+import { accountRecoverySnapshot, refreshLatestAccountRecovery, draftAfterAccountChange, draftAfterVerifiedAccountRefresh, emptyAccountSecurityDraft, type AccountRecoverySnapshot, type AccountSecurityDraft } from "@/lib/account-recovery-refresh";
 import { createLatestRequestGate } from "@/lib/latest-request-gate";
 
 /** Makes account recovery and the temporary nature of guest sessions visible.
@@ -30,7 +30,15 @@ export function AccountSecurity() {
   });
 
   const publishAccount = (snapshot: AccountRecoverySnapshot) => {
-    if (snapshot.accountId) identityRef.current = snapshot.accountId;
+    if (snapshot.accountId) {
+      // A manual/initial getUser refresh can observe a different account
+      // even if the browser never delivered its auth event to this tab.
+      const previousAccountId = identityRef.current;
+      identityRef.current = snapshot.accountId;
+      setDraft(current => draftAfterVerifiedAccountRefresh(
+        current, previousAccountId, snapshot.accountId,
+      ));
+    }
     setAccountId(snapshot.accountId);
     setGuest(snapshot.guest);
     setCurrentEmail(snapshot.currentEmail);

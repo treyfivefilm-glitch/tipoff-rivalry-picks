@@ -66,6 +66,20 @@ export function emptyAccountSecurityDraft(): AccountSecurityDraft {
   return { email: "", password: "", verificationSent: false };
 }
 
+/** A verified account refresh can discover a different player even when a
+ * cross-tab auth event was missed. Do not erase a draft for a failed/empty
+ * lookup: the explicit auth sign-out event handles that transition.
+ */
+export function draftAfterVerifiedAccountRefresh(
+  draft: AccountSecurityDraft,
+  previousAccountId: string | null,
+  verifiedAccountId: string | null,
+): AccountSecurityDraft {
+  return verifiedAccountId
+    ? draftAfterAccountChange(draft, previousAccountId, verifiedAccountId)
+    : draft;
+}
+
 export function draftAfterAccountChange(
   draft: AccountSecurityDraft,
   previousAccountId: string | null,

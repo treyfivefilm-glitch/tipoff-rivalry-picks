@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountRecoverySnapshot, refreshLatestAccountRecovery, draftAfterAccountChange, emptyAccountSecurityDraft, type AccountRecoverySnapshot, type AccountRecoveryUser } from "./account-recovery-refresh";
+import { accountRecoverySnapshot, refreshLatestAccountRecovery, draftAfterAccountChange, draftAfterVerifiedAccountRefresh, emptyAccountSecurityDraft, type AccountRecoverySnapshot, type AccountRecoveryUser } from "./account-recovery-refresh";
 import { createLatestRequestGate } from "./latest-request-gate";
 
 function deferred<T>() {
@@ -89,6 +89,26 @@ describe("account security draft isolation", () => {
     expect(draftAfterAccountChange(draft, "player-A", null))
       .toEqual(emptyAccountSecurityDraft());
     expect(draftAfterAccountChange(draft, null, "player-B"))
+      .toEqual(emptyAccountSecurityDraft());
+  });
+
+
+  it("clears a previous player's draft when verified refresh finds a new identity without an auth event", async () => {
+    const gate = createLatestRequestGate();
+    let currentId: string | null = "player-A";
+    let currentDraft = draft;
+    await refreshLatestAccountRecovery(gate, async () => ({ id: "player-B", is_anonymous: false }), snapshot => {
+      currentDraft = draftAfterVerifiedAccountRefresh(currentDraft, currentId, snapshot.accountId);
+      if (snapshot.accountId) currentId = snapshot.accountId;
+    });
+    expect(currentId).toBe("player-B");
+    expect(currentDraft).toEqual(emptyAccountSecurityDraft());
+  });
+
+  it("does not erase a draft on a transient empty refresh or same-player refresh", () => {
+    expect(draftAfterVerifiedAccountRefresh(draft, "player-A", null)).toBe(draft);
+    expect(draftAfterVerifiedAccountRefresh(draft, "player-A", "player-A")).toBe(draft);
+    expect(draftAfterVerifiedAccountRefresh(draft, null, "player-B"))
       .toEqual(emptyAccountSecurityDraft());
   });
 
