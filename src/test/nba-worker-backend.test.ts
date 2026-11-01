@@ -278,9 +278,9 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
   });
 
   it("rejects partial RPC replies even when their JSON scalar looks successful", async () => {
-    // A proxy can send 206 or attach Content-Range to HTTP 200 while
-    // preserving a valid-looking boolean/count. Neither proves the lease
-    // operation or fenced score commit completed.
+    // A proxy can send 206 or attach a byte Content-Range to HTTP 200
+    // while preserving a valid-looking boolean/count. Neither proves the
+    // lease operation or fenced score commit completed.
     for (const [name, value] of [
       ["try_claim_nba_sync", true],
       ["release_nba_sync", true],
@@ -295,6 +295,16 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
         await expect(backend.rpc(name, {})).rejects.toThrow("returned partial result");
       }
     }
+  });
+
+  it("accepts ordinary PostgREST row-range metadata on a complete RPC reply", async () => {
+    // PostgREST can emit Content-Range for RPC results. It is not an HTTP
+    // byte range and must not strand an otherwise healthy worker's leases.
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+      new Response("true", {
+        status: 200, headers: { "content-range": "0-0/*" },
+      })));
+    expect(await backend.rpc<boolean>("try_claim_nba_sync", {})).toBe(true);
   });
 
   it("rejects malformed HTTP 200 lease replies rather than claiming ownership", async () => {
