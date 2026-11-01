@@ -66,7 +66,7 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
   it("rejects impossible NBA scores at the SQL boundary before certifying freshness", () => {
     // A privileged caller must not bypass the 500-point provider limit.
     // Runtime SQL behavior is also tested against disposable staging.
-    const validation = migration.split("IF EXISTS (")[1]
+    const validation = migration.split("-- Reject the entire batch on any malformed row")[1]
       ?.split("INSERT INTO public.games")[0];
     expect(validation).toContain("OR g.away_score > 500 OR g.home_score > 500");
     expect(migration.indexOf("OR g.away_score > 500")).toBeLessThan(
