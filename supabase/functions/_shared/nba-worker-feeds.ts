@@ -18,7 +18,13 @@ async function fetchJson(url: string, request: typeof fetch, timeoutMs: number):
   });
   // HTTP 206 can contain valid JSON while omitting games. A partial feed
   // must not certify an otherwise empty day or settle an incomplete final.
-  if (response.status !== 200) throw new Error("NBA feed unavailable");
+  // A proxy/CDN can send a partial JSON body with HTTP 200 and a
+  // Content-Range header. Such a body may omit games yet pass envelope
+  // validation, falsely certifying a day as empty or a final as complete.
+  // Fail closed for ranged provider responses, even with a valid JSON shape.
+  if (response.status !== 200 || response.headers.has("content-range")) {
+    throw new Error("NBA feed unavailable");
+  }
   return await response.json();
 }
 

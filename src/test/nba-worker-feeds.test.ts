@@ -127,6 +127,32 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
     }
   });
 
+  it("rejects a partial season body mislabeled HTTP 200 by a proxy", async () => {
+    const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+      ? new Response(JSON.stringify(schedule), {
+        status: 200,
+        headers: { "content-type": "application/json", "content-range": "bytes 0-99/200" },
+      }) : reply(live));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({
+      schedule: null, live, errors: ["Season schedule unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
+  it("rejects a partial live scoreboard mislabeled HTTP 200 by a proxy", async () => {
+    const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+      ? reply(schedule) : new Response(JSON.stringify(live), {
+        status: 200,
+        headers: { "content-type": "application/json", "content-range": "bytes 0-99/200" },
+      }));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
   it("rejects HTTP 206 partial season schedules even with a valid-looking body", async () => {
     const fetcher = mockFetch(async url => url.includes("scheduleLeague")
       ? reply(schedule, 206) : reply(live));
