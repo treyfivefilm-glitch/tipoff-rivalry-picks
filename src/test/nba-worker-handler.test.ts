@@ -251,11 +251,14 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
       call.operation === "release_nba_sync")).toBe(false);
   });
 
-  it("never commits or releases a day owned by another worker", async () => {
+  it("reports incomplete lease coverage while never touching another worker's day", async () => {
     const { calls, post } = fixture({ skipLease: "2026-11-17" });
     const response = await post();
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ checked: 2, skipped: 1, failed: 0 });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      checked: 2, updated: 0, skipped: 1, failed: 1,
+      errors: ["1 NBA day(s) not checked: lease held by another worker"],
+    });
     expect(calls.filter(call => call.operation === "commit_nba_sync_day")
       .map(call => call.day)).toEqual(["2026-11-16", "2026-11-18"]);
     expect(calls.filter(call => call.operation === "release_nba_sync")
@@ -331,11 +334,11 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
     const results = await Promise.all(responses.map(response => response.json())) as Array<{
       checked: number; skipped: number; failed: number; updated: number;
     }>;
-    // Which worker owns a day is nondeterministic. An invocation that
-    // obtained zero leases is degraded, while the actual owner succeeds.
+    // Which worker owns a day is nondeterministic. Any skipped day means
+    // this invocation did not independently verify the entire window.
     for (let i = 0; i < results.length; i++) {
-      expect(responses[i]!.status).toBe(results[i]!.checked === 0 ? 503 : 200);
-      expect(results[i]!.failed).toBe(results[i]!.checked === 0 ? 1 : 0);
+      expect(responses[i]!.status).toBe(results[i]!.skipped > 0 ? 503 : 200);
+      expect(results[i]!.failed).toBe(results[i]!.skipped > 0 ? 1 : 0);
     }
     expect(results.reduce((sum, result) => sum + result.checked, 0)).toBe(3);
     expect(results.reduce((sum, result) => sum + result.skipped, 0)).toBe(3);
