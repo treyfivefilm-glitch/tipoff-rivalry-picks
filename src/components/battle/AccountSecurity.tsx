@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, KeyRound, ShieldAlert, Link2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { accountRecoveryStatus, verifyAccountMutation } from "@/lib/password-reset-guard";
+import { accountRecoverySnapshot, refreshLatestAccountRecovery, type AccountRecoverySnapshot } from "@/lib/account-recovery-refresh";
+import { createLatestRequestGate } from "@/lib/latest-request-gate";
 
 /** Makes account recovery and the temporary nature of guest sessions visible.
  * Supabase keeps the SAME user ID (and hence room/picks) when an anonymous
@@ -19,6 +21,7 @@ export function AccountSecurity() {
   const googleEnabled = import.meta.env["VITE_ENABLE_GOOGLE_OAUTH"] === "true";
   const [verificationSent, setVerificationSent] = useState(false);
   const [busy, setBusy] = useState(false);
+  const refreshGate = useRef(createLatestRequestGate());
   const recoveryStatus = guest === null ? null : accountRecoveryStatus({
     isAnonymous: guest,
     email: currentEmail,
@@ -26,21 +29,38 @@ export function AccountSecurity() {
     googleLinked: linkedGoogle,
   });
 
+  const publishAccount = (snapshot: AccountRecoverySnapshot) => {
+    setAccountId(snapshot.accountId);
+    setGuest(snapshot.guest);
+    setCurrentEmail(snapshot.currentEmail);
+    setEmailVerified(snapshot.emailVerified);
+    setLinkedGoogle(snapshot.linkedGoogle);
+  };
+  const readAccount = async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    return data.user;
+  };
+
   useEffect(() => {
     let active = true;
-    const refresh = async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (!active) return;
-      if (error) { setGuest(null); setAccountId(null); return; }
-      setAccountId(data.user?.id ?? null);
-      setGuest(data.user?.is_anonymous ?? null);
-      setCurrentEmail(data.user?.email ?? null);
-      setEmailVerified(Boolean(data.user?.email_confirmed_at));
-      setLinkedGoogle(Boolean(data.user?.identities?.some((identity) => identity.provider === "google")));
+    const publishIfActive = (snapshot: AccountRecoverySnapshot) => {
+      if (active) publishAccount(snapshot);
     };
-    void refresh();
-    const { data } = supabase.auth.onAuthStateChange(() => { void refresh(); });
-    return () => { active = false; data.subscription.unsubscribe(); };
+    const refresh = () => {
+      void refreshLatestAccountRecovery(refreshGate.current, readAccount, publishIfActive);
+    };
+    refresh();
+    const { data } = supabase.auth.onAuthStateChange(() => {
+      // Hide the previous player's recovery details immediately on an account switch.
+      publishIfActive(accountRecoverySnapshot(null));
+      refresh();
+    });
+    return () => {
+      active = false;
+      refreshGate.current.begin(); // invalidate any in-flight account lookup
+      data.subscription.unsubscribe();
+    };
   }, []);
 
   async function linkGoogle() {
@@ -62,20 +82,21 @@ export function AccountSecurity() {
   }
 
   async function refreshAccount() {
+    if (busy) return;
     setBusy(true);
     try {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) throw error;
-      const user = data.user;
-      if (!user) throw new Error("No active account. Sign in before changing recovery settings.");
-      setAccountId(user.id);
-      setGuest(user.is_anonymous ?? null);
-      setCurrentEmail(user?.email ?? null);
-      setEmailVerified(Boolean(user?.email_confirmed_at));
-      setLinkedGoogle(Boolean(user?.identities?.some(x => x.provider === "google")));
-      toast.success(user?.is_anonymous ? "Guest account is not permanent yet." : "Account status updated.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Cannot check account status");
+      const snapshot = await refreshLatestAccountRecovery(
+        refreshGate.current,
+        readAccount,
+        publishAccount,
+        error => toast.error(error instanceof Error ? error.message : "Cannot check account status"),
+      );
+      if (!snapshot) return; // obsolete response or failed lookup
+      if (!snapshot.accountId) {
+        toast.error("No active account. Sign in before changing recovery settings.");
+      } else {
+        toast.success(snapshot.guest ? "Guest account is not permanent yet." : "Account status updated.");
+      }
     } finally { setBusy(false); }
   }
 
