@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountRecoveryStatus, passwordResetAccess, validateResetPasswords, verifyAccountMutation, type AccountMutationUser } from "./password-reset-guard";
+import { accountRecoveryStatus, passwordResetAccess, passwordResetAccountMatches, validateResetPasswords, verifyAccountMutation, type AccountMutationUser } from "./password-reset-guard";
 
 describe("password reset account safety", () => {
   it("does not expose password changes without a session", () => {
@@ -11,6 +11,14 @@ describe("password reset account safety", () => {
   });
   it("permits password changes for authenticated non-guest accounts", () => {
     expect(passwordResetAccess({ is_anonymous: false })).toBe("ready");
+  });
+  it("refuses to reset a different player after a cross-tab account switch", () => {
+    const original = "player-A";
+    expect(passwordResetAccountMatches(original, { id: original, is_anonymous: false })).toBe(true);
+    expect(passwordResetAccountMatches(original, { id: "player-B", is_anonymous: false })).toBe(false);
+    expect(passwordResetAccountMatches(original, { id: original, is_anonymous: true })).toBe(false);
+    expect(passwordResetAccountMatches(original, null)).toBe(false);
+    expect(passwordResetAccountMatches(null, { id: original, is_anonymous: false })).toBe(false);
   });
   it("rejects weak and mismatched passwords before contacting Auth", () => {
     expect(validateResetPasswords("short", "short")).toContain("8 characters");

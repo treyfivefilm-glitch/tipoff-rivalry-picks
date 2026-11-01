@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { passwordResetAccess, validateResetPasswords, type PasswordResetAccess } from "@/lib/password-reset-guard";
+import { passwordResetAccess, passwordResetAccountMatches, validateResetPasswords, type PasswordResetAccess } from "@/lib/password-reset-guard";
 
 export const Route = createFileRoute("/reset-password")({
   head: () => ({ meta: [{ title: "Reset password · NBA Pick Battle" }, { name: "description", content: "Set a new password." }, { property: "og:title", content: "Reset password · NBA Pick Battle" }, { property: "og:description", content: "Set a new password for NBA Pick Battle." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
@@ -12,6 +12,7 @@ export const Route = createFileRoute("/reset-password")({
 
 function ResetPasswordPage() {
   const [access, setAccess] = useState<PasswordResetAccess | "checking">("checking");
+  const [resetAccountId, setResetAccountId] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
@@ -20,14 +21,23 @@ function ResetPasswordPage() {
 
   useEffect(() => {
     let active = true;
+    let recoveryEventObserved = false;
     // A recovery link establishes an authenticated session through Supabase.
     // Never treat an existing anonymous guest session as permission to reset a password.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (active && event === "PASSWORD_RECOVERY") setAccess(passwordResetAccess(session?.user));
+      if (active && event === "PASSWORD_RECOVERY") {
+        recoveryEventObserved = true;
+        setResetAccountId(session?.user?.id ?? null);
+        setAccess(passwordResetAccess(session?.user));
+      }
     });
     void supabase.auth.getUser().then(({ data, error }) => {
-      if (active) setAccess(passwordResetAccess(error ? null : data.user));
-    }).catch(() => { if (active) setAccess("signed-out"); });
+      // Do not overwrite a newer recovery identity with an older getUser reply.
+      if (active && !recoveryEventObserved) {
+        setResetAccountId(error ? null : data.user?.id ?? null);
+        setAccess(passwordResetAccess(error ? null : data.user));
+      }
+    }).catch(() => { if (active && !recoveryEventObserved) { setResetAccountId(null); setAccess("signed-out"); } });
     return () => { active = false; subscription.unsubscribe(); };
   }, []);
 
@@ -41,9 +51,14 @@ function ResetPasswordPage() {
       // Revalidate at submit time: a session can expire or change after the page loads.
       const { data, error } = await supabase.auth.getUser();
       const currentAccess = passwordResetAccess(error ? null : data.user);
-      if (currentAccess !== "ready") {
-        setAccess(currentAccess);
-        setFeedback("Your account session is no longer valid for changing this password.");
+      if (currentAccess !== "ready" || !passwordResetAccountMatches(resetAccountId, data.user)) {
+        // A different tab may have switched accounts after this form loaded.
+        // Never submit the typed password to a different player identity.
+        setAccess(currentAccess === "ready" ? "signed-out" : currentAccess);
+        setPassword(""); setConfirmation("");
+        setFeedback(currentAccess === "ready"
+          ? "The signed-in account changed. Reopen your password reset link for the intended account."
+          : "Your account session is no longer valid for changing this password.");
         return;
       }
       const { error: updateError } = await supabase.auth.updateUser({ password });
@@ -76,6 +91,7 @@ function ResetPasswordPage() {
           <a href="/rooms" className="inline-block font-semibold text-primary underline">Return to my rooms</a>
         </div>
       )}
+      {access !== "ready" && feedback && <p role="alert" className="text-sm text-destructive">{feedback}</p>}
       {access === "ready" && (
         <form onSubmit={save} className="space-y-3">
           <p className="text-sm text-muted-foreground">Choose a new password for this signed-in email account.</p>

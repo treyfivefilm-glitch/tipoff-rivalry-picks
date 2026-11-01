@@ -25,6 +25,18 @@ export function passwordResetAccess(user: { is_anonymous?: boolean | null } | nu
   return user.is_anonymous ? "guest" : "ready";
 }
 
+/** A password form must remain bound to the player who opened it.
+ * Another browser tab can change the shared Supabase session before submit.
+ * This is a best-effort pre-submit identity check, not a recovery-link proof.
+ */
+export function passwordResetAccountMatches(
+  expectedUserId: string | null,
+  currentUser: { id: string; is_anonymous?: boolean | null } | null | undefined,
+): boolean {
+  return Boolean(expectedUserId && currentUser?.id === expectedUserId &&
+    passwordResetAccess(currentUser) === "ready");
+}
+
 /** Validate locally before sending a password to Supabase Auth. */
 export function validateResetPasswords(password: string, confirmation: string): string | null {
   if (password.length < 8) return "Use a password of at least 8 characters.";
