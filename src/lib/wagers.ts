@@ -85,3 +85,18 @@ export function wagerCentsFromDollars(raw: string): number | null {
   const cents = paymentCentsWithinBalance(raw, 100_000);
   return cents !== null && cents >= 100 ? cents : null;
 }
+
+/** A submitted payment form must unlock if the server later reports a rejected
+ * payment, even when the outstanding dollar amount has not changed. This stable
+ * revision ignores unrelated incoming payments and API ordering.
+ */
+export function paymentFormRevision(
+  payments: readonly Pick<Payment, 'id' | 'payer_id' | 'status'>[],
+  payerId: string,
+): string {
+  return payments
+    .filter((payment) => payment.payer_id === payerId)
+    .map((payment) => `${payment.id}:${payment.status}`)
+    .sort()
+    .join('|');
+}
