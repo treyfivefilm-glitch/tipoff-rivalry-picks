@@ -14,7 +14,11 @@ async function fetchJson(url: string, request: typeof fetch, timeoutMs: number):
     // Never follow an unexpected CDN redirect to another feed host. A valid
     // JSON shape alone does not prove the redirected source is authoritative.
     redirect: "error",
-    headers: { accept: "application/json" },
+    // A live scoreboard with today's date may still contain hours-old
+    // cached scores. Ask the runtime and intermediary caches to revalidate
+    // instead of treating a stale HTTP 200 body as a fresh observation.
+    cache: "no-store",
+    headers: { accept: "application/json", "cache-control": "no-cache" },
   });
   // HTTP 206 can contain valid JSON while omitting games. A partial feed
   // must not certify an otherwise empty day or settle an incomplete final.
