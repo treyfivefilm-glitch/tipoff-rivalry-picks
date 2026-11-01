@@ -277,6 +277,26 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     await expect(backend.readExisting(["2026-11-17"])).rejects.toThrow();
   });
 
+  it("rejects partial RPC replies even when their JSON scalar looks successful", async () => {
+    // A proxy can send 206 or attach Content-Range to HTTP 200 while
+    // preserving a valid-looking boolean/count. Neither proves the lease
+    // operation or fenced score commit completed.
+    for (const [name, value] of [
+      ["try_claim_nba_sync", true],
+      ["release_nba_sync", true],
+      ["commit_nba_sync_day", 1],
+    ] as const) {
+      for (const status of [200, 206]) {
+        const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+          new Response(JSON.stringify(value), {
+            status,
+            headers: status === 200 ? { "content-range": "bytes 0-3/5" } : {},
+          })));
+        await expect(backend.rpc(name, {})).rejects.toThrow("returned partial result");
+      }
+    }
+  });
+
   it("rejects malformed HTTP 200 lease replies rather than claiming ownership", async () => {
     for (const value of [null, {}, "true", 1]) {
       const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(value)));
