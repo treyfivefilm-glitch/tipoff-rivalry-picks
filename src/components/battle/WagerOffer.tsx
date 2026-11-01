@@ -40,14 +40,30 @@ export function OfferActions({ g, v }: { g: BoardGame; v: WagerVersion }) {
   const b = useBattle();
   const [counter, setCounter] = useState(false);
   const [busy, setBusy] = useState(false);
-  const run = async (fn: () => Promise<void>) => { setBusy(true); try { await fn(); toast.success('Offer updated'); } catch(e) { toast.error(errMsg(e)); } finally { setBusy(false); } };
+  // A successful response can precede the room subscription update. Lock
+  // actions for that exact version, but allow a newer counteroffer immediately.
+  const [completedVersion, setCompletedVersion] = useState<number | null>(null);
+  const awaiting = completedVersion === v.version;
+  const run = async (fn: () => Promise<void>) => {
+    if (busy || awaiting) return;
+    setBusy(true);
+    try {
+      await fn();
+      setCompletedVersion(v.version);
+      toast.success('Offer updated');
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
   const opposite = !!g.my_pick && !!g.opp_pick && g.my_pick !== g.opp_pick;
   if (counter) return <OfferForm key={v.version} g={g} current={v} onClose={() => setCounter(false)} />;
-  if (v.proposer_id === b.me.id) return <div className="flex items-center justify-between gap-2"><p className="text-sm text-muted-foreground">Waiting on {b.friend?.name ?? 'Friend'}</p><Button variant="ghost" disabled={busy} onClick={() => run(() => b.cancelWager(g.game_id,v.version))}>Withdraw</Button></div>;
+  if (v.proposer_id === b.me.id) return <div className="flex items-center justify-between gap-2"><p className="text-sm text-muted-foreground">{awaiting ? 'Awaiting room update…' : `Waiting on ${b.friend?.name ?? 'Friend'}`}</p><Button variant="ghost" disabled={busy || awaiting} onClick={() => run(() => b.cancelWager(g.game_id,v.version))}>{awaiting ? 'Updating…' : 'Withdraw'}</Button></div>;
   return <div className="space-y-2">
-    <p className="font-cond text-sm text-primary">Your turn</p>
+    <p className="font-cond text-sm text-primary">{awaiting ? 'Awaiting room update…' : 'Your turn'}</p>
     {!opposite && <p className="text-xs text-muted-foreground">Both players need opposite picks before acceptance.</p>}
-    <div className="grid grid-cols-3 gap-2"><Button variant="gold" disabled={!opposite || busy} onClick={() => run(() => b.respond(g.game_id,true,v.version))}>Accept</Button><Button variant="glass" disabled={!g.my_pick || busy} onClick={() => setCounter(true)}>Counter</Button><Button variant="ghost" disabled={busy} onClick={() => run(() => b.respond(g.game_id,false,v.version))}>Decline</Button></div>
+    <div className="grid grid-cols-3 gap-2"><Button variant="gold" disabled={!opposite || busy || awaiting} onClick={() => run(() => b.respond(g.game_id,true,v.version))}>Accept</Button><Button variant="glass" disabled={!g.my_pick || busy || awaiting} onClick={() => setCounter(true)}>Counter</Button><Button variant="ghost" disabled={busy || awaiting} onClick={() => run(() => b.respond(g.game_id,false,v.version))}>Decline</Button></div>
   </div>;
 }
 export function OfferTerms({ v }: { v: WagerVersion }) {
