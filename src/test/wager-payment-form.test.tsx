@@ -2,14 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { WagerCenter } from "@/components/battle/WagerCenter";
 
-const { recordPayment } = vi.hoisted(() => ({ recordPayment: vi.fn() }));
+const { recordPayment, paymentState } = vi.hoisted(() => ({
+  recordPayment: vi.fn(),
+  paymentState: { rows: [] as Array<{
+    id: string; payer_id: string; recipient_id: string; cents: number;
+    note: string | null; status: "pending" | "confirmed" | "rejected"; created_at: string;
+  }> },
+}));
 
 vi.mock("@/lib/battle-context", () => ({
   useBattle: () => ({
     me: { id: "me" },
     friend: { id: "friend", name: "Friend" },
     versions: [],
-    payments: [],
+    payments: paymentState.rows,
     challenges: [],
     recordPayment,
     games: [{
@@ -39,7 +45,7 @@ function openPaymentForm() {
 }
 
 describe("payment submission while room state is delayed", () => {
-  beforeEach(() => recordPayment.mockReset());
+  beforeEach(() => { recordPayment.mockReset(); paymentState.rows = []; });
   afterEach(() => cleanup());
 
   it("locks the form after a successful RPC even before the payment appears in room state", async () => {
@@ -62,5 +68,40 @@ describe("payment submission while room state is delayed", () => {
     fireEvent.click(submit);
     await waitFor(() => expect(screen.getByRole("button", { name: "Awaiting confirmation…" })).toBeDisabled());
     expect(recordPayment).toHaveBeenCalledTimes(2);
+  });
+
+  it("reopens after a rejected payment appears without an intermediate pending refresh", async () => {
+    recordPayment.mockResolvedValue(undefined);
+    const view = render(<WagerCenter />);
+    fireEvent.click(screen.getByRole("tab", { name: "Ledger" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark payment sent" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Awaiting confirmation…" })).toBeDisabled());
+
+    // A slow subscription may deliver only the final rejected state. The
+    // outstanding balance is still $5, so the form's amount-based key is unchanged.
+    paymentState.rows = [{
+      id: "p1", payer_id: "me", recipient_id: "friend", cents: 500,
+      note: null, status: "rejected", created_at: "2026-11-01T12:00:00Z",
+    }];
+    view.rerender(<WagerCenter />);
+    const retry = screen.getByRole("button", { name: "Mark payment sent" });
+    expect(retry).toBeEnabled();
+    fireEvent.click(retry);
+    await waitFor(() => expect(recordPayment).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not reopen a submitted payment form on an unrelated incoming payment", async () => {
+    recordPayment.mockResolvedValue(undefined);
+    const view = render(<WagerCenter />);
+    fireEvent.click(screen.getByRole("tab", { name: "Ledger" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark payment sent" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Awaiting confirmation…" })).toBeDisabled());
+    paymentState.rows = [{
+      id: "incoming", payer_id: "friend", recipient_id: "me", cents: 100,
+      note: null, status: "pending", created_at: "2026-11-01T12:00:00Z",
+    }];
+    view.rerender(<WagerCenter />);
+    expect(screen.getByRole("button", { name: "Awaiting confirmation…" })).toBeDisabled();
+    expect(recordPayment).toHaveBeenCalledTimes(1);
   });
 });
