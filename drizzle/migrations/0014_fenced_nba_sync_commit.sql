@@ -113,6 +113,37 @@ BEGIN
     RAISE EXCEPTION 'Duplicate NBA matchup in sync day';
   END IF;
 
+  -- The batch-level check above cannot detect an official or legacy NBA
+  -- matchup already stored under a DIFFERENT ID. Preserve any picks/wagers
+  -- attached to that older ID: never create a parallel game or mark the day
+  -- fresh. Reversed home/away teams and historical aliases are equivalent.
+  -- Ignore unrelated sports; their shared games table is not an NBA identity.
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_to_recordset(p_rows) AS incoming(
+      id text, away_code text, home_code text
+    )
+    JOIN public.games AS stored
+      ON stored.id <> incoming.id
+     AND (stored.start_utc AT TIME ZONE 'America/Los_Angeles')::date = p_day
+     AND (
+       (stored.id LIKE 'nba:%' AND
+        stored.source IN ('nba', 'nba_official_schedule'))
+       OR (stored.id LIKE 'espn:%' AND
+           stored.source IN ('nba', 'espn'))
+     )
+     AND LEAST(public.nba_canonical_team_code(stored.away_code),
+               public.nba_canonical_team_code(stored.home_code)) =
+         LEAST(public.nba_canonical_team_code(incoming.away_code),
+               public.nba_canonical_team_code(incoming.home_code))
+     AND GREATEST(public.nba_canonical_team_code(stored.away_code),
+                  public.nba_canonical_team_code(stored.home_code)) =
+         GREATEST(public.nba_canonical_team_code(incoming.away_code),
+                  public.nba_canonical_team_code(incoming.home_code))
+  ) THEN
+    RAISE EXCEPTION 'Existing NBA matchup uses another game ID';
+  END IF;
+
   INSERT INTO public.games AS current_game (
     id, start_utc, away_code, away_name, home_code, home_name,
     away_score, home_score, state, status_detail, source, updated_at

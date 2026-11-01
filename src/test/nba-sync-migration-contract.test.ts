@@ -85,6 +85,21 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
       .toBeLessThan(migration.indexOf("INSERT INTO public.games"));
   });
 
+  it("rejects an already stored NBA matchup under a different ID before writes", () => {
+    const guard = migration.split("-- The batch-level check above cannot detect")[1]
+      ?.split("INSERT INTO public.games")[0];
+    expect(guard).toBeDefined();
+    expect(guard).toContain("stored.id <> incoming.id");
+    expect(guard).toContain("stored.source IN ('nba', 'nba_official_schedule')");
+    expect(guard).toContain("stored.source IN ('nba', 'espn')");
+    expect(guard).toContain("stored.start_utc AT TIME ZONE 'America/Los_Angeles'");
+    expect(guard).toContain("LEAST(public.nba_canonical_team_code(stored.away_code)");
+    expect(guard).toContain("GREATEST(public.nba_canonical_team_code(stored.away_code)");
+    expect(guard).toContain("RAISE EXCEPTION 'Existing NBA matchup uses another game ID'");
+    expect(migration.indexOf("Existing NBA matchup uses another game ID"))
+      .toBeLessThan(migration.indexOf("INSERT INTO public.games"));
+  });
+
   it("rejects canonical same-team aliases before any fenced write", () => {
     // The database must reject malformed RPC callers even if Edge validation
     // was bypassed. GS and GSW identify the same team despite distinct text.

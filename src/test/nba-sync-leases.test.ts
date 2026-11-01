@@ -142,6 +142,39 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     expect(await commit(owner, [sampleGame, other])).toBe(2);
   });
 
+  it("refuses a new ID for a previously stored NBA matchup, including ESPN aliases", async () => {
+    expect(await claim(owner)).toBe(true);
+    const historical = [
+      { id: "nba:0022600099", source: "nba_official_schedule", away: "LAL", home: "GS" },
+      { id: "espn:401234567", source: "espn", away: "GSW", home: "LAL" },
+    ];
+    for (const stored of historical) {
+      await db`INSERT INTO public.games (
+        id, start_utc, away_code, away_name, home_code, home_name,
+        away_score, home_score, state, status_detail, source
+      ) VALUES (
+        ${stored.id}, ${sampleGame.start_utc}, ${stored.away}, 'Away',
+        ${stored.home}, 'Home', NULL, NULL, 'scheduled', 'Scheduled', ${stored.source}
+      )`;
+      await db`SAVEPOINT existing_matchup_collision`;
+      await expect(commit(owner)).rejects.toThrow(/Existing NBA matchup uses another game ID/);
+      await db`ROLLBACK TO SAVEPOINT existing_matchup_collision`;
+      expect(await db`SELECT id FROM public.games WHERE id=${sampleGame.id}`).toHaveLength(0);
+      expect(await db`SELECT day FROM public.sync_state WHERE day=${day}`).toHaveLength(0);
+      expect(await db`SELECT id FROM public.games WHERE id=${stored.id}`).toHaveLength(1);
+      await db`DELETE FROM public.games WHERE id=${stored.id}`;
+    }
+    // A same-code record owned by an unrelated sport is not an NBA game.
+    await db`INSERT INTO public.games (
+      id, start_utc, away_code, away_name, home_code, home_name,
+      away_score, home_score, state, status_detail, source
+    ) VALUES (
+      'nfl:unrelated', ${sampleGame.start_utc}, 'LAL', 'Away',
+      'GSW', 'Home', NULL, NULL, 'scheduled', 'Scheduled', 'nfl'
+    )`;
+    expect(await commit(owner)).toBe(1);
+  });
+
   it("does not downgrade a verified final to a stale scheduled snapshot", async () => {
     expect(await claim(owner)).toBe(true);
     expect(await commit(owner)).toBe(1);
