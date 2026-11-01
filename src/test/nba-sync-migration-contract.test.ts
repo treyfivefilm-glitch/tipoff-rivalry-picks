@@ -75,7 +75,7 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
   });
 
   it("rejects duplicate daily matchups before writes, including aliases and reversed teams", () => {
-    const guard = migration.split("IF EXISTS (").slice(-1)[0]
+    const guard = migration.split("-- Even a privileged caller must not publish")[1]
       ?.split("INSERT INTO public.games")[0];
     expect(guard).toContain("LEAST(public.nba_canonical_team_code(g.away_code)");
     expect(guard).toContain("GREATEST(public.nba_canonical_team_code(g.away_code)");
