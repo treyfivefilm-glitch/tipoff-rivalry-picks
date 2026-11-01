@@ -310,6 +310,33 @@ describe("unattended NBA worker pure preparation", () => {
     ]);
   });
 
+  it("does not certify regressing official scores before any database history exists", () => {
+    // The season feed may be ahead of the live scoreboard. A newer status
+    // alone is not evidence that lower or missing points are authoritative.
+    for (const [seasonGame, liveGame] of [
+      [game(2, 90, 85), game(2, 89, 86)],
+      [game(2, 90, 85), game(3, 89, 86)],
+      [game(3, 105, 101), game(3, 104, 102)],
+      [game(2, 90, 85), game(2, null, 86)],
+    ]) {
+      const result = prepareUnattendedNbaDay(
+        "2026-11-17", schedule([seasonGame]), live([liveGame]), [],
+      );
+      expect(result.cacheable).toBe(false);
+      expect(result.rows[0]).toMatchObject({
+        id: "nba:0022600012",
+        away_score: seasonGame.awayTeam.score,
+        home_score: seasonGame.homeTeam.score,
+      });
+    }
+    // Normal non-decreasing progress from live to final remains cacheable.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game(2, 90, 85)]), live([game(3, 105, 101)]), [],
+    )).toMatchObject({
+      cacheable: true, rows: [{ state: "final", away_score: 105, home_score: 101 }],
+    });
+  });
+
   it("allows official final-score corrections that preserve the winning team", () => {
     const result = prepareUnattendedNbaDay(
       "2026-11-17", schedule([game(3, 103, 100)]), live([game(3, 105, 101)]), [],
