@@ -318,7 +318,7 @@ describe("unattended NBA worker pure preparation", () => {
       [game(2, 90, 85), game(3, 89, 86)],
       [game(3, 105, 101), game(3, 104, 102)],
       [game(2, 90, 85), game(2, null, 86)],
-    ]) {
+    ] as const) {
       const result = prepareUnattendedNbaDay(
         "2026-11-17", schedule([seasonGame]), live([liveGame]), [],
       );
