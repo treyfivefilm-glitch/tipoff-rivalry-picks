@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, InviteAccountChangedError, assertCreatedInviteGuest, assertSameInviteAccount, createInviteGuestIfSignedOut, ensureGuestSession, hasAccountSession, hasGuestSession, runWithoutGuestAccountSwitch, verifiedInviteAccountId } from "./guest-session-guard";
+import { GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, GuestSessionUnavailableError, InviteAccountChangedError, assertCreatedInviteGuest, assertSameInviteAccount, createInviteGuestIfSignedOut, ensureGuestSession, hasAccountSession, hasGuestSession, runWithoutGuestAccountSwitch, verifiedInviteAccountId } from "./guest-session-guard";
 
 describe("guest account protection on email sign-in", () => {
   it("blocks switching away from an existing guest session", () => {
@@ -26,14 +26,66 @@ describe("guest account protection on email sign-in", () => {
     expect(result).toBe("existing");
     expect(guestCreates).toBe(0);
   });
-  it("creates a guest only when no session exists", async () => {
+  it("creates a guest only when the returned identity matches the active session", async () => {
     let guestCreates = 0;
+    let checks = 0;
     const result = await ensureGuestSession({
-      getSession: async () => ({ data: { session: null }, error: null }),
-      signInAnonymously: async () => { guestCreates++; return { error: null }; },
+      getSession: async () => ({
+        data: { session: checks++ === 0 ? null : { user: { id: "new-guest" } } },
+        error: null,
+      }),
+      signInAnonymously: async () => {
+        guestCreates++;
+        return { data: { user: { id: "new-guest" }, session: { user: { id: "new-guest" } } }, error: null };
+      },
     });
     expect(result).toBe("created");
     expect(guestCreates).toBe(1);
+    expect(checks).toBe(2);
+  });
+
+  it("does not claim guest access if signup returns no usable identity or session", async () => {
+    for (const result of [
+      { error: null },
+      { data: { user: { id: "new-guest" }, session: null }, error: null },
+      { data: { user: { id: "new-guest" }, session: { user: { id: "other" } } }, error: null },
+      { data: { user: { id: "" }, session: { user: { id: "" } } }, error: null },
+    ]) {
+      let checks = 0;
+      await expect(ensureGuestSession({
+        getSession: async () => { checks++; return { data: { session: null }, error: null }; },
+        signInAnonymously: async () => result,
+      })).rejects.toBeInstanceOf(GuestSessionUnavailableError);
+      expect(checks).toBe(1);
+    }
+  });
+
+  it("refuses to navigate if a different account takes over before guest entry completes", async () => {
+    let checks = 0;
+    await expect(ensureGuestSession({
+      getSession: async () => ({
+        data: { session: checks++ === 0 ? null : { user: { id: "other-player" } } },
+        error: null,
+      }),
+      signInAnonymously: async () => ({
+        data: { user: { id: "new-guest" }, session: { user: { id: "new-guest" } } },
+        error: null,
+      }),
+    })).rejects.toBeInstanceOf(GuestSessionUnavailableError);
+    expect(checks).toBe(2);
+  });
+
+  it("fails closed if active-session verification errors after guest signup", async () => {
+    let checks = 0;
+    await expect(ensureGuestSession({
+      getSession: async () => checks++ === 0
+        ? { data: { session: null }, error: null }
+        : { data: { session: null }, error: new Error("Session check failed") },
+      signInAnonymously: async () => ({
+        data: { user: { id: "new-guest" }, session: { user: { id: "new-guest" } } },
+        error: null,
+      }),
+    })).rejects.toThrow("Session check failed");
   });
   it("does not join from a stale guest invitation after another tab signed in", async () => {
     for (const anonymous of [true, false]) {

@@ -8,19 +8,45 @@ export function hasAccountSession(session: { user?: unknown | null } | null | un
   return Boolean(session?.user);
 }
 
+/** A successful HTTP response without an authenticated guest session must
+ * never navigate to rooms as if an account had been created.
+ */
+export class GuestSessionUnavailableError extends Error {
+  constructor() {
+    super("Guest sign-in did not establish a usable session. Please retry.");
+    this.name = "GuestSessionUnavailableError";
+  }
+}
+
+function verifiedSessionId(session: { user?: unknown | null } | null): string | null {
+  const user = session?.user;
+  if (!user || typeof user !== "object" || !("id" in user)) return null;
+  const id = user.id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
+
 /** Recheck the browser identity immediately before guest entry.
  * A stale sign-in screen must not replace a newly authenticated player.
- * If session lookup fails, do not create a new identity.
+ * Verify the returned guest identity is still the active browser session
+ * before navigating; another tab may have changed it during signup.
  */
 export async function ensureGuestSession(auth: {
   getSession: () => Promise<{ data: { session: { user?: unknown | null } | null }; error: Error | null }>;
-  signInAnonymously: () => Promise<{ error: Error | null }>;
+  signInAnonymously: () => Promise<{
+    data?: { user?: { id?: string } | null; session?: { user?: { id?: string } | null } | null } | null;
+    error: Error | null;
+  }>;
 }): Promise<"existing" | "created"> {
   const { data, error } = await auth.getSession();
   if (error) throw error;
   if (hasAccountSession(data.session)) return "existing";
-  const { error: guestError } = await auth.signInAnonymously();
+  const { data: guest, error: guestError } = await auth.signInAnonymously();
   if (guestError) throw guestError;
+  const guestId = guest?.user?.id;
+  if (!guestId || guest?.session?.user?.id !== guestId) throw new GuestSessionUnavailableError();
+  const { data: active, error: activeError } = await auth.getSession();
+  if (activeError) throw activeError;
+  if (verifiedSessionId(active.session) !== guestId) throw new GuestSessionUnavailableError();
   return "created";
 }
 
