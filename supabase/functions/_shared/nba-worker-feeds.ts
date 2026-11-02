@@ -34,6 +34,21 @@ export async function fetchOfficialNbaJson(
   if (response.status !== 200 || response.headers.has("content-range")) {
     throw new Error("NBA feed unavailable");
   }
+  // The CDN may ignore no-store and return a same-day scoreboard cached for
+  // hours. Its gameDate would still pass date validation and could make old
+  // live/final scores look freshly checked. An explicit HTTP Age above fifteen
+  // minutes (or malformed Age) is evidence that this is not a fresh live feed.
+  // Season schedules are allowed to be cached much longer. A missing Age
+  // cannot prove freshness, so existing game-date/score guards still apply.
+  if (url === LIVE) {
+    const ageHeader = response.headers.get("age");
+    if (ageHeader !== null) {
+      const age = Number(ageHeader);
+      if (!/^\\d+$/.test(ageHeader.trim()) || !Number.isSafeInteger(age) || age > 900) {
+        throw new Error("NBA live scoreboard is stale");
+      }
+    }
+  }
   return await response.json();
 }
 
