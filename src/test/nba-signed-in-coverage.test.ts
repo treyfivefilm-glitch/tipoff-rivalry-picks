@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   hasCrossDayOfficialNbaId,
   hasOmittedOfficialNbaGame,
+  hasUnattributedMalformedLiveNbaConflict,
   type StoredOfficialNbaIdentity,
 } from "../../supabase/functions/_shared/nba-signed-in-coverage";
 
@@ -60,5 +61,51 @@ describe("signed-in NBA refresh stored-game coverage", () => {
     expect(crossDay).toBeGreaterThan(-1);
     expect(omitted).toBeGreaterThan(crossDay);
     expect(write).toBeGreaterThan(omitted);
+  });
+});
+
+describe("signed-in NBA refresh malformed live fallback", () => {
+  const scheduled = {
+    gameId: "0022600012", gameDateTimeUTC: "2026-11-18T03:00:00Z",
+    gameStatus: 1, gameStatusText: "Scheduled",
+    awayTeam: { teamTricode: "LAL" }, homeTeam: { teamTricode: "GSW" },
+  };
+
+  it("does not certify a scheduled fallback when a same-ID live row lacks a valid tipoff", () => {
+    const malformed = { ...scheduled, gameDateTimeUTC: undefined, gameStatus: 3,
+      awayTeam: { teamTricode: "LAL", score: 110 },
+      homeTeam: { teamTricode: "GSW", score: 105 } };
+    expect(hasUnattributedMalformedLiveNbaConflict([malformed], [scheduled])).toBe(true);
+  });
+
+  it("recognizes the same matchup even if the malformed live row has no usable ID", () => {
+    const malformed = { ...scheduled, gameId: undefined, gameDateTimeUTC: "bad",
+      awayTeam: { teamTricode: "GS" }, homeTeam: { teamTricode: "LAL" } };
+    expect(hasUnattributedMalformedLiveNbaConflict([malformed], [scheduled])).toBe(true);
+  });
+
+  it("does not block unrelated malformed games or valid live games", () => {
+    const unrelated = { ...scheduled, gameId: "0022600014", gameDateTimeUTC: undefined,
+      awayTeam: { teamTricode: "BOS" }, homeTeam: { teamTricode: "NYK" } };
+    expect(hasUnattributedMalformedLiveNbaConflict([unrelated], [scheduled])).toBe(false);
+    expect(hasUnattributedMalformedLiveNbaConflict([scheduled], [scheduled])).toBe(false);
+    expect(hasUnattributedMalformedLiveNbaConflict([], [scheduled])).toBe(false);
+  });
+
+  it("does not attribute a malformed live row with a valid tipoff on another day", () => {
+    const elsewhere = { ...scheduled, gameDateTimeUTC: "2026-11-19T03:00:00Z",
+      gameStatus: 3, awayTeam: { teamTricode: "LAL" },
+      homeTeam: { teamTricode: "GSW" } };
+    expect(hasUnattributedMalformedLiveNbaConflict([elsewhere], [scheduled])).toBe(false);
+  });
+
+  it("checks malformed live fallback before updating game or freshness rows", () => {
+    const source = readFileSync("supabase/functions/sync-games/index.ts", "utf8");
+    const guard = source.indexOf("hasUnattributedMalformedLiveNbaConflict(live?.games ?? [], list ?? [])");
+    const gameWrite = source.indexOf('await save("games"');
+    const freshnessWrite = source.indexOf('await save("sync_state"');
+    expect(guard).toBeGreaterThan(-1);
+    expect(gameWrite).toBeGreaterThan(guard);
+    expect(freshnessWrite).toBeGreaterThan(guard);
   });
 });
