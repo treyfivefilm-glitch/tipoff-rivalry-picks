@@ -4,7 +4,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
 import { fetchOfficialNbaJson, isTimelyNbaScoreboard } from "../_shared/nba-worker-feeds.ts";
 import { assertCompleteNbaGamePage } from "../_shared/nba-game-page.ts";
-import { hasCrossDayOfficialNbaId, hasOmittedOfficialNbaGame, hasUnattributedMalformedLiveNbaConflict } from "../_shared/nba-signed-in-coverage.ts";
+import { conflictingOfficialNbaFeedDays, hasCrossDayOfficialNbaId, hasOmittedOfficialNbaGame, hasUnattributedMalformedLiveNbaConflict } from "../_shared/nba-signed-in-coverage.ts";
 import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, malformedNbaGamePacificDay, hasVerifiedNbaSeasonGame, hasUnsafeNbaStoredScoreTransition, isUsableNbaGame, isValidNbaSchedule, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
@@ -188,6 +188,16 @@ Deno.serve(async (req) => {
       }
     }
     const live = liveResult.status === "fulfilled" ? liveResult.value.scoreboard : undefined;
+    // A single official game ID must not be committed under two Pacific days
+    // when the season and live providers disagree about a reschedule. Both
+    // affected days remain stale until the feeds reconcile; a same-day UTC
+    // rollover is valid and is not treated as a conflict.
+    const seasonFeedGames = scheduleResult.status === "fulfilled"
+      ? (scheduleResult.value.leagueSchedule?.gameDates ?? []).flatMap(segment => segment.games ?? [])
+      : [];
+    for (const conflictDay of conflictingOfficialNbaFeedDays(seasonFeedGames, live?.games ?? [])) {
+      if (due.includes(conflictDay)) feedConflictDays.add(conflictDay);
+    }
     // scoreboard.gameDate can be the next UTC day while the game is still on
     // the previous Pacific day. Group by each game's actual Pacific tipoff.
     // Do not certify a day fresh when a same-day live result is malformed,
