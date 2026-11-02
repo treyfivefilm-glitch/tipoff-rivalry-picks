@@ -104,6 +104,10 @@ export function prepareUnattendedNbaDay(
   const liveValid = isValidNbaScoreboard(scoreboard);
   const games = new Map<string, Game>();
   let validLiveGames = 0;
+  // A season schedule (or saved history) can retain an old "live" score
+  // after the scoreboard stops reporting the game. Only an actual valid
+  // live scoreboard observation may renew freshness for an in-play result.
+  const confirmedLiveIds = new Set<string>();
   let validSeasonGames = 0;
   let identityConflict = false;
   let malformedDayGame = false;
@@ -197,7 +201,10 @@ export function prepareUnattendedNbaDay(
       }
     }
     if (overlay) games.set(game.gameId, game);
-    if (live) validLiveGames++;
+    if (live) {
+      validLiveGames++;
+      if (gameState(game) === "live") confirmedLiveIds.add("nba:" + game.gameId);
+    }
   };
   if (seasonValid) {
     const dates = (schedule as { leagueSchedule: { gameDates: Array<{ games: unknown[] }> } }).leagueSchedule.gameDates;
@@ -359,7 +366,13 @@ export function prepareUnattendedNbaDay(
       matchupPair(game.awayTeam.teamTricode, game.homeTeam.teamTricode),
     ));
   const verifiedSeason = seasonValid && validSeasonGames > 0;
-  return { rows: [...rows.values()], cacheable: !unattributedCurrentGame &&
+  // An old in-progress score must not be stamped as freshly checked just
+  // because the season schedule still lists the game or we preserved saved
+  // points. A verified final from either feed remains independently usable.
+  const unconfirmedLiveScore = [...rows.values()].some(row =>
+    row.state === "live" && !confirmedLiveIds.has(row.id));
+  return { rows: [...rows.values()], cacheable: !unconfirmedLiveScore &&
+    !unattributedCurrentGame &&
     !unattributedCurrentMatchup && !omittedStoredNbaGame &&
     !malformedDayGame && !identityConflict &&
     !conflictingGameDays.has(day) && (verifiedSeason || (validLiveGames > 0 && rows.size > 0)) };
