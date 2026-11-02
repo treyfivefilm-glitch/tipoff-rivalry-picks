@@ -4,7 +4,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
 import { fetchOfficialNbaJson, isTimelyNbaScoreboard } from "../_shared/nba-worker-feeds.ts";
 import { assertCompleteNbaGamePage } from "../_shared/nba-game-page.ts";
-import { hasCrossDayOfficialNbaId, hasOmittedOfficialNbaGame } from "../_shared/nba-signed-in-coverage.ts";
+import { hasCrossDayOfficialNbaId, hasOmittedOfficialNbaGame, hasUnattributedMalformedLiveNbaConflict } from "../_shared/nba-signed-in-coverage.ts";
 import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, malformedNbaGamePacificDay, hasVerifiedNbaSeasonGame, hasUnsafeNbaStoredScoreTransition, isUsableNbaGame, isValidNbaSchedule, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
@@ -234,7 +234,8 @@ Deno.serve(async (req) => {
     for (const day of due) {
       const list = gamesByDay.get(day);
       const unique = new Map<string,Row>();
-      let identityConflict = feedConflictDays.has(day);
+      let identityConflict = feedConflictDays.has(day) ||
+        hasUnattributedMalformedLiveNbaConflict(live?.games ?? [], list ?? []);
       for (const game of list ?? []) {
         const away = norm(game.awayTeam?.teamTricode ?? "");
         const home = norm(game.homeTeam?.teamTricode ?? "");
