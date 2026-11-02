@@ -38,6 +38,18 @@ A fresh Supabase project starts with an empty `auth.users` table. Old user IDs a
 
 Before replacing a production backend that has real data, obtain explicit approval for a one-time authenticated export of the old database and for any account-recreation or identity-mapping strategy. Back up the source and verify all counts, ownership, referential integrity, and privacy constraints before cutover. Until then, keep the old installation read-only/available for historical reference and create **new rooms** on the independent backend.
 
+## Email registration release gate (owner action; not yet verified)
+
+Before claiming that **Create account** works for new players:
+
+1. In the independent Supabase project, inspect **Authentication → Providers → Email** and confirm that email/password signups are enabled. Keep email confirmation enabled for permanent accounts.
+2. Inspect **Authentication → SMTP Settings**. Supabase's default email service is restricted and is not a production email delivery solution for arbitrary friends. Configure an owner-approved email provider and verify its sender identity and delivery **before** testing with real users. Do not put SMTP credentials in Git or browser environment variables.
+3. Under **Authentication → URL Configuration**, allowlist the exact independent app domain and necessary preview return URLs, including confirmation and password-reset redirects. Do not switch the legacy Lovable backend or overwrite its accounts.
+4. Using an isolated test account, verify signup, confirmation delivery (including spam), sign-in after confirmation, sign-out, password reset, and sign-in on a second device. Verify the friend invitation survives the auth redirect. Record failures by Supabase error code without logging passwords, tokens, or email addresses.
+5. If Supabase reports `email_address_not_authorized`, treat it as a **server email-delivery configuration blocker**, not a user password problem. `over_email_send_rate_limit` means stop retrying until the limit clears.
+
+**Status:** UI handling and unit tests do not verify live SMTP delivery. No email provider, paid service, or production auth settings are enabled by this document.
+
 ## Known launch limitations
 
 - Guest session is tied to a browser and may be lost on sign-out, storage clearing, or a new device. Account linking can be added after launch.
