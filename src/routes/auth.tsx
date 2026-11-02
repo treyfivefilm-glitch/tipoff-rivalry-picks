@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasUsablePasswordSession, type AuthFeedback } from "@/lib/auth-feedback";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasActiveSignupSession, hasUsablePasswordSession, type AuthFeedback } from "@/lib/auth-feedback";
 import { safeAuthRedirect } from "@/lib/auth-redirect";
 import { CONFIRMATION_RESEND_NOTICE, resendSignupConfirmation } from "@/lib/signup-confirmation";
 import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, runWithoutGuestAccountSwitch } from "@/lib/guest-session-guard";
@@ -65,7 +65,19 @@ function AuthPage() {
         const { data, error } = await supabase.auth.signUp({ email: email.trim(), password: pw, options: { emailRedirectTo: window.location.origin + (redirect ?? "/rooms") } });
         if (error) throw error;
         const outcome = signupResponseStatus(data);
-        if (outcome === "signed-in") done();
+        if (outcome === "signed-in") {
+          const { data: active, error: activeError } = await supabase.auth.getSession();
+          if (activeError) throw activeError;
+          if (!hasActiveSignupSession(data, active.session)) {
+            setFeedback({
+              message: "Account session could not be verified.",
+              nextStep: "Your account may have been created, but TIPOFF cannot safely open your rooms. Refresh and sign in again.",
+              canReset: false,
+            });
+            return;
+          }
+          done();
+        }
         else if (outcome === "awaiting-confirmation") {
           setAwaitingConfirmation(true);
           setNotice(SIGNUP_PENDING_NOTICE);

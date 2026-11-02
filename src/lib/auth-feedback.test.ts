@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasUsablePasswordSession } from "./auth-feedback";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasActiveSignupSession, hasUsablePasswordSession } from "./auth-feedback";
 
 describe("TIPOFF email login recovery guidance", () => {
   it("explains old-backend credentials without revealing account existence", () => {
@@ -62,6 +62,22 @@ describe("TIPOFF registration entry and account state", () => {
       .toBe("signed-in");
     expect(signupResponseStatus({ user: { id: "player" }, session: null }))
       .toBe("awaiting-confirmation");
+  });
+
+  it("rejects mismatched, malformed or anonymous signup identities", () => {
+    expect(signupResponseStatus({ user: { id: "player-a" }, session: { user: { id: "player-b" } } })).toBe("unconfirmed");
+    expect(signupResponseStatus({ user: { id: "" }, session: null })).toBe("unconfirmed");
+    expect(signupResponseStatus({ user: { id: "guest", is_anonymous: true }, session: { user: { id: "guest" } } })).toBe("unconfirmed");
+    expect(signupResponseStatus({ user: { id: "player" }, session: { user: { id: "player", is_anonymous: true } } })).toBe("unconfirmed");
+  });
+
+  it("requires the newly registered identity to remain active before entering rooms", () => {
+    const signup = { user: { id: "player-a" }, session: { user: { id: "player-a" } } };
+    expect(hasActiveSignupSession(signup, { user: { id: "player-a" } })).toBe(true);
+    expect(hasActiveSignupSession(signup, { user: { id: "player-b" } })).toBe(false);
+    expect(hasActiveSignupSession(signup, { user: { id: "player-a", is_anonymous: true } })).toBe(false);
+    expect(hasActiveSignupSession(signup, null)).toBe(false);
+    expect(hasActiveSignupSession({ user: { id: "player-a" }, session: null }, { user: { id: "player-a" } })).toBe(false);
   });
 
   it("never reports successful signup when Supabase returns no identity", () => {

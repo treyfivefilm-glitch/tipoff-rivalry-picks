@@ -88,11 +88,26 @@ export function hasUsablePasswordSession(data: {
   return typeof id === "string" && id.length > 0 && data.session?.user?.id === id;
 }
 
-export function signupResponseStatus(data: {
-  user?: unknown | null;
-  session?: { user?: unknown | null } | null;
-}): "signed-in" | "awaiting-confirmation" | "unconfirmed" {
-  if (data.session?.user) return "signed-in";
-  if (data.user) return "awaiting-confirmation";
-  return "unconfirmed";
+type SignupIdentity = { id?: string | null; is_anonymous?: boolean | null };
+type SignupSession = { user?: SignupIdentity | null };
+type SignupResponse = { user?: SignupIdentity | null; session?: SignupSession | null };
+
+/** A signup response must identify the same non-guest user in both fields
+ * before TIPOFF can call it an authenticated account. */
+export function signupResponseStatus(data: SignupResponse): "signed-in" | "awaiting-confirmation" | "unconfirmed" {
+  const userId = data.user?.id;
+  if (typeof userId !== "string" || !userId || data.user?.is_anonymous === true) return "unconfirmed";
+  const sessionUser = data.session?.user;
+  if (sessionUser) {
+    return sessionUser.id === userId && sessionUser.is_anonymous !== true ? "signed-in" : "unconfirmed";
+  }
+  return "awaiting-confirmation";
+}
+
+/** Recheck the active browser session after signup. A concurrent tab may
+ * have switched accounts after the signup response was received. */
+export function hasActiveSignupSession(data: SignupResponse, activeSession: SignupSession | null | undefined): boolean {
+  return signupResponseStatus(data) === "signed-in" &&
+    activeSession?.user?.id === data.user?.id &&
+    activeSession?.user?.is_anonymous !== true;
 }
