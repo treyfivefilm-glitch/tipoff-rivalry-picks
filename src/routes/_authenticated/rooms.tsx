@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { buildRoomCards, type RoomCard } from "@/lib/qol";
 import { cn } from "@/lib/utils";
 import { LeaguesHub } from "@/components/battle/LeaguesHub";
+import { AccountRecoveryEntry } from "@/components/battle/AccountRecoveryEntry";
 import { battleInviteMessage, battleInviteUrl } from "@/lib/invites";
 
 export const Route = createFileRoute("/_authenticated/rooms")({
@@ -163,6 +164,7 @@ function RoomsPage() {
       </section>
       <p className="text-center font-cond text-xs text-muted-foreground">Rooms are private and capped at two players. Share your invite code from the room's Settings.</p>
       </>}
+      <AccountRecoveryEntry />
     </div>
   );
 }

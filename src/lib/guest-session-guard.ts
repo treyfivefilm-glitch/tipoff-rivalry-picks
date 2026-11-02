@@ -84,7 +84,7 @@ export function assertCreatedInviteGuest(expectedId: string | null, currentId: s
   if (!expectedId || expectedId !== currentId) throw new InviteAccountChangedError();
 }
 
-export const GUEST_SESSION_WARNING = "Signing in or creating another account here could disconnect this browser from your guest rooms and wagers. Return to your rooms and use Profile to attach a permanent account before switching identities.";
+export const GUEST_SESSION_WARNING = "Signing in or creating another account here could disconnect this browser from your guest rooms and wagers. Open Your Battles, then Account & recovery to attach a verified email before switching identities.";
 
 /** A failed account check is not evidence that a visitor is signed out.
  * Keep the verified user ID so an invitation opened in another tab cannot

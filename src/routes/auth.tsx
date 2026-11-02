@@ -166,7 +166,7 @@ function AuthPage() {
           <p className="font-semibold">{feedback.message}</p>
           <p className="text-muted-foreground">{feedback.nextStep}</p>
           {feedback.canReset && <button type="button" className="font-semibold text-primary underline" disabled={busy} onClick={forgot}>Request password reset</button>}
-          {guestProtected && <a href="/rooms" className="inline-block font-semibold text-primary underline">Return to my rooms</a>}
+          {guestProtected && <a href="/rooms#account-recovery" className="inline-block font-semibold text-primary underline">Protect this guest account</a>}
         </div>
       )}
       {notice && <p role="status" className="rounded-xl border border-border bg-muted/50 p-3 text-sm">{notice}</p>}

@@ -164,6 +164,6 @@ describe("guest account protection on email sign-in", () => {
   });
   it("explains how to preserve rooms and wagers", () => {
     expect(GUEST_SESSION_WARNING).toContain("rooms and wagers");
-    expect(GUEST_SESSION_WARNING).toContain("Profile");
+    expect(GUEST_SESSION_WARNING).toContain("Account & recovery");
   });
 });
