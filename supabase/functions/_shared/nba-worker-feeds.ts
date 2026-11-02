@@ -62,7 +62,28 @@ export async function fetchOfficialNbaJson(
       }
     }
   }
-  return await response.json();
+  const payload: unknown = await response.json();
+  if (url === LIVE && isValidNbaScoreboard(payload)) {
+    // A CDN can replace Date and Age with fresh response headers while
+    // forwarding an old S3 scoreboard object. During an in-progress game,
+    // Last-Modified (when supplied) is independent evidence of when the
+    // actual score data was updated. Never certify an old live snapshot as
+    // freshly checked; missing Last-Modified still uses the other guards.
+    const games = (payload as { scoreboard: { games: unknown[] } }).scoreboard.games;
+    const hasInProgressGame = games.some(game =>
+      game !== null && typeof game === "object" && !Array.isArray(game) &&
+      (game as { gameStatus?: unknown }).gameStatus === 2);
+    const lastModified = response.headers.get("last-modified");
+    if (hasInProgressGame && lastModified !== null) {
+      const modifiedAt = Date.parse(lastModified);
+      const nowMs = now.getTime();
+      if (!Number.isFinite(modifiedAt) || !Number.isFinite(nowMs) ||
+          Math.abs(nowMs - modifiedAt) > 15 * 60 * 1000) {
+        throw new Error("NBA live scoreboard is stale");
+      }
+    }
+  }
+  return payload;
 }
 
 /** A stale HTTP 200 "today" scoreboard must not be treated as a healthy
