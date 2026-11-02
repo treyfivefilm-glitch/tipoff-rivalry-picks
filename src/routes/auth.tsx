@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasActiveSignupSession, hasUsablePasswordSession, type AuthFeedback } from "@/lib/auth-feedback";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasActiveSignupSession, hasUsablePasswordSession, hasActivePasswordSession, type AuthFeedback } from "@/lib/auth-feedback";
 import { safeAuthRedirect } from "@/lib/auth-redirect";
 import { CONFIRMATION_RESEND_NOTICE, resendSignupConfirmation } from "@/lib/signup-confirmation";
 import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, runWithoutGuestAccountSwitch } from "@/lib/guest-session-guard";
@@ -56,6 +56,17 @@ function AuthPage() {
           setFeedback({
             message: "Sign-in did not establish an account session.",
             nextStep: "Please retry. If this continues, TIPOFF's authentication backend needs attention; your account has not been confirmed as signed in.",
+            canReset: false,
+          });
+          return;
+        }
+        // Another tab may have switched the browser identity while login ran.
+        const { data: active, error: activeError } = await supabase.auth.getSession();
+        if (activeError) throw activeError;
+        if (!hasActivePasswordSession(data, active.session)) {
+          setFeedback({
+            message: "Sign-in session changed before it could be verified.",
+            nextStep: "Please retry sign-in and check that another tab has not switched accounts. No private room was opened.",
             canReset: false,
           });
           return;

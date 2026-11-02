@@ -81,11 +81,28 @@ export function signupModeFromSearch(raw: unknown): "up" | undefined {
  * response that did not actually establish an authenticated identity.
  */
 export function hasUsablePasswordSession(data: {
-  user?: { id?: string } | null;
-  session?: { user?: { id?: string } | null } | null;
+  user?: { id?: string; is_anonymous?: boolean | null } | null;
+  session?: { user?: { id?: string; is_anonymous?: boolean | null } | null } | null;
 }): boolean {
   const id = data.user?.id;
-  return typeof id === "string" && id.length > 0 && data.session?.user?.id === id;
+  return typeof id === "string" && id.length > 0 &&
+    data.user?.is_anonymous !== true &&
+    data.session?.user?.id === id &&
+    data.session?.user?.is_anonymous !== true;
+}
+
+
+/** A successful password response is not enough if another tab replaced the
+ * browser's account before navigation. Fail closed on a missing, changed or
+ * anonymous active session rather than opening someone else's private rooms.
+ */
+export function hasActivePasswordSession(
+  response: Parameters<typeof hasUsablePasswordSession>[0],
+  activeSession: { user?: { id?: string; is_anonymous?: boolean | null } | null } | null | undefined,
+): boolean {
+  return hasUsablePasswordSession(response) &&
+    activeSession?.user?.id === response.user?.id &&
+    activeSession?.user?.is_anonymous !== true;
 }
 
 type SignupIdentity = { id?: string | null; is_anonymous?: boolean | null };

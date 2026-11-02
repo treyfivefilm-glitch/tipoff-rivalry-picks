@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasActiveSignupSession, hasUsablePasswordSession } from "./auth-feedback";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasActiveSignupSession, hasUsablePasswordSession, hasActivePasswordSession } from "./auth-feedback";
 
 describe("TIPOFF email login recovery guidance", () => {
   it("explains old-backend credentials without revealing account existence", () => {
@@ -102,5 +102,18 @@ describe("TIPOFF password sign-in session integrity", () => {
 
   it("rejects a mismatched session player to prevent an account switch", () => {
     expect(hasUsablePasswordSession({ user: { id: "player-a" }, session: { user: { id: "player-b" } } })).toBe(false);
+  });
+  it("rejects anonymous identities even when response user IDs match", () => {
+    expect(hasUsablePasswordSession({ user: { id: "guest", is_anonymous: true }, session: { user: { id: "guest" } } })).toBe(false);
+    expect(hasUsablePasswordSession({ user: { id: "player" }, session: { user: { id: "player", is_anonymous: true } } })).toBe(false);
+  });
+
+  it("rechecks that password login remains the active browser account", () => {
+    const response = { user: { id: "player-a" }, session: { user: { id: "player-a" } } };
+    expect(hasActivePasswordSession(response, { user: { id: "player-a" } })).toBe(true);
+    expect(hasActivePasswordSession(response, { user: { id: "player-b" } })).toBe(false);
+    expect(hasActivePasswordSession(response, { user: { id: "player-a", is_anonymous: true } })).toBe(false);
+    expect(hasActivePasswordSession(response, null)).toBe(false);
+    expect(hasActivePasswordSession({ user: { id: "player-a" }, session: null }, { user: { id: "player-a" } })).toBe(false);
   });
 });
