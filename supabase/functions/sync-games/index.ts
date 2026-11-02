@@ -3,6 +3,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
 import { fetchOfficialNbaJson, isTimelyNbaScoreboard } from "../_shared/nba-worker-feeds.ts";
+import { assertCompleteNbaGamePage } from "../_shared/nba-game-page.ts";
 import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, malformedNbaGamePacificDay, hasVerifiedNbaSeasonGame, hasUnsafeNbaStoredScoreTransition, isUsableNbaGame, isValidNbaSchedule, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
@@ -100,10 +101,16 @@ Deno.serve(async (req) => {
   if (!days.length) return json({ checked:0, updated:0, errors:[] });
   const force = payload.force === true;
   const admin = { apikey:serviceKey, Authorization:`Bearer ${serviceKey}` };
-  const getTable = async <T,>(path: string): Promise<T> => {
-    const response = await fetch(`${endpoint}/rest/v1/${path}`, { headers:admin });
+  const getTable = async <T,>(path: string, requireCompleteGamePage = false): Promise<T> => {
+    const response = await fetch(`${endpoint}/rest/v1/${path}`, {
+      headers: requireCompleteGamePage ? { ...admin, Prefer: "count=exact" } : admin,
+    });
     if (!response.ok) throw new Error(`Database read HTTP ${response.status}`);
-    return await response.json() as T;
+    const rows: unknown = await response.json();
+    // Game reconciliation must not proceed on a truncated HTTP 200/206
+    // PostgREST page: omitted records may hold existing picks or wagers.
+    if (requireCompleteGamePage) assertCompleteNbaGamePage(response, rows);
+    return rows as T;
   };
   const save = async (table: string, values: unknown, onConflict: string) => {
     const response = await fetch(`${endpoint}/rest/v1/${table}?on_conflict=${onConflict}`, {
@@ -206,7 +213,7 @@ Deno.serve(async (req) => {
     const { lower, upper } = syncUtcBounds(due);
     const existing = await getTable<Stored[]>(
       `games?select=id,start_utc,away_code,home_code,away_score,home_score,state,status_detail,source` +
-      `&start_utc=gte.${lower}T00:00:00Z&start_utc=lt.${upper}T00:00:00Z&limit=3000`);
+      `&start_utc=gte.${lower}T00:00:00Z&start_utc=lt.${upper}T00:00:00Z&limit=3000`, true);
     const byMatch = new Map(existing.filter(isStoredNbaMatchCandidate).map(g=>[
       `${pacificDay(g.start_utc)}:${norm(g.away_code)}:${norm(g.home_code)}`,g
     ]));
@@ -219,6 +226,7 @@ Deno.serve(async (req) => {
     const existingById = incomingIds.length ? await getTable<Stored[]>(
       `games?select=id,start_utc,away_code,home_code,away_score,home_score,state,status_detail,source` +
       `&id=in.(${incomingIds.map(encodeURIComponent).join(",")})&limit=3000`,
+      true,
     ) : [];
     const storedById = new Map(existingById.map(g => [g.id, g]));
     let updated=0, checked=0;
