@@ -2,7 +2,8 @@
 // Data from the publicly reachable NBA MediaOps S3 endpoints.
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
-import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, malformedNbaGamePacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isValidNbaScoreboard, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
+import { fetchOfficialNbaJson, isTimelyNbaScoreboard } from "../_shared/nba-worker-feeds.ts";
+import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, malformedNbaGamePacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -29,9 +30,9 @@ type Row = { id: string; start_utc: string; away_code: string; away_name: string
  state: string; status_detail: string; source: string; updated_at: string };
 
 async function getJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, { headers: { accept:"application/json" }, signal: AbortSignal.timeout(11000) });
-  if (!response.ok) throw new Error(`NBA data feed HTTP ${response.status}`);
-  return await response.json() as T;
+  // Share the unattended worker's uncached, redirect-safe, complete-response
+  // boundary so browser-triggered score refresh cannot certify a stale CDN body.
+  return await fetchOfficialNbaJson(url) as T;
 }
 const state = (g: NbaGame) => {
   const text = (g.gameStatusText || "").toLowerCase();
@@ -135,7 +136,9 @@ Deno.serve(async (req) => {
         return payload;
       }),
       getJson<Scoreboard>(LIVE_URL).then(payload => {
-        if (!isValidNbaScoreboard(payload)) throw new Error("Invalid NBA scoreboard payload");
+        if (!isTimelyNbaScoreboard(payload, new Date())) {
+          throw new Error("Invalid or stale NBA scoreboard payload");
+        }
         return payload;
       }),
     ]);
