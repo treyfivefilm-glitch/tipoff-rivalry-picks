@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasActiveSignupSession, hasUsablePasswordSession, hasActivePasswordSession, type AuthFeedback } from "@/lib/auth-feedback";
-import { safeAuthRedirect } from "@/lib/auth-redirect";
+import { passwordResetCallbackUrl, safeAuthRedirect } from "@/lib/auth-redirect";
 import { CONFIRMATION_RESEND_NOTICE, resendSignupConfirmation } from "@/lib/signup-confirmation";
 import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, runWithoutGuestAccountSwitch } from "@/lib/guest-session-guard";
 
@@ -129,7 +129,7 @@ function AuthPage() {
       // Keep guest rooms and wagers intact; upgrade from Profile instead.
       await runWithoutGuestAccountSwitch(supabase.auth, async () => {
         const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo: window.location.origin + "/reset-password",
+          redirectTo: passwordResetCallbackUrl(window.location.origin, redirect),
         });
         if (error) throw error;
       });

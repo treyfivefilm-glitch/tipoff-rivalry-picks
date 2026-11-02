@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { safeAuthRedirect } from "./auth-redirect";
+import { passwordResetCallbackUrl, safeAuthRedirect } from "./auth-redirect";
 
 describe("safe post-auth redirect for invitations and recovery", () => {
   it("keeps a friend's invitation after email sign-in or confirmation", () => {
@@ -30,5 +30,28 @@ describe("safe post-auth redirect for invitations and recovery", () => {
     ]) {
       expect(safeAuthRedirect(candidate)).toBeUndefined();
     }
+  });
+});
+
+describe("password reset return destination", () => {
+  it("preserves an invitation through the recovery email callback", () => {
+    const callback = passwordResetCallbackUrl("https://tipoff.example", "/join/AB12EF?from=invite#join");
+    const parsed = new URL(callback);
+    expect(parsed.origin).toBe("https://tipoff.example");
+    expect(parsed.pathname).toBe("/reset-password");
+    expect(safeAuthRedirect(parsed.searchParams.get("redirect"))).toBe("/join/AB12EF?from=invite#join");
+  });
+
+  it("does not carry external or encoded-host redirects into the reset link", () => {
+    for (const unsafe of ["https://evil.example", "//evil.example", "/%5cevil.example", null]) {
+      const callback = new URL(passwordResetCallbackUrl("https://tipoff.example", unsafe));
+      expect(callback.searchParams.has("redirect")).toBe(false);
+      expect(callback.pathname).toBe("/reset-password");
+    }
+  });
+
+  it("defaults to rooms when no return path was provided", () => {
+    const callback = new URL(passwordResetCallbackUrl("https://tipoff.example", undefined));
+    expect(safeAuthRedirect(callback.searchParams.get("redirect")) ?? "/rooms").toBe("/rooms");
   });
 });

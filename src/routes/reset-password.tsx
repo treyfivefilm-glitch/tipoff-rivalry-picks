@@ -3,9 +3,11 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { safeAuthRedirect } from "@/lib/auth-redirect";
 import { passwordResetAccess, passwordResetAccountMatches, validateResetPasswords, type PasswordResetAccess } from "@/lib/password-reset-guard";
 
 export const Route = createFileRoute("/reset-password")({
+  validateSearch: (s: Record<string, unknown>) => ({ redirect: safeAuthRedirect(s["redirect"]) }),
   head: () => ({ meta: [{ title: "Reset password · NBA Pick Battle" }, { name: "description", content: "Set a new password." }, { property: "og:title", content: "Reset password · NBA Pick Battle" }, { property: "og:description", content: "Set a new password for NBA Pick Battle." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
   component: ResetPasswordPage,
 });
@@ -18,6 +20,7 @@ function ResetPasswordPage() {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState("");
   const nav = useNavigate();
+  const { redirect } = Route.useSearch();
 
   useEffect(() => {
     let active = true;
@@ -68,7 +71,7 @@ function ResetPasswordPage() {
       }
       setPassword(""); setConfirmation("");
       toast.success("Password updated.");
-      void nav({ to: "/rooms" });
+      void nav({ href: redirect ?? "/rooms" });
     } catch {
       setFeedback("Could not update your password. Check your connection and try again.");
     } finally { setBusy(false); }

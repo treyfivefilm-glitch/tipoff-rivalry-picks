@@ -18,3 +18,13 @@ export function safeAuthRedirect(raw: unknown): string | undefined {
     return undefined;
   }
 }
+
+/** Keep a pending room invitation through the email password-reset round trip.
+ * The callback stays on the same origin and accepts only a validated local destination.
+ */
+export function passwordResetCallbackUrl(origin: string, rawRedirect: unknown): string {
+  const callback = new URL("/reset-password", origin);
+  const redirect = safeAuthRedirect(rawRedirect);
+  if (redirect) callback.searchParams.set("redirect", redirect);
+  return callback.toString();
+}
