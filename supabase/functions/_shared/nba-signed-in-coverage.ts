@@ -44,6 +44,35 @@ export function hasOmittedOfficialNbaGame(
   );
 }
 
+/** The season schedule and today's scoreboard can temporarily disagree about
+ * a rescheduled game's Pacific tipoff day. A signed-in refresh may request
+ * both days in one batch: writing the same official ID on each would move
+ * the game twice and certify two contradictory sync_state rows. Fail both
+ * affected days closed, including when only one is requested.
+ */
+export function conflictingOfficialNbaFeedDays(
+  seasonGames: readonly unknown[], liveGames: readonly unknown[],
+): Set<string> {
+  const firstDayById = new Map<string, string>();
+  const conflicts = new Set<string>();
+  for (const value of [...seasonGames, ...liveGames]) {
+    if (!isUsableNbaGame(value)) continue;
+    const game = value as {
+      gameId: string; gameDateTimeUTC?: string; gameTimeUTC?: string;
+    };
+    const day = safeNbaPacificDay(game.gameDateTimeUTC ?? game.gameTimeUTC);
+    if (!day) continue;
+    const previous = firstDayById.get(game.gameId);
+    if (previous && previous !== day) {
+      conflicts.add(previous);
+      conflicts.add(day);
+    } else if (!previous) {
+      firstDayById.set(game.gameId, day);
+    }
+  }
+  return conflicts;
+}
+
 /** A malformed live game without a trustworthy tipoff cannot be assigned to
  * a Pacific day. If its official ID or team matchup matches a verified game
  * on this day, the scheduled fallback must NOT certify fresh live scores.
