@@ -411,6 +411,53 @@ describe("unattended NBA worker pure preparation", () => {
     }
   });
 
+  it("does not certify in-play scores when the live scoreboard omits the game", () => {
+    // A valid season schedule can retain yesterday's Q4 points after the
+    // live scoreboard drops the game. That is not a fresh score observation.
+    const scheduleOnly = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game(2, 80, 75)]), live([]), [],
+    );
+    expect(scheduleOnly.rows).toMatchObject([
+      { id: "nba:0022600012", state: "live", away_score: 80, home_score: 75 },
+    ]);
+    expect(scheduleOnly.cacheable).toBe(false);
+
+    // Even a scheduled-only season feed may preserve an older live database
+    // result. Without a new live observation, do not renew its sync_state.
+    const stored = {
+      id: "nba:0022600012", source: "nba",
+      start_utc: "2026-11-18T03:00:00Z",
+      away_code: "LAL", home_code: "GSW",
+      away_score: 90, home_score: 85,
+      state: "live", status_detail: "Q4",
+    };
+    const preserved = prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([]), [stored],
+    );
+    expect(preserved.rows).toMatchObject([
+      { state: "live", away_score: 90, home_score: 85 },
+    ]);
+    expect(preserved.cacheable).toBe(false);
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), null, [stored],
+    ).cacheable).toBe(false);
+  });
+
+  it("allows verified live observations and independently final games", () => {
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game()]), live([game(2, 92, 86)]), [],
+    )).toMatchObject({
+      cacheable: true, rows: [{ state: "live", away_score: 92, home_score: 86 }],
+    });
+    // A valid final in the official season feed need not remain on today's
+    // live scoreboard after the game has ended.
+    expect(prepareUnattendedNbaDay(
+      "2026-11-17", schedule([game(3, 109, 107)]), live([]), [],
+    )).toMatchObject({
+      cacheable: true, rows: [{ state: "final", away_score: 109, home_score: 107 }],
+    });
+  });
+
   it("does not rewind an in-progress schedule game to scheduled from a stale scoreboard", () => {
     const result = prepareUnattendedNbaDay(
       "2026-11-17", schedule([game(2, 80, 75)]), live([game(1)]), [],
