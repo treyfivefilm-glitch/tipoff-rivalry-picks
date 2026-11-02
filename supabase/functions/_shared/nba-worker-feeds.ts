@@ -8,7 +8,12 @@ const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE = BASE + "/staticData/scheduleLeagueV2.json";
 const LIVE = BASE + "/liveData/scoreboard/todaysScoreboard_00.json";
 
-async function fetchJson(url: string, request: typeof fetch, timeoutMs: number): Promise<unknown> {
+/** Shared fail-closed HTTP boundary for the signed-in sync and unattended worker.
+ * A successful status is not proof that a CDN returned a complete, fresh feed.
+ */
+export async function fetchOfficialNbaJson(
+  url: string, request: typeof fetch = fetch, timeoutMs = 11000,
+): Promise<unknown> {
   const response = await request(url, {
     signal: AbortSignal.timeout(timeoutMs),
     // Never follow an unexpected CDN redirect to another feed host. A valid
@@ -51,8 +56,8 @@ export async function loadUnattendedNbaFeeds(
   now: Date = new Date(),
 ): Promise<{ schedule: unknown | null; live: unknown | null; errors: string[] }> {
   const [scheduleResult, liveResult] = await Promise.allSettled([
-    fetchJson(SCHEDULE, request, timeoutMs),
-    fetchJson(LIVE, request, timeoutMs),
+    fetchOfficialNbaJson(SCHEDULE, request, timeoutMs),
+    fetchOfficialNbaJson(LIVE, request, timeoutMs),
   ]);
   const schedule = scheduleResult.status === "fulfilled" &&
     verifiedUnattendedNbaSchedule(scheduleResult.value) ? scheduleResult.value : null;
