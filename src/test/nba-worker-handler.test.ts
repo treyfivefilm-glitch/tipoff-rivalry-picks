@@ -32,10 +32,20 @@ type Options = {
   feedsDown?: boolean; staleLive?: boolean; historyDown?: boolean; historyMalformed?: boolean;
   historyMissingCount?: boolean; historyTimeout?: boolean; commitDown?: string;
   releaseDown?: string; releaseDenied?: string; skipLease?: string; skipAllLeases?: boolean;
+  errorLeakAt?: "lease" | "history" | "commit";
 };
 function fixture(options: Options = {}) {
   const calls: Array<{ operation: string; day: string | undefined; rows?: number | undefined }> = [];
+  const errorLogs: string[] = [];
   const request = mockFetch(async (url, init) => {
+    const failurePath = options.errorLeakAt === "lease" ? "/rpc/try_claim_nba_sync" :
+      options.errorLeakAt === "history" ? "/rest/v1/games?" :
+      options.errorLeakAt === "commit" ? "/rpc/commit_nba_sync_day" : null;
+    if (failurePath && url.includes(failurePath)) {
+      // Transport errors can include credentials; the worker must never
+      // write the raw exception message to its server logs.
+      throw new Error("upstream failure " + secret + " " + env.SUPABASE_SERVICE_ROLE_KEY);
+    }
     if (url.includes("scheduleLeagueV2")) return options.feedsDown ? reply({}, 503) : reply(schedule);
     if (url.includes("todaysScoreboard")) return options.feedsDown ? reply({}, 503) :
       reply(options.staleLive ? { scoreboard: { ...live.scoreboard, gameDate: "2026-11-01" } } : live);
@@ -75,13 +85,14 @@ function fixture(options: Options = {}) {
     ...(options.historyTimeout ? { backendTimeoutMs: 40 } : {}),
     now: () => new Date("2026-11-17T12:00:00Z"),
     newToken: () => "test-only-lease-token",
-    log: { error: () => {}, warn: () => {}, info: () => {} },
+    log: { error: (...args) => { errorLogs.push(args.map(String).join(" ")); },
+      warn: () => {}, info: () => {} },
   });
   const post = (authorization = "Bearer " + secret) =>
     handler(new Request("https://worker.invalid/", {
       method: "POST", headers: { authorization },
     }));
-  return { calls, handler, post };
+  return { calls, handler, post, errorLogs };
 }
 
 describe("complete unattended NBA worker request flow (mock HTTP, no secrets or DB)", () => {
@@ -168,6 +179,22 @@ describe("complete unattended NBA worker request flow (mock HTTP, no secrets or 
     expect(await response.json()).toMatchObject({ checked: 0, updated: 0, failed: 3 });
     expect(calls.some(call => call.operation === "commit_nba_sync_day")).toBe(false);
     expect(calls.filter(call => call.operation === "release_nba_sync")).toHaveLength(3);
+  });
+
+  it("never writes backend or cron credentials to logs on lease, history, or commit errors", async () => {
+    for (const errorLeakAt of ["lease", "history", "commit"] as const) {
+      const { post, errorLogs } = fixture({ errorLeakAt });
+      const response = await post();
+      expect(response.status).toBe(503);
+      expect(errorLogs.length).toBeGreaterThan(0);
+      const logged = errorLogs.join("\n");
+      expect(logged).not.toContain(secret);
+      expect(logged).not.toContain(env.SUPABASE_SERVICE_ROLE_KEY);
+      expect(logged).toContain("[nba-unattended]");
+      const body = JSON.stringify(await response.json());
+      expect(body).not.toContain(secret);
+      expect(body).not.toContain(env.SUPABASE_SERVICE_ROLE_KEY);
+    }
   });
 
   it("reports a shared backend-history outage for every claimed day and releases leases", async () => {
