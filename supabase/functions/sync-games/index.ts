@@ -3,7 +3,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
 import { fetchOfficialNbaJson, isTimelyNbaScoreboard } from "../_shared/nba-worker-feeds.ts";
-import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, malformedNbaGamePacificDay, hasVerifiedNbaSeasonGame, isUsableNbaGame, isValidNbaSchedule, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
+import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, malformedNbaGamePacificDay, hasVerifiedNbaSeasonGame, hasUnsafeNbaStoredScoreTransition, isUsableNbaGame, isValidNbaSchedule, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
 const SCHEDULE_URL = `${BASE}/staticData/scheduleLeagueV2.json`;
@@ -235,6 +235,12 @@ Deno.serve(async (req) => {
           continue;
         }
         const match = sameId ?? byMatch.get(`${day}:${away}:${home}`);
+        // Reject contradictory live/final provider updates before writing
+        // either the game or its sync_state freshness timestamp.
+        if (hasUnsafeNbaStoredScoreTransition(match, game)) {
+          identityConflict = true;
+          continue;
+        }
         const row = rowFrom(game,match);
         if (row) unique.set(row.id,row);
       }
