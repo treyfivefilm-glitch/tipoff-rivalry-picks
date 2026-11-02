@@ -76,6 +76,18 @@ export function signupModeFromSearch(raw: unknown): "up" | undefined {
 /** A successful HTTP response is not proof of a usable account. Supabase may
  * require email confirmation before it returns an authenticated session.
  */
+/** A password login must return the same identified player in its user and
+ * session payload. Never navigate to protected rooms on a successful HTTP
+ * response that did not actually establish an authenticated identity.
+ */
+export function hasUsablePasswordSession(data: {
+  user?: { id?: string } | null;
+  session?: { user?: { id?: string } | null } | null;
+}): boolean {
+  const id = data.user?.id;
+  return typeof id === "string" && id.length > 0 && data.session?.user?.id === id;
+}
+
 export function signupResponseStatus(data: {
   user?: unknown | null;
   session?: { user?: unknown | null } | null;

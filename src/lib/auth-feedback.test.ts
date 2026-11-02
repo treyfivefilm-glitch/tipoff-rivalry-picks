@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus } from "./auth-feedback";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasUsablePasswordSession } from "./auth-feedback";
 
 describe("TIPOFF email login recovery guidance", () => {
   it("explains old-backend credentials without revealing account existence", () => {
@@ -68,5 +68,23 @@ describe("TIPOFF registration entry and account state", () => {
     expect(signupResponseStatus({ user: null, session: null })).toBe("unconfirmed");
     expect(signupResponseStatus({ session: { user: null } })).toBe("unconfirmed");
     expect(signupResponseStatus({})).toBe("unconfirmed");
+  });
+});
+
+
+describe("TIPOFF password sign-in session integrity", () => {
+  it("accepts a matching authenticated user and session", () => {
+    expect(hasUsablePasswordSession({ user: { id: "player-a" }, session: { user: { id: "player-a" } } })).toBe(true);
+  });
+
+  it("does not navigate on an empty or missing session", () => {
+    expect(hasUsablePasswordSession({ user: { id: "player-a" }, session: null })).toBe(false);
+    expect(hasUsablePasswordSession({ user: null, session: { user: { id: "player-a" } } })).toBe(false);
+    expect(hasUsablePasswordSession({ user: { id: "" }, session: { user: { id: "" } } })).toBe(false);
+    expect(hasUsablePasswordSession({})).toBe(false);
+  });
+
+  it("rejects a mismatched session player to prevent an account switch", () => {
+    expect(hasUsablePasswordSession({ user: { id: "player-a" }, session: { user: { id: "player-b" } } })).toBe(false);
   });
 });

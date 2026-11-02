@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, type AuthFeedback } from "@/lib/auth-feedback";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasUsablePasswordSession, type AuthFeedback } from "@/lib/auth-feedback";
 import { safeAuthRedirect } from "@/lib/auth-redirect";
 import { CONFIRMATION_RESEND_NOTICE, resendSignupConfirmation } from "@/lib/signup-confirmation";
 import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, runWithoutGuestAccountSwitch } from "@/lib/guest-session-guard";
@@ -50,8 +50,16 @@ function AuthPage() {
         return;
       }
       if (mode === "in") {
-        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pw });
+        const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pw });
         if (error) throw error;
+        if (!hasUsablePasswordSession(data)) {
+          setFeedback({
+            message: "Sign-in did not establish an account session.",
+            nextStep: "Please retry. If this continues, TIPOFF's authentication backend needs attention; your account has not been confirmed as signed in.",
+            canReset: false,
+          });
+          return;
+        }
         done();
       } else {
         const { data, error } = await supabase.auth.signUp({ email: email.trim(), password: pw, options: { emailRedirectTo: window.location.origin + (redirect ?? "/rooms") } });
