@@ -4,6 +4,7 @@
  * A legitimate cross-Pacific-day reschedule requires explicit reconciliation.
  */
 import { safeNbaPacificDay } from "./sync-days.ts";
+import { isUsableNbaGame, malformedNbaGamePacificDay, normalizeNbaTeamCode } from "./nba-feed-validation.ts";
 
 export type StoredOfficialNbaIdentity = {
   id: string;
