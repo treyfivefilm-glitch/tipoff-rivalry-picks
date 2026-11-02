@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { loadUnattendedNbaFeeds } from "../../supabase/functions/_shared/nba-worker-feeds";
+import { fetchOfficialNbaJson, loadUnattendedNbaFeeds } from "../../supabase/functions/_shared/nba-worker-feeds";
 import { unattendedNbaHttpStatus } from "../../supabase/functions/_shared/nba-unattended";
 
 const game = {
@@ -18,6 +18,34 @@ const mockFetch = (handler: (url: string, init?: RequestInit) => Promise<Respons
   handler as unknown as typeof fetch;
 
 describe("unattended NBA feed HTTP boundary (no network, credentials or database)", () => {
+  it("shared signed-in feed boundary rejects stale-cache semantics, redirects and partial responses", async () => {
+    const seen: RequestInit[] = [];
+    const full = mockFetch(async (_url, init) => {
+      seen.push(init ?? {});
+      return reply(schedule);
+    });
+    expect(await fetchOfficialNbaJson("https://example.invalid/feed", full, 100)).toEqual(schedule);
+    expect(seen[0]?.cache).toBe("no-store");
+    expect(seen[0]?.redirect).toBe("error");
+    expect((seen[0]?.headers as Record<string, string>)["cache-control"]).toBe("no-cache");
+    expect(seen[0]?.signal).toBeInstanceOf(AbortSignal);
+
+    const ranged = mockFetch(async () => new Response(JSON.stringify(schedule), {
+      status: 200, headers: { "content-range": "bytes 0-99/200" },
+    }));
+    await expect(fetchOfficialNbaJson("https://example.invalid/feed", ranged, 100))
+      .rejects.toThrow("NBA feed unavailable");
+    const partial = mockFetch(async () => reply(schedule, 206));
+    await expect(fetchOfficialNbaJson("https://example.invalid/feed", partial, 100))
+      .rejects.toThrow("NBA feed unavailable");
+    const redirected = mockFetch(async (_url, init) => {
+      if (init?.redirect !== "error") return reply(schedule);
+      throw new TypeError("redirect blocked");
+    });
+    await expect(fetchOfficialNbaJson("https://example.invalid/feed", redirected, 100))
+      .rejects.toThrow("redirect blocked");
+  });
+
   it("accepts both verified feeds with independent abort signals", async () => {
     const calls: Array<{ url: string; signal: AbortSignal | null | undefined; accept: string | undefined; redirect: RequestRedirect | undefined; cache: RequestCache | undefined; cacheControl: string | undefined }> = [];
     const fetcher = mockFetch(async (url, init) => {
