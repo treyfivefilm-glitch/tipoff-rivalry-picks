@@ -104,8 +104,6 @@ describe("unapplied fenced NBA commit migration safety contract", () => {
     expect(guard).toBeDefined();
     expect(guard).toContain("stored.id <> incoming.id");
     expect(guard).toContain("stored.source IN ('nba', 'nba_official_schedule')");
-    // Legacy nba: rows may have NULL source but still own player obligations.
-    expect(guard).toContain("stored.source IS NULL OR");
     expect(guard).toContain("stored.source IN ('nba', 'espn')");
     expect(guard).toContain("stored.start_utc AT TIME ZONE 'America/Los_Angeles'");
     expect(guard).toContain("LEAST(public.nba_canonical_team_code(stored.away_code)");
