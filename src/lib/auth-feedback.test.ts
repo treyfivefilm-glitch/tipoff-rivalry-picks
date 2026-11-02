@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeAuthFailure, RESET_REQUEST_NOTICE, signupModeFromSearch, signupResponseStatus } from "./auth-feedback";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus } from "./auth-feedback";
 
 describe("TIPOFF email login recovery guidance", () => {
   it("explains old-backend credentials without revealing account existence", () => {
@@ -20,6 +20,22 @@ describe("TIPOFF email login recovery guidance", () => {
   });
   it("provides an administrator path for disabled signup", () => {
     expect(describeAuthFailure({ code: "signup_disabled" }, "sign-up").nextStep).toContain("administrator");
+  });
+  it("explains restricted Supabase email delivery as an owner configuration issue", () => {
+    const result = describeAuthFailure({ code: "email_address_not_authorized" }, "sign-up");
+    expect(result.message).toContain("cannot send");
+    expect(result.nextStep).toContain("Supabase Auth");
+    expect(result.canReset).toBe(false);
+  });
+  it("distinguishes rejected email addresses from invalid credentials", () => {
+    const result = describeAuthFailure({ code: "email_address_invalid" }, "sign-up");
+    expect(result.message).toContain("rejected");
+    expect(result.canReset).toBe(false);
+  });
+  it("does not promise a newly created account or delivered confirmation email", () => {
+    expect(SIGNUP_PENDING_NOTICE).toContain("If this address is eligible");
+    expect(SIGNUP_PENDING_NOTICE).toContain("may arrive");
+    expect(SIGNUP_PENDING_NOTICE).not.toContain("Registration request accepted");
   });
   it("never echoes raw backend errors to the user", () => {
     const result = describeAuthFailure(new Error("internal private auth server details"), "sign-in");
