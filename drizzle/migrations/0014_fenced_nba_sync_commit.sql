@@ -136,8 +136,6 @@ BEGIN
   -- matchup already stored under a DIFFERENT ID. Preserve any picks/wagers
   -- attached to that older ID: never create a parallel game or mark the day
   -- fresh. Reversed home/away teams and historical aliases are equivalent.
-  -- A historical nba: game may have a NULL source. Preserve its identity
-  -- and any attached picks/wagers rather than treating NULL as unrelated.
   -- Ignore unrelated sports; their shared games table is not an NBA identity.
   IF EXISTS (
     SELECT 1
@@ -149,8 +147,7 @@ BEGIN
      AND (stored.start_utc AT TIME ZONE 'America/Los_Angeles')::date = p_day
      AND (
        (stored.id LIKE 'nba:%' AND
-        (stored.source IS NULL OR
-         stored.source IN ('nba', 'nba_official_schedule')))
+        stored.source IN ('nba', 'nba_official_schedule'))
        OR (stored.id LIKE 'espn:%' AND
            stored.source IN ('nba', 'espn'))
      )
