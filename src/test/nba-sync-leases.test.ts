@@ -167,6 +167,8 @@ describe.skipIf(!url)("NBA sync lease RPC isolation (staging only)", () => {
     const historical = [
       { id: "nba:0022600099", source: "nba_official_schedule", away: "LAL", home: "GS" },
       { id: "espn:401234567", source: "espn", away: "GSW", home: "LAL" },
+      // Older seeded NBA rows can have no source but still own picks/wagers.
+      { id: "nba:20261117:LAL:GSW", source: null, away: "LAL", home: "GSW" },
     ];
     for (const stored of historical) {
       await db`INSERT INTO public.games (
