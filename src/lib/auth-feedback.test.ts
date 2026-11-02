@@ -11,6 +11,7 @@ describe("TIPOFF email login recovery guidance", () => {
   it("does not confuse unconfirmed email with a password reset", () => {
     const result = describeAuthFailure({ code: "email_not_confirmed" }, "sign-in");
     expect(result.canReset).toBe(false);
+    expect(result.canResend).toBe(true);
     expect(result.nextStep).toContain("does not confirm");
   });
   it("treats email and HTTP rate limits as temporary failures", () => {
