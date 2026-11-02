@@ -19,6 +19,15 @@ export function safeAuthRedirect(raw: unknown): string | undefined {
   }
 }
 
+/** Preserve a safe invitation/room destination when a password-reset link is
+ * expired or invalid and the player returns to sign-in. Never construct a
+ * protocol-relative or cross-origin auth link from untrusted query strings.
+ */
+export function authSignInReturnUrl(rawRedirect: unknown): string {
+  const redirect = safeAuthRedirect(rawRedirect);
+  return redirect ? "/auth?redirect=" + encodeURIComponent(redirect) : "/auth";
+}
+
 /** Keep a pending room invitation through the email password-reset round trip.
  * The callback stays on the same origin and accepts only a validated local destination.
  */
