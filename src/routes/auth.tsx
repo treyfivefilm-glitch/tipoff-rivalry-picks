@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { describeAuthFailure, RESET_REQUEST_NOTICE, signupModeFromSearch, signupResponseStatus, type AuthFeedback } from "@/lib/auth-feedback";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, type AuthFeedback } from "@/lib/auth-feedback";
 import { safeAuthRedirect } from "@/lib/auth-redirect";
 import { CONFIRMATION_RESEND_NOTICE, resendSignupConfirmation } from "@/lib/signup-confirmation";
 import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, runWithoutGuestAccountSwitch } from "@/lib/guest-session-guard";
@@ -60,7 +60,7 @@ function AuthPage() {
         if (outcome === "signed-in") done();
         else if (outcome === "awaiting-confirmation") {
           setAwaitingConfirmation(true);
-          setNotice("Registration request accepted. If confirmation is required, check your inbox and spam folder. You cannot sign in until your email is confirmed. Email delivery has not yet been verified for this app.");
+          setNotice(SIGNUP_PENDING_NOTICE);
         }
         else setFeedback({ message: "Account creation could not be confirmed.", nextStep: "No signed-in account or pending registration was returned. Try again later or report the problem to TIPOFF support.", canReset: false });
       }
