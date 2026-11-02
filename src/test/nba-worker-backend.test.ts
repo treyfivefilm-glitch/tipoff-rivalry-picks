@@ -146,6 +146,30 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     expect(await backend.readExisting(["2028-02-29"])).toEqual([validLeap]);
   });
 
+  it("rejects impossible stored UTC offsets that Date.parse otherwise normalizes", async () => {
+    // An offset of +23:59 is parseable in JavaScript but not a real
+    // timezone. It can move a saved tipoff to the wrong Pacific day.
+    for (const timestamp of [
+      "2026-11-18T03:00:00+23:59",
+      "2026-11-18T03:00:00+15:00",
+      "2026-11-18T03:00:00-14:01",
+    ]) {
+      expect(Number.isFinite(Date.parse(timestamp))).toBe(true);
+      const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+        reply([{ ...validStoredGame, start_utc: timestamp }])));
+      await expect(backend.readExisting(["2026-11-17"]))
+        .rejects.toThrow("malformed games");
+    }
+    // UTC+14 and the Chatham Islands' UTC+13:45 are legitimate offsets.
+    const validRows = [
+      { ...validStoredGame, start_utc: "2026-11-18T03:00:00+14:00" },
+      { ...validStoredGame, id: "nba:0022600013",
+        start_utc: "2026-11-18T03:00:00+13:45" },
+    ];
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(validRows)));
+    expect(await backend.readExisting(["2026-11-17"])).toEqual(validRows);
+  });
+
   it("rejects midnight-rollover clock values in stored NBA history", async () => {
     // Date.parse silently accepts 24:00 as the next day's midnight.
     // Do not let a malformed stored tipoff shift the day being reconciled.
