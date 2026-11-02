@@ -3,12 +3,15 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { describeAuthFailure, RESET_REQUEST_NOTICE, type AuthFeedback } from "@/lib/auth-feedback";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, signupModeFromSearch, signupResponseStatus, type AuthFeedback } from "@/lib/auth-feedback";
 import { safeAuthRedirect } from "@/lib/auth-redirect";
 import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, runWithoutGuestAccountSwitch } from "@/lib/guest-session-guard";
 
 export const Route = createFileRoute("/auth")({
-  validateSearch: (s: Record<string, unknown>) => ({ redirect: safeAuthRedirect(s["redirect"]) }),
+  validateSearch: (s: Record<string, unknown>) => {
+    const mode = signupModeFromSearch(s["mode"]);
+    return { redirect: safeAuthRedirect(s["redirect"]), ...(mode ? { mode } : {}) };
+  },
   head: () => ({ meta: [{ title: "Sign in · NBA Pick Battle" }, { name: "description", content: "Sign in to your private NBA Pick Battle room." }, { property: "og:title", content: "Sign in · NBA Pick Battle" }, { property: "og:description", content: "Sign in to your private pick battle." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
   component: AuthPage,
 });
@@ -20,9 +23,9 @@ const guestEnabled = import.meta.env["VITE_ENABLE_GUEST_LOGIN"] === "true";
 const input = "h-12 w-full rounded-xl border border-input bg-background/60 px-4 outline-none focus:border-primary";
 
 function AuthPage() {
-  const { redirect } = Route.useSearch();
+  const { redirect, mode: initialMode } = Route.useSearch();
   const nav = useNavigate();
-  const [mode, setMode] = useState<"in" | "up">("in");
+  const [mode, setMode] = useState<"in" | "up">(initialMode ?? "in");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
@@ -51,8 +54,10 @@ function AuthPage() {
       } else {
         const { data, error } = await supabase.auth.signUp({ email: email.trim(), password: pw, options: { emailRedirectTo: window.location.origin + (redirect ?? "/rooms") } });
         if (error) throw error;
-        if (data.session) done();
-        else setNotice("If your account requires email confirmation, check your inbox and spam folder. Email delivery has not been verified for this preview.");
+        const outcome = signupResponseStatus(data);
+        if (outcome === "signed-in") done();
+        else if (outcome === "awaiting-confirmation") setNotice("Registration request accepted. If confirmation is required, check your inbox and spam folder. You cannot sign in until your email is confirmed. Email delivery has not yet been verified for this app.");
+        else setFeedback({ message: "Account creation could not be confirmed.", nextStep: "No signed-in account or pending registration was returned. Try again later or report the problem to TIPOFF support.", canReset: false });
       }
     } catch (err) {
       setFeedback(describeAuthFailure(err, mode === "in" ? "sign-in" : "sign-up"));
@@ -131,7 +136,7 @@ function AuthPage() {
       <p className="text-muted-foreground">{mode === "in" ? "Welcome back." : "Create your account."}</p>
       <form onSubmit={submit} className="space-y-3">
         <input className={input} type="email" autoComplete="email" aria-label="Email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <input className={input} type="password" autoComplete={mode === "in" ? "current-password" : "new-password"} aria-label="Password" required minLength={6} placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} />
+        <input className={input} type="password" autoComplete={mode === "in" ? "current-password" : "new-password"} aria-label="Password" required minLength={mode === "up" ? 8 : 1} placeholder={mode === "up" ? "Password (8+ characters)" : "Password"} value={pw} onChange={(e) => setPw(e.target.value)} />
         <Button type="submit" variant="gold" size="xl" className="w-full" disabled={busy}>{busy ? "Please wait…" : mode === "in" ? "Sign in" : "Sign up"}</Button>
       </form>
       {feedback && (
