@@ -277,4 +277,49 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
     expect(await feed(null)).toEqual({ schedule, live, errors: [] });
   });
 
+  it("rejects old S3 Last-Modified timestamps for in-progress games despite fresh CDN headers", async () => {
+    const observed = new Date("2026-11-18T04:00:00Z");
+    const active = {
+      scoreboard: {
+        ...live.scoreboard,
+        games: [{ ...game, gameStatus: 2, gameStatusText: "Q3" }],
+      },
+    };
+    const feed = async (modified: string | null, inProgress = true) => {
+      const fetcher = mockFetch(async url => {
+        const isSchedule = url.includes("scheduleLeague");
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+          date: observed.toUTCString(),
+          age: "0",
+        };
+        // An old season object is expected; only live in-progress scores
+        // require a recently modified scoreboard object.
+        if (isSchedule) headers["last-modified"] =
+          new Date(observed.getTime() - 24 * 60 * 60000).toUTCString();
+        else if (modified !== null) headers["last-modified"] = modified;
+        return new Response(JSON.stringify(isSchedule ? schedule : inProgress ? active : live), {
+          status: 200, headers,
+        });
+      });
+      return loadUnattendedNbaFeeds(fetcher, 100, observed);
+    };
+    for (const modified of [
+      new Date(observed.getTime() - 16 * 60000).toUTCString(),
+      new Date(observed.getTime() + 16 * 60000).toUTCString(),
+      "invalid-last-modified",
+    ]) {
+      expect(await feed(modified)).toEqual({
+        schedule, live: null, errors: ["Live scoreboard unavailable"],
+      });
+    }
+    const acceptable = new Date(observed.getTime() - 15 * 60000).toUTCString();
+    expect(await feed(acceptable)).toEqual({ schedule, live: active, errors: [] });
+    expect(await feed(null)).toEqual({ schedule, live: active, errors: [] });
+    // A verified final remains valid even when the object is older: it is
+    // not claiming to be a new in-play score observation.
+    const old = new Date(observed.getTime() - 24 * 60 * 60000).toUTCString();
+    expect(await feed(old, false)).toEqual({ schedule, live, errors: [] });
+  });
+
 });
