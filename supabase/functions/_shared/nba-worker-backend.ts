@@ -9,7 +9,7 @@ export const NBA_BACKEND_REQUEST_TIMEOUT_MS = 10000;
  * into another day. Reject both before stored history certifies freshness.
  */
 function hasRealIsoTimestamp(value: string): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
   if (!match) return false;
   const year = Number(match[1]);
   const month = Number(match[2]);
@@ -17,6 +17,13 @@ function hasRealIsoTimestamp(value: string): boolean {
   const hour = Number(match[4]);
   const minute = Number(match[5]);
   const second = Number(match[6]);
+  // Date.parse accepts impossible UTC offsets such as +23:59, which can
+  // silently relocate stored NBA games across Pacific days. Bound offsets
+  // to the real-world maximum of UTC+14:00 (and symmetrically UTC-14:00).
+  const offsetHours = match[7] ? Number(match[8]) : 0;
+  const offsetMinutes = match[7] ? Number(match[9]) : 0;
+  if (offsetHours > 14 || offsetMinutes > 59 ||
+      (offsetHours === 14 && offsetMinutes !== 0)) return false;
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   return year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1]! &&
