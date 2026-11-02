@@ -44,7 +44,7 @@ export async function fetchOfficialNbaJson(
     const ageHeader = response.headers.get("age");
     if (ageHeader !== null) {
       const age = Number(ageHeader);
-      if (!/^\\d+$/.test(ageHeader.trim()) || !Number.isSafeInteger(age) || age > 900) {
+      if (!/^\d+$/.test(ageHeader.trim()) || !Number.isSafeInteger(age) || age > 900) {
         throw new Error("NBA live scoreboard is stale");
       }
     }
