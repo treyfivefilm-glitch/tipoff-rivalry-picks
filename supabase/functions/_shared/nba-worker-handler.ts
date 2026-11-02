@@ -70,10 +70,11 @@ export function createUnattendedNbaHandler(deps: NbaWorkerDependencies) {
           });
           if (ok) claimed.push(day);
           else skipped++;
-        } catch (error) {
+        } catch {
           failed++;
           errors.push(day + ": lease acquisition failed");
-          log.error("[nba-unattended] lease", error instanceof Error ? error.message : "unknown");
+          // Never log untrusted transport errors: they can echo backend keys.
+          log.error("[nba-unattended] lease acquisition failed for", day);
         }
       }
       if (claimed.length) {
@@ -101,20 +102,20 @@ export function createUnattendedNbaHandler(deps: NbaWorkerDependencies) {
               });
               checked++;
               updated += count;
-            } catch (error) {
+            } catch {
               failed++;
               errors.push(day + ": fenced commit failed");
-              log.error("[nba-unattended] commit", error instanceof Error ? error.message : "unknown");
+              log.error("[nba-unattended] fenced commit failed for", day);
             }
           }
         }
       }
-    } catch (error) {
+    } catch {
       // A failed shared history read or unexpected provider error affects
       // every claimed day, not just one. Do not report partial success.
       failed += Math.max(1, claimed.length);
       errors.push("NBA refresh failed");
-      log.error("[nba-unattended] refresh", error instanceof Error ? error.message : "unknown");
+      log.error("[nba-unattended] refresh failed");
     } finally {
       for (const day of claimed) {
         try {
