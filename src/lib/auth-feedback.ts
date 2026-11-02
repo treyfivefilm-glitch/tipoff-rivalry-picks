@@ -1,5 +1,5 @@
 export type AuthOperation = "sign-in" | "sign-up" | "reset";
-export type AuthFeedback = { message: string; nextStep: string; canReset: boolean };
+export type AuthFeedback = { message: string; nextStep: string; canReset: boolean; canResend?: boolean };
 
 function errorField(error: unknown, field: "code" | "status"): unknown {
   if (!error || typeof error !== "object") return undefined;
@@ -19,6 +19,7 @@ export function describeAuthFailure(error: unknown, operation: AuthOperation): A
     message: "Your email needs confirmation before you can sign in.",
     nextStep: "Check your inbox and spam folder for the confirmation link. A password reset does not confirm an email.",
     canReset: false,
+    canResend: true,
   };
   if (code === "over_email_send_rate_limit" || code === "over_request_rate_limit" || status === 429) return {
     message: "Too many requests right now.",
