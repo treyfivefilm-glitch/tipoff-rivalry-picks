@@ -4,6 +4,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { normalizeSyncDays, safeNbaPacificDay, syncUtcBounds } from "../_shared/sync-days.ts";
 import { fetchOfficialNbaJson, isTimelyNbaScoreboard } from "../_shared/nba-worker-feeds.ts";
 import { assertCompleteNbaGamePage } from "../_shared/nba-game-page.ts";
+import { hasCrossDayOfficialNbaId, hasOmittedOfficialNbaGame } from "../_shared/nba-signed-in-coverage.ts";
 import { canCacheNbaDay, groupUsableNbaGamesByPacificDay, hasConflictingNbaFeedMatchup, malformedNbaGamePacificDay, hasVerifiedNbaSeasonGame, hasUnsafeNbaStoredScoreTransition, isUsableNbaGame, isValidNbaSchedule, isStoredNbaMatchCandidate, matchesStoredNbaMatchup, normalizeNbaTeamCode, shouldOverlayNbaGame } from "../_shared/nba-feed-validation.ts";
 
 const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
@@ -238,7 +239,9 @@ Deno.serve(async (req) => {
         const away = norm(game.awayTeam?.teamTricode ?? "");
         const home = norm(game.homeTeam?.teamTricode ?? "");
         const sameId = storedById.get(`nba:${game.gameId}`);
-        if (sameId && (!isStoredNbaMatchCandidate(sameId) || !matchesStoredNbaMatchup(sameId, away, home))) {
+        if (sameId && (!isStoredNbaMatchCandidate(sameId) ||
+          !matchesStoredNbaMatchup(sameId, away, home) ||
+          hasCrossDayOfficialNbaId(sameId, day))) {
           identityConflict = true;
           continue;
         }
@@ -253,6 +256,12 @@ Deno.serve(async (req) => {
         if (row) unique.set(row.id,row);
       }
       const rows = [...unique.values()];
+      // A truncated or inconsistent official season feed may omit a game
+      // already stored for this Pacific day. Do not certify a partial day
+      // as fresh or silently abandon picks and wagers on that game ID.
+      if (hasOmittedOfficialNbaGame(day, existing, new Set(rows.map(row => row.id)))) {
+        identityConflict = true;
+      }
       if (identityConflict) {
         errors.push(`${day}: NBA game identity conflict`);
         continue;
