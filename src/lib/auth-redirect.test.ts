@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { passwordResetCallbackUrl, safeAuthRedirect } from "./auth-redirect";
+import { authSignInReturnUrl, passwordResetCallbackUrl, safeAuthRedirect } from "./auth-redirect";
 
 describe("safe post-auth redirect for invitations and recovery", () => {
   it("keeps a friend's invitation after email sign-in or confirmation", () => {
@@ -53,5 +53,26 @@ describe("password reset return destination", () => {
   it("defaults to rooms when no return path was provided", () => {
     const callback = new URL(passwordResetCallbackUrl("https://tipoff.example", undefined));
     expect(safeAuthRedirect(callback.searchParams.get("redirect")) ?? "/rooms").toBe("/rooms");
+  });
+});
+
+describe("expired recovery return to sign-in", () => {
+  it("preserves the invitation and its nested query/hash through sign-in", () => {
+    const destination = "/join/AB12EF?from=invite#join";
+    const url = new URL(authSignInReturnUrl(destination), "https://tipoff.example");
+    expect(url.pathname).toBe("/auth");
+    expect(url.searchParams.get("redirect")).toBe(destination);
+    expect(safeAuthRedirect(url.searchParams.get("redirect"))).toBe(destination);
+  });
+
+  it("rejects external and encoded-host destinations instead of creating an unsafe sign-in link", () => {
+    for (const unsafe of ["https://evil.example", "//evil.example", "/%5cevil.example", null]) {
+      expect(authSignInReturnUrl(unsafe)).toBe("/auth");
+    }
+  });
+
+  it("keeps a safe room return path and defaults to ordinary sign-in", () => {
+    expect(authSignInReturnUrl("/room/123?tab=wagers")).toBe("/auth?redirect=%2Froom%2F123%3Ftab%3Dwagers");
+    expect(authSignInReturnUrl(undefined)).toBe("/auth");
   });
 });
