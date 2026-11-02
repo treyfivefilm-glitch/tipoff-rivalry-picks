@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  conflictingOfficialNbaFeedDays,
   hasCrossDayOfficialNbaId,
   hasOmittedOfficialNbaGame,
   hasUnattributedMalformedLiveNbaConflict,
@@ -107,5 +108,51 @@ describe("signed-in NBA refresh malformed live fallback", () => {
     expect(guard).toBeGreaterThan(-1);
     expect(gameWrite).toBeGreaterThan(guard);
     expect(freshnessWrite).toBeGreaterThan(guard);
+  });
+});
+
+describe("signed-in NBA cross-day provider conflict", () => {
+  const scheduled = {
+    gameId: "0022600012", gameDateTimeUTC: "2026-11-18T03:00:00Z",
+    gameStatus: 1, gameStatusText: "Scheduled",
+    awayTeam: { teamTricode: "LAL" }, homeTeam: { teamTricode: "GSW" },
+  };
+  const moved = { ...scheduled, gameDateTimeUTC: "2026-11-19T03:00:00Z",
+    gameStatus: 2, gameStatusText: "Live" };
+
+  it("blocks both Pacific days when schedule and live feeds move one official game ID", () => {
+    expect([...conflictingOfficialNbaFeedDays([scheduled], [moved])].sort())
+      .toEqual(["2026-11-17", "2026-11-18"]);
+    // The caller filters this set by due days, so even a single-day refresh
+    // cannot certify the old or new day during a provider disagreement.
+  });
+
+  it("accepts a UTC-midnight rollover that remains on the same Pacific day", () => {
+    const late = { ...scheduled, gameDateTimeUTC: "2026-11-18T07:30:00Z" };
+    expect([...conflictingOfficialNbaFeedDays([scheduled], [late])]).toEqual([]);
+  });
+
+  it("does not confuse different official IDs or malformed provider rows with a reschedule", () => {
+    const differentId = { ...moved, gameId: "0022600013" };
+    expect([...conflictingOfficialNbaFeedDays([scheduled], [differentId])]).toEqual([]);
+    const malformed = { ...moved, gameStatus: 3, gameStatusText: "Final" };
+    expect([...conflictingOfficialNbaFeedDays([scheduled], [malformed])]).toEqual([]);
+  });
+
+  it("detects a conflicting official ID duplicated inside the season schedule", () => {
+    expect([...conflictingOfficialNbaFeedDays([scheduled, moved], [])].sort())
+      .toEqual(["2026-11-17", "2026-11-18"]);
+  });
+
+  it("checks provider-day conflicts before signed-in game and freshness writes", () => {
+    const source = readFileSync("supabase/functions/sync-games/index.ts", "utf8");
+    const guard = source.indexOf("conflictingOfficialNbaFeedDays(seasonFeedGames, live?.games ?? [])");
+    const failClosed = source.indexOf("if (identityConflict) {", guard);
+    const gameWrite = source.indexOf('await save("games"');
+    const freshnessWrite = source.indexOf('await save("sync_state"');
+    expect(guard).toBeGreaterThan(-1);
+    expect(failClosed).toBeGreaterThan(guard);
+    expect(gameWrite).toBeGreaterThan(failClosed);
+    expect(freshnessWrite).toBeGreaterThan(gameWrite);
   });
 });
