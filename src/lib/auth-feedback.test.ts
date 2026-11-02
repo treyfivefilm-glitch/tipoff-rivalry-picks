@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeAuthFailure, RESET_REQUEST_NOTICE } from "./auth-feedback";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, signupModeFromSearch, signupResponseStatus } from "./auth-feedback";
 
 describe("TIPOFF email login recovery guidance", () => {
   it("explains old-backend credentials without revealing account existence", () => {
@@ -29,5 +29,27 @@ describe("TIPOFF email login recovery guidance", () => {
     expect(RESET_REQUEST_NOTICE).toContain("If an account exists");
     expect(RESET_REQUEST_NOTICE).toContain("may arrive");
     expect(RESET_REQUEST_NOTICE).not.toContain("sent");
+  });
+});
+
+describe("TIPOFF registration entry and account state", () => {
+  it("only selects signup for the explicit up query", () => {
+    expect(signupModeFromSearch("up")).toBe("up");
+    for (const raw of ["in", "sign-up", "", undefined, null, {}, ["up"]]) {
+      expect(signupModeFromSearch(raw)).toBeUndefined();
+    }
+  });
+
+  it("enters rooms only after a real authenticated signup session", () => {
+    expect(signupResponseStatus({ user: { id: "player" }, session: { user: { id: "player" } } }))
+      .toBe("signed-in");
+    expect(signupResponseStatus({ user: { id: "player" }, session: null }))
+      .toBe("awaiting-confirmation");
+  });
+
+  it("never reports successful signup when Supabase returns no identity", () => {
+    expect(signupResponseStatus({ user: null, session: null })).toBe("unconfirmed");
+    expect(signupResponseStatus({ session: { user: null } })).toBe("unconfirmed");
+    expect(signupResponseStatus({})).toBe("unconfirmed");
   });
 });
