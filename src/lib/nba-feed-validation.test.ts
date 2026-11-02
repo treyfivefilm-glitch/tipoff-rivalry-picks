@@ -144,6 +144,12 @@ describe("NBA individual game integrity", () => {
       "2026-11-18T24:00:00Z",
       "2026-11-18T03:61:00Z",
       "2026-00-18T03:00:00Z",
+      // Date.parse accepts impossible UTC offsets; never shift a provider
+      // game into a different Pacific day or mark its score as fresh.
+      "2026-11-18T03:00:00+23:59",
+      "2026-11-18T03:00:00-23:59",
+      "2026-11-18T03:00:00+14:01",
+      "2026-11-18T03:00:00-14:30",
     ]) {
       const malformed = { ...game, gameDateTimeUTC: tipoff };
       expect(isUsableNbaGame(malformed)).toBe(false);
@@ -154,6 +160,9 @@ describe("NBA individual game integrity", () => {
       "2028-02-29T03:00:00Z",
       "2026-11-18T03:00:00+00:00",
       "2026-11-18T03:00:00.123Z",
+      "2026-11-18T03:00:00+14:00",
+      "2026-11-18T03:00:00-14:00",
+      "2026-11-18T03:00:00+13:45",
     ]) {
       expect(isUsableNbaGame({ ...game, gameDateTimeUTC: tipoff })).toBe(true);
     }
@@ -458,6 +467,8 @@ describe("malformed NBA tipoff attribution must not normalize impossible dates",
       "2026-02-29T03:00:00Z",
       "2026-11-18T24:00:00Z",
       "2026-11-18T24:00:00+00:00",
+      "2026-11-18T03:00:00+23:59",
+      "2026-11-18T03:00:00-14:30",
     ]) {
       expect(malformedNbaGamePacificDay({ ...game, gameDateTimeUTC: bad })).toBeNull();
     }
