@@ -76,10 +76,17 @@ const NBA_TEAM_CODES = new Set([
  */
 export function hasRealNbaTipoff(value: unknown): value is string {
   if (typeof value !== "string") return false;
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/.exec(value);
   if (!match || !Number.isFinite(Date.parse(value))) return false;
   const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
   const hour = Number(match[4]), minute = Number(match[5]), second = Number(match[6]);
+  // Date.parse also accepts fictional offsets such as +23:59. Those can
+  // move a live result onto the wrong Pacific day and falsely refresh scores.
+  // Match the stored-history guard: real-world UTC offsets are within ±14:00.
+  const offsetHours = match[7] ? Number(match[8]) : 0;
+  const offsetMinutes = match[7] ? Number(match[9]) : 0;
+  if (offsetHours > 14 || offsetMinutes > 59 ||
+      (offsetHours === 14 && offsetMinutes !== 0)) return false;
   if (year < 1 || month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
   const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
