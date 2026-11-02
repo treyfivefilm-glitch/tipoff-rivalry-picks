@@ -218,4 +218,30 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
     expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
   });
 
+  it("rejects explicitly aged live HTTP 200 scoreboards while allowing cached season schedules", async () => {
+    const feed = async (liveAge: string | null, scheduleAge = "86400") => {
+      const fetcher = mockFetch(async url => {
+        const isSchedule = url.includes("scheduleLeague");
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        const age = isSchedule ? scheduleAge : liveAge;
+        if (age !== null) headers["age"] = age;
+        return new Response(JSON.stringify(isSchedule ? schedule : live), { status: 200, headers });
+      });
+      return loadUnattendedNbaFeeds(fetcher, 100, now);
+    };
+    // CDN freshness headers can expose a stale same-day scoreboard that
+    // passes the usual gameDate envelope check.
+    expect(await feed("901")).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(await feed("not-a-number")).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(await feed("999999999999999999999999")).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(await feed("900")).toEqual({ schedule, live, errors: [] });
+    expect(await feed(null)).toEqual({ schedule, live, errors: [] });
+  });
+
 });
