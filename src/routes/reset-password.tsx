@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { safeAuthRedirect } from "@/lib/auth-redirect";
+import { authSignInReturnUrl, safeAuthRedirect } from "@/lib/auth-redirect";
 import { passwordResetAccess, passwordResetAccountMatches, validateResetPasswords, type PasswordResetAccess } from "@/lib/password-reset-guard";
 
 export const Route = createFileRoute("/reset-password")({
@@ -84,14 +84,14 @@ function ResetPasswordPage() {
       {access === "signed-out" && (
         <div role="alert" className="space-y-3 rounded-xl border border-border bg-muted/50 p-4 text-sm">
           <p>This password reset page requires a valid email-account session. Open a fresh reset link from your email, or return to sign in.</p>
-          <a href="/auth" className="inline-block font-semibold text-primary underline">Back to sign in</a>
+          <a href={authSignInReturnUrl(redirect)} className="inline-block font-semibold text-primary underline">Back to sign in</a>
         </div>
       )}
       {access === "guest" && (
         <div role="alert" className="space-y-3 rounded-xl border border-border bg-muted/50 p-4 text-sm">
           <p>You are signed in as a guest. Email password reset does not work for guest accounts.</p>
-          <p className="text-muted-foreground">Keep this browser signed in to protect your rooms and wagers. In your room's Profile, attach and verify an email before setting a password.</p>
-          <a href="/rooms" className="inline-block font-semibold text-primary underline">Return to my rooms</a>
+          <p className="text-muted-foreground">Keep this browser signed in to protect your rooms and wagers. Open Account & recovery from Your Battles to attach and verify an email before setting a password.</p>
+          <a href="/rooms#account-recovery" className="inline-block font-semibold text-primary underline">Open Account & recovery</a>
         </div>
       )}
       {access !== "ready" && feedback && <p role="alert" className="text-sm text-destructive">{feedback}</p>}
