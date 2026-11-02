@@ -12,7 +12,7 @@ const LIVE = BASE + "/liveData/scoreboard/todaysScoreboard_00.json";
  * A successful status is not proof that a CDN returned a complete, fresh feed.
  */
 export async function fetchOfficialNbaJson(
-  url: string, request: typeof fetch = fetch, timeoutMs = 11000,
+  url: string, request: typeof fetch = fetch, timeoutMs = 11000, now: Date = new Date(),
 ): Promise<unknown> {
   const response = await request(url, {
     signal: AbortSignal.timeout(timeoutMs),
@@ -48,6 +48,19 @@ export async function fetchOfficialNbaJson(
         throw new Error("NBA live scoreboard is stale");
       }
     }
+    // An intermediary can reset Age to zero while forwarding an older
+    // response. A supplied HTTP Date far from the observation time is
+    // independent evidence that today's live scoreboard is not current.
+    // Missing Date is not proof of freshness; other feed guards still apply.
+    const dateHeader = response.headers.get("date");
+    if (dateHeader !== null) {
+      const observedAt = Date.parse(dateHeader);
+      const nowMs = now.getTime();
+      if (!Number.isFinite(observedAt) || !Number.isFinite(nowMs) ||
+          Math.abs(nowMs - observedAt) > 15 * 60 * 1000) {
+        throw new Error("NBA live scoreboard is stale");
+      }
+    }
   }
   return await response.json();
 }
@@ -72,7 +85,7 @@ export async function loadUnattendedNbaFeeds(
 ): Promise<{ schedule: unknown | null; live: unknown | null; errors: string[] }> {
   const [scheduleResult, liveResult] = await Promise.allSettled([
     fetchOfficialNbaJson(SCHEDULE, request, timeoutMs),
-    fetchOfficialNbaJson(LIVE, request, timeoutMs),
+    fetchOfficialNbaJson(LIVE, request, timeoutMs, now),
   ]);
   const schedule = scheduleResult.status === "fulfilled" &&
     verifiedUnattendedNbaSchedule(scheduleResult.value) ? scheduleResult.value : null;
