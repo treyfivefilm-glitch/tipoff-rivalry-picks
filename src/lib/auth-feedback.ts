@@ -49,3 +49,21 @@ export function describeAuthFailure(error: unknown, operation: AuthOperation): A
 
 /** Supabase does not reveal whether the email belongs to an existing account. */
 export const RESET_REQUEST_NOTICE = "If an account exists for this email on this TIPOFF server, a reset link may arrive. Check your inbox and spam folder. Older TIPOFF accounts may use a different sign-in system.";
+
+
+/** Only explicit signup links select registration; unexpected search values never do. */
+export function signupModeFromSearch(raw: unknown): "up" | undefined {
+  return raw === "up" ? "up" : undefined;
+}
+
+/** A successful HTTP response is not proof of a usable account. Supabase may
+ * require email confirmation before it returns an authenticated session.
+ */
+export function signupResponseStatus(data: {
+  user?: unknown | null;
+  session?: { user?: unknown | null } | null;
+}): "signed-in" | "awaiting-confirmation" | "unconfirmed" {
+  if (data.session?.user) return "signed-in";
+  if (data.user) return "awaiting-confirmation";
+  return "unconfirmed";
+}
