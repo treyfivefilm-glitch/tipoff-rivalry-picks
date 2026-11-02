@@ -210,6 +210,37 @@ export function isStoredNbaMatchCandidate(stored: { id: string; source: string }
     (stored.source === "espn" && espnId);
 }
 
+/** A signed-in refresh must not silently reverse a settled winner or
+ * replace verified live points with a lagging provider snapshot. The caller
+ * first validates the incoming official game and fails the entire affected
+ * day closed if this returns true, rather than publishing a partial update.
+ */
+export function hasUnsafeNbaStoredScoreTransition(
+  previous: { state: string; away_score: number | null; home_score: number | null } | undefined,
+  incoming: {
+    gameStatus: number; gameStatusText?: string;
+    awayTeam: { score?: number | string | null };
+    homeTeam: { score?: number | string | null };
+  },
+): boolean {
+  if (!previous || (previous.state !== "live" && previous.state !== "final")) return false;
+  const detail = (incoming.gameStatusText ?? "").toLowerCase();
+  if (incoming.gameStatus !== 2 && incoming.gameStatus !== 3) return false;
+  // A postponed/canceled snapshot is not a played final; rowFrom preserves
+  // an existing verified final instead of treating it as a new score.
+  if (detail.includes("postpon") || detail.includes("cancel")) return false;
+  if (previous.state === "final" && incoming.gameStatus !== 3) return false;
+  const away = incoming.awayTeam.score == null ? null : Number(incoming.awayTeam.score);
+  const home = incoming.homeTeam.score == null ? null : Number(incoming.homeTeam.score);
+  const wentBack = (before: number | null, after: number | null) =>
+    before !== null && (after === null || after < before);
+  if (wentBack(previous.away_score, away) || wentBack(previous.home_score, home)) return true;
+  return previous.state === "final" && incoming.gameStatus === 3 &&
+    previous.away_score !== null && previous.home_score !== null &&
+    away !== null && home !== null &&
+    (previous.away_score > previous.home_score) !== (away > home);
+}
+
 /** Reject a stored game-ID collision unless both canonical team codes match. */
 export function matchesStoredNbaMatchup(
   stored: { away_code: string; home_code: string }, away: string, home: string,
