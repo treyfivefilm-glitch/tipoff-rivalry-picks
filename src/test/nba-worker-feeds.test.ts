@@ -244,4 +244,37 @@ describe("unattended NBA feed HTTP boundary (no network, credentials or database
     expect(await feed(null)).toEqual({ schedule, live, errors: [] });
   });
 
+  it("rejects stale HTTP Date on live scoreboards even when CDN Age is zero", async () => {
+    const feed = async (liveDate: string | null) => {
+      const fetcher = mockFetch(async url => {
+        const isSchedule = url.includes("scheduleLeague");
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+          // A stale schedule is acceptable; only live observations need
+          // a recent HTTP Date when the server supplies that header.
+          ...(isSchedule ? { date: new Date(now.getTime() - 86400000).toUTCString() } : { age: "0" }),
+        };
+        if (!isSchedule && liveDate !== null) headers["date"] = liveDate;
+        return new Response(JSON.stringify(isSchedule ? schedule : live), {
+          status: 200, headers,
+        });
+      });
+      return loadUnattendedNbaFeeds(fetcher, 100, now);
+    };
+    for (const date of [
+      new Date(now.getTime() - 16 * 60000).toUTCString(),
+      new Date(now.getTime() + 16 * 60000).toUTCString(),
+      "not-a-valid-http-date",
+    ]) {
+      expect(await feed(date)).toEqual({
+        schedule, live: null, errors: ["Live scoreboard unavailable"],
+      });
+    }
+    expect(await feed(new Date(now.getTime() - 15 * 60000).toUTCString()))
+      .toEqual({ schedule, live, errors: [] });
+    expect(await feed(new Date(now.getTime() + 15 * 60000).toUTCString()))
+      .toEqual({ schedule, live, errors: [] });
+    expect(await feed(null)).toEqual({ schedule, live, errors: [] });
+  });
+
 });
