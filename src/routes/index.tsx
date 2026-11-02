@@ -152,6 +152,15 @@ function Landing() {
       </section>
       </>}
 
+      {!signedIn && (
+        <div className="tipoff-card space-y-3 rounded-2xl p-4">
+          <h2 className="font-display text-2xl">NEW TO TIPOFF?</h2>
+          <p className="text-sm text-muted-foreground">Create a free account to save your picks and join your friend’s battle.</p>
+          <Link to="/auth" search={{ redirect: undefined }} className="flex min-h-12 items-center justify-center rounded-xl bg-primary px-4 font-cond font-bold text-primary-foreground">Create account</Link>
+          <p className="text-xs text-muted-foreground">Already registered? Use Sign in above.</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <Link to="/rooms" className="tipoff-card flex items-center gap-2 rounded-xl p-4">
           <Users className="h-5 w-5 text-primary" />
