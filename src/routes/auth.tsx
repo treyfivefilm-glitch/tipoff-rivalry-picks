@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { describeAuthFailure, RESET_REQUEST_NOTICE, signupModeFromSearch, signupResponseStatus, type AuthFeedback } from "@/lib/auth-feedback";
 import { safeAuthRedirect } from "@/lib/auth-redirect";
+import { CONFIRMATION_RESEND_NOTICE, resendSignupConfirmation } from "@/lib/signup-confirmation";
 import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, runWithoutGuestAccountSwitch } from "@/lib/guest-session-guard";
 
 export const Route = createFileRoute("/auth")({
@@ -32,12 +33,13 @@ function AuthPage() {
   const [feedback, setFeedback] = useState<AuthFeedback | null>(null);
   const [notice, setNotice] = useState("");
   const [guestProtected, setGuestProtected] = useState(false);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const done = () => nav({ href: redirect ?? "/rooms" });
 
   async function submit(e: { preventDefault: () => void }) {
     e.preventDefault();
     if (busy) return;
-    setBusy(true); setFeedback(null); setNotice(""); setGuestProtected(false);
+    setBusy(true); setFeedback(null); setNotice(""); setGuestProtected(false); setAwaitingConfirmation(false);
     try {
       // A different login could replace this browser's guest session and hide its wagers.
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -56,11 +58,31 @@ function AuthPage() {
         if (error) throw error;
         const outcome = signupResponseStatus(data);
         if (outcome === "signed-in") done();
-        else if (outcome === "awaiting-confirmation") setNotice("Registration request accepted. If confirmation is required, check your inbox and spam folder. You cannot sign in until your email is confirmed. Email delivery has not yet been verified for this app.");
+        else if (outcome === "awaiting-confirmation") {
+          setAwaitingConfirmation(true);
+          setNotice("Registration request accepted. If confirmation is required, check your inbox and spam folder. You cannot sign in until your email is confirmed. Email delivery has not yet been verified for this app.");
+        }
         else setFeedback({ message: "Account creation could not be confirmed.", nextStep: "No signed-in account or pending registration was returned. Try again later or report the problem to TIPOFF support.", canReset: false });
       }
     } catch (err) {
       setFeedback(describeAuthFailure(err, mode === "in" ? "sign-in" : "sign-up"));
+    } finally { setBusy(false); }
+  }
+
+  async function resendConfirmation() {
+    if (busy || !email.trim()) return;
+    setBusy(true); setFeedback(null); setNotice(""); setGuestProtected(false);
+    try {
+      await resendSignupConfirmation(supabase.auth, email, window.location.origin + (redirect ?? "/rooms"));
+      setNotice(CONFIRMATION_RESEND_NOTICE);
+    } catch (err) {
+      if (err instanceof GuestAccountSwitchBlockedError) {
+        setGuestProtected(true);
+        setAwaitingConfirmation(false);
+        setFeedback({ message: "Keep your current guest account", nextStep: GUEST_SESSION_WARNING, canReset: false });
+      } else {
+        setFeedback({ ...describeAuthFailure(err, "sign-up"), message: "Could not request another confirmation email." });
+      }
     } finally { setBusy(false); }
   }
 
@@ -135,7 +157,7 @@ function AuthPage() {
       <h1 className="font-display text-6xl leading-none text-primary">PICK BATTLE</h1>
       <p className="text-muted-foreground">{mode === "in" ? "Welcome back." : "Create your account."}</p>
       <form onSubmit={submit} className="space-y-3">
-        <input className={input} type="email" autoComplete="email" aria-label="Email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className={input} type="email" autoComplete="email" aria-label="Email" required placeholder="Email" value={email} onChange={(e) => { setEmail(e.target.value); setAwaitingConfirmation(false); setFeedback(null); setNotice(""); }} />
         <input className={input} type="password" autoComplete={mode === "in" ? "current-password" : "new-password"} aria-label="Password" required minLength={mode === "up" ? 8 : 1} placeholder={mode === "up" ? "Password (8+ characters)" : "Password"} value={pw} onChange={(e) => setPw(e.target.value)} />
         <Button type="submit" variant="gold" size="xl" className="w-full" disabled={busy}>{busy ? "Please wait…" : mode === "in" ? "Sign in" : "Sign up"}</Button>
       </form>
@@ -148,6 +170,11 @@ function AuthPage() {
         </div>
       )}
       {notice && <p role="status" className="rounded-xl border border-border bg-muted/50 p-3 text-sm">{notice}</p>}
+      {(awaitingConfirmation || feedback?.canResend) && !guestProtected && (
+        <button type="button" className="text-left text-sm font-semibold text-primary underline" disabled={busy || !email.trim()} onClick={resendConfirmation}>
+          Request another confirmation email
+        </button>
+      )}
       {guestEnabled && (
         <div className="space-y-2">
           <Button variant="glass" size="xl" className="w-full" onClick={guest} disabled={busy}>
@@ -160,7 +187,7 @@ function AuthPage() {
       )}
       {googleEnabled && <Button variant="glass" size="xl" onClick={google} disabled={busy}>Continue with Google</Button>}
       <div className="flex justify-between text-sm">
-        <button type="button" className="text-primary" disabled={busy} onClick={() => { setMode(mode === "in" ? "up" : "in"); setFeedback(null); setNotice(""); setGuestProtected(false); }}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>
+        <button type="button" className="text-primary" disabled={busy} onClick={() => { setMode(mode === "in" ? "up" : "in"); setFeedback(null); setNotice(""); setGuestProtected(false); setAwaitingConfirmation(false); }}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>
         <button type="button" className="text-muted-foreground" disabled={busy} onClick={forgot}>Forgot password</button>
       </div>
     </div>
