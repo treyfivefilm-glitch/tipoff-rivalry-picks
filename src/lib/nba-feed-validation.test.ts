@@ -7,6 +7,7 @@ import {
   isUsableNbaGame,
   groupUsableNbaGamesByPacificDay,
   hasVerifiedNbaSeasonGame,
+  hasUnsafeNbaStoredScoreTransition,
   malformedNbaGamePacificDay,
   matchesStoredNbaMatchup,
   isStoredNbaMatchCandidate,
@@ -462,5 +463,57 @@ describe("malformed NBA tipoff attribution must not normalize impossible dates",
     }
     expect(malformedNbaGamePacificDay({ ...game, awayTeam: { teamTricode: "XYZ" } }))
       .toBe("2026-11-17");
+  });
+});
+
+describe("signed-in NBA stored-score reconciliation", () => {
+  const incoming = (gameStatus: number, away: number | null, home: number | null,
+    gameStatusText = "Final") => ({
+    gameStatus, gameStatusText, awayTeam: { score: away }, homeTeam: { score: home },
+  });
+
+  it("accepts progressing live scores and unchanged or same-winner finals", () => {
+    expect(hasUnsafeNbaStoredScoreTransition(
+      { state: "live", away_score: 90, home_score: 91 },
+      incoming(2, 92, 95, "Q4"),
+    )).toBe(false);
+    expect(hasUnsafeNbaStoredScoreTransition(
+      { state: "final", away_score: 108, home_score: 104 },
+      incoming(3, 110, 105),
+    )).toBe(false);
+  });
+
+  it("rejects score regression or missing points from a live/final provider update", () => {
+    const prior = { state: "live", away_score: 90, home_score: 91 };
+    expect(hasUnsafeNbaStoredScoreTransition(prior, incoming(2, 89, 92, "Q4"))).toBe(true);
+    expect(hasUnsafeNbaStoredScoreTransition(prior, incoming(3, null, 101))).toBe(true);
+    expect(hasUnsafeNbaStoredScoreTransition(
+      { state: "final", away_score: 108, home_score: 104 },
+      incoming(3, 107, 104),
+    )).toBe(true);
+  });
+
+  it("rejects a corrected final that changes the wager winner even if points increase", () => {
+    expect(hasUnsafeNbaStoredScoreTransition(
+      { state: "final", away_score: 108, home_score: 104 },
+      incoming(3, 108, 109),
+    )).toBe(true);
+  });
+
+  it("does not reject harmless scheduled, postponed or canceled snapshots", () => {
+    const prior = { state: "final", away_score: 108, home_score: 104 };
+    expect(hasUnsafeNbaStoredScoreTransition(prior, incoming(1, null, null, "Scheduled"))).toBe(false);
+    expect(hasUnsafeNbaStoredScoreTransition(prior, incoming(2, null, null, "Q1"))).toBe(false);
+    expect(hasUnsafeNbaStoredScoreTransition(prior, incoming(3, null, null, "Canceled"))).toBe(false);
+    expect(hasUnsafeNbaStoredScoreTransition(undefined, incoming(3, 100, 101))).toBe(false);
+  });
+
+  it("checks stored-score safety before signed-in game and freshness writes", () => {
+    const source = readFileSync("supabase/functions/sync-games/index.ts", "utf8");
+    expect(source).toContain("if (hasUnsafeNbaStoredScoreTransition(match, game))");
+    expect(source.indexOf("if (hasUnsafeNbaStoredScoreTransition(match, game))"))
+      .toBeLessThan(source.indexOf("const row = rowFrom(game,match);"));
+    expect(source.indexOf("if (identityConflict)"))
+      .toBeLessThan(source.indexOf('await save("sync_state"'));
   });
 });
