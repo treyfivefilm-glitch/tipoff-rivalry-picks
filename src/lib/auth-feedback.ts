@@ -31,6 +31,16 @@ export function describeAuthFailure(error: unknown, operation: AuthOperation): A
     nextStep: "Use an existing account or guest access if available. Account settings need administrator attention.",
     canReset: false,
   };
+  if (code === "email_address_not_authorized") return {
+    message: "TIPOFF cannot send an account email to this address yet.",
+    nextStep: "The app owner must configure and verify a production email provider in Supabase Auth before other players can confirm accounts. Retrying with the same address will not fix server email settings.",
+    canReset: false,
+  };
+  if (code === "email_address_invalid") return {
+    message: "This email address was rejected.",
+    nextStep: "Check the address for typos. If it is correct, the app owner may need to review Supabase email restrictions.",
+    canReset: false,
+  };
   if (code === "user_already_exists" || code === "email_exists") return {
     message: "This email may already be registered on this TIPOFF server.",
     nextStep: "Try signing in or requesting a password reset instead of creating another account.",
@@ -47,6 +57,12 @@ export function describeAuthFailure(error: unknown, operation: AuthOperation): A
     canReset: false,
   };
 }
+
+/** Supabase can return a placeholder identity for an existing email. A user
+ * without a session is not proof that a new account or an email was created.
+ */
+export const SIGNUP_PENDING_NOTICE =
+  "If this address is eligible for registration, a confirmation link may arrive. Check your inbox and spam folder. You cannot sign in until your email is confirmed. Email delivery has not been verified for this app.";
 
 /** Supabase does not reveal whether the email belongs to an existing account. */
 export const RESET_REQUEST_NOTICE = "If an account exists for this email on this TIPOFF server, a reset link may arrive. Check your inbox and spam folder. Older TIPOFF accounts may use a different sign-in system.";
