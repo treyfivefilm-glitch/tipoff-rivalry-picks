@@ -191,6 +191,23 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     expect(await backend.readExisting(["2026-11-17"])).toEqual(validRows);
   });
 
+  it("rejects duplicate game IDs in a complete-looking history response", async () => {
+    // The games table has a primary key. A proxy or corrupted response that
+    // repeats an ID cannot be trusted to preserve a picked game's score.
+    for (const rows of [
+      [validStoredGame, { ...validStoredGame }],
+      [validStoredGame, { ...validStoredGame, away_score: 120 }],
+    ]) {
+      const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(rows)));
+      await expect(backend.readExisting(["2026-11-17"]))
+        .rejects.toThrow("duplicate games");
+    }
+    // Distinct official IDs remain valid and must not be rejected.
+    const distinct = [validStoredGame, { ...validStoredGame, id: "nba:0022600013" }];
+    const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () => reply(distinct)));
+    expect(await backend.readExisting(["2026-11-17"])).toEqual(distinct);
+  });
+
   it("accepts complete PostgREST history ranges including an empty result", async () => {
     const complete = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
       new Response(JSON.stringify([validStoredGame]), {

@@ -194,6 +194,13 @@ export function createNbaWorkerBackend(
     if (!data.every(isValidExistingNbaGame)) {
       throw new Error("NBA sync database returned malformed games");
     }
+    // A complete-looking HTTP 200 array must still represent a consistent
+    // snapshot of the primary-keyed games table. Duplicate IDs can cause
+    // later reconciliation to silently pick one contradictory score row.
+    // A real PostgREST SELECT cannot return the same primary key twice.
+    if (new Set(data.map(game => game.id)).size !== data.length) {
+      throw new Error("NBA sync database returned duplicate games");
+    }
     return data as ExistingNbaGame[];
   };
 
