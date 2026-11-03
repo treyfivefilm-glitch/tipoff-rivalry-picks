@@ -86,6 +86,16 @@ describe("unattended NBA worker pure preparation", () => {
     expect(await authorizedNbaCron("Bearer " + secret, "short")).toBe(false);
   });
 
+  it("rejects oversized unauthenticated bearer headers before digesting them", async () => {
+    const secret = "test-only-strong-cron-secret-with-adequate-entropy";
+    // A valid strong secret remains usable; an attacker-controlled oversized
+    // header must fail closed before expensive crypto operations.
+    expect(await authorizedNbaCron("Bearer " + secret, secret)).toBe(true);
+    expect(await authorizedNbaCron("Bearer " + "x".repeat(4090), secret)).toBe(false);
+    expect(await authorizedNbaCron("Bearer " + "x".repeat(100_000), secret)).toBe(false);
+    expect(await authorizedNbaCron("Bearer " + secret + ",Bearer " + secret, secret)).toBe(false);
+  });
+
   it("overlays a live final onto the schedule even when scoreboard date is UTC", () => {
     const result = prepareUnattendedNbaDay("2026-11-17", schedule([game()]), live([game(3, 109, 107)]), []);
     expect(result.cacheable).toBe(true);
