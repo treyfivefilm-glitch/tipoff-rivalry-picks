@@ -48,7 +48,11 @@ export function unattendedNbaDays(now: Date): string[] {
  */
 export async function authorizedNbaCron(header: string | null, secret: string | undefined): Promise<boolean> {
   if (!secret || secret.length < 32) return false;
-  const match = /^Bearer ([^\s,]+)$/.exec(header ?? "");
+  // Bound unauthenticated input before hashing. Oversized Authorization
+  // headers must not consume unbounded CPU/memory in an Edge invocation.
+  // 4 KiB leaves ample room for strong scheduler secrets.
+  if (header === null || header.length > 4096) return false;
+  const match = /^Bearer ([^\s,]+)$/.exec(header);
   if (!match) return false;
   const encode = new TextEncoder();
   const [a, b] = await Promise.all([
