@@ -188,9 +188,9 @@ export function createNbaWorkerBackend(
         throw new Error("NBA sync database returned incomplete games");
       }
     }
-    // Reject partial responses and an ambiguous full requested page even
-    // when the server reports an apparently matching exact count.
-    if (response.status === 206 || data.length >= 3000) {
+    // Non-200 responses (including 206) were rejected above. Also reject
+    // an ambiguous full requested page even with an exact matching count.
+    if (data.length >= 3000) {
       throw new Error("NBA sync database returned incomplete games");
     }
     if (!data.every(isValidExistingNbaGame)) {
