@@ -78,11 +78,11 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     }
   });
 
-  it("rejects HTTP 206 partial game history even when its JSON array is valid", async () => {
+  it("rejects HTTP 206 partial game history at the strict HTTP status boundary", async () => {
     const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
       reply([{ id: "nba:0022600012" }], 206)));
     await expect(backend.readExisting(["2026-11-17"]))
-      .rejects.toThrow("incomplete games");
+      .rejects.toThrow("NBA sync database read failed (HTTP 206)");
   });
 
   it("fails closed on an ambiguous full 3000-row history page", async () => {
