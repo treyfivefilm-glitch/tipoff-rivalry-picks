@@ -351,6 +351,27 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     }
   });
 
+  it("rejects unexpected successful statuses for privileged scalar RPCs", async () => {
+    // A proxy reporting 201/202/203 is not a verified completed PostgREST
+    // scalar operation. Never mistake its plausible body for a held lease
+    // or a fenced score commit.
+    for (const [name, value] of [
+      ["try_claim_nba_sync", true],
+      ["release_nba_sync", true],
+      ["commit_nba_sync_day", 1],
+    ] as const) {
+      for (const status of [201, 202, 203, 204, 205]) {
+        const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+          new Response(status === 204 || status === 205 ? null : JSON.stringify(value), {
+            status,
+          })));
+        await expect(backend.rpc(name, {})).rejects.toThrow(
+          "NBA sync RPC " + name + " returned partial result",
+        );
+      }
+    }
+  });
+
   it("rejects contradictory HTTP 200 scalar RPC row ranges", async () => {
     // A scalar result cannot certify two rows, a nonzero starting offset,
     // an empty page, or an unrecognized range. Fail closed for all three
