@@ -157,7 +157,7 @@ export function createNbaWorkerBackend(
       // A proxy redirect must not forward the privileged apikey header.
       redirect: "error", signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!response.ok) throw new Error("NBA sync database read failed (HTTP " + response.status + ")");
+    // A history SELECT must return a complete HTTP 200, never an unexpected\n    // successful status such as 201 or 202 that cannot certify the snapshot.\n    if (response.status !== 200) throw new Error("NBA sync database read failed (HTTP " + response.status + ")");
     const data: unknown = await response.json();
     // A malformed HTTP 200 must not be mistaken for an empty game history:
     // that could create duplicate official IDs or detach existing wagers.
