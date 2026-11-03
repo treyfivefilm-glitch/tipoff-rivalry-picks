@@ -1,0 +1,325 @@
+// @vitest-environment node
+import { describe, expect, it } from "vitest";
+import { fetchOfficialNbaJson, loadUnattendedNbaFeeds } from "../../supabase/functions/_shared/nba-worker-feeds";
+import { unattendedNbaHttpStatus } from "../../supabase/functions/_shared/nba-unattended";
+
+const game = {
+  gameId: "0022600012", gameDateTimeUTC: "2026-11-18T03:00:00Z",
+  gameStatus: 3, gameStatusText: "Final",
+  awayTeam: { teamTricode: "LAL", score: 109 },
+  homeTeam: { teamTricode: "GSW", score: 107 },
+};
+const schedule = { leagueSchedule: { gameDates: [{ gameDate: "2026-11-17", games: [game] }] } };
+const live = { scoreboard: { gameDate: "2026-11-18", games: [game] } };
+const now = new Date("2026-11-17T12:00:00Z");
+const reply = (value: unknown, status = 200) =>
+  new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
+const mockFetch = (handler: (url: string, init?: RequestInit) => Promise<Response>): typeof fetch =>
+  handler as unknown as typeof fetch;
+
+describe("unattended NBA feed HTTP boundary (no network, credentials or database)", () => {
+  it("shared signed-in feed boundary rejects stale-cache semantics, redirects and partial responses", async () => {
+    const seen: RequestInit[] = [];
+    const full = mockFetch(async (_url, init) => {
+      seen.push(init ?? {});
+      return reply(schedule);
+    });
+    expect(await fetchOfficialNbaJson("https://example.invalid/feed", full, 100)).toEqual(schedule);
+    expect(seen[0]?.cache).toBe("no-store");
+    expect(seen[0]?.redirect).toBe("error");
+    expect((seen[0]?.headers as Record<string, string>)["cache-control"]).toBe("no-cache");
+    expect(seen[0]?.signal).toBeInstanceOf(AbortSignal);
+
+    const ranged = mockFetch(async () => new Response(JSON.stringify(schedule), {
+      status: 200, headers: { "content-range": "bytes 0-99/200" },
+    }));
+    await expect(fetchOfficialNbaJson("https://example.invalid/feed", ranged, 100))
+      .rejects.toThrow("NBA feed unavailable");
+    const partial = mockFetch(async () => reply(schedule, 206));
+    await expect(fetchOfficialNbaJson("https://example.invalid/feed", partial, 100))
+      .rejects.toThrow("NBA feed unavailable");
+    const redirected = mockFetch(async (_url, init) => {
+      if (init?.redirect !== "error") return reply(schedule);
+      throw new TypeError("redirect blocked");
+    });
+    await expect(fetchOfficialNbaJson("https://example.invalid/feed", redirected, 100))
+      .rejects.toThrow("redirect blocked");
+  });
+
+  it("accepts both verified feeds with independent abort signals", async () => {
+    const calls: Array<{ url: string; signal: AbortSignal | null | undefined; accept: string | undefined; redirect: RequestRedirect | undefined; cache: RequestCache | undefined; cacheControl: string | undefined }> = [];
+    const fetcher = mockFetch(async (url, init) => {
+      calls.push({
+        url, signal: init?.signal, redirect: init?.redirect, cache: init?.cache,
+        accept: (init?.headers as Record<string, string> | undefined)?.["accept"],
+        cacheControl: (init?.headers as Record<string, string> | undefined)?.["cache-control"],
+      });
+      return reply(url.includes("scheduleLeague") ? schedule : live);
+    });
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({ schedule, live, errors: [] });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(200);
+    expect(calls).toHaveLength(2);
+    expect(calls.every(call => call.signal instanceof AbortSignal &&
+      call.accept === "application/json" && call.redirect === "error" &&
+      call.cache === "no-store" && call.cacheControl === "no-cache"))
+      .toBe(true);
+    expect(calls[0]?.signal).not.toBe(calls[1]?.signal);
+  });
+
+  it("requests uncached live scores even when the season schedule provider fails", async () => {
+    const options: Array<{ cache: RequestCache | undefined; cacheControl: string | undefined }> = [];
+    const fetcher = mockFetch(async (url, init) => {
+      const headers = init?.headers as Record<string, string> | undefined;
+      options.push({ cache: init?.cache, cacheControl: headers?.["cache-control"] });
+      return url.includes("scheduleLeague") ? reply({}, 503) : reply(live);
+    });
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({ schedule: null, live, errors: ["Season schedule unavailable"] });
+    expect(options).toEqual([
+      { cache: "no-store", cacheControl: "no-cache" },
+      { cache: "no-store", cacheControl: "no-cache" },
+    ]);
+  });
+
+  it("fails a redirected provider request without losing the independent healthy feed", async () => {
+    for (const redirectSchedule of [true, false]) {
+      const fetcher = mockFetch(async (url, init) => {
+        const isSchedule = url.includes("scheduleLeague");
+        if (isSchedule === redirectSchedule) {
+          // Simulate fetch's redirect:error behavior rather than following
+          // a CDN Location to an unexpected origin.
+          // Without redirect:error, the mock follows to a valid-looking
+          // payload and this regression test must fail.
+          if (init?.redirect !== "error") return reply(isSchedule ? schedule : live);
+          throw new TypeError("redirect blocked");
+        }
+        return reply(isSchedule ? schedule : live);
+      });
+      const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+      expect(result).toEqual(redirectSchedule
+        ? { schedule: null, live, errors: ["Season schedule unavailable"] }
+        : { schedule, live: null, errors: ["Live scoreboard unavailable"] });
+      expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+    }
+  });
+
+  it("preserves the valid live feed when the season provider returns HTTP 503", async () => {
+    const fetcher = mockFetch(async url =>
+      url.includes("scheduleLeague") ? reply({ error: "unavailable" }, 503) : reply(live));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({
+      schedule: null, live, errors: ["Season schedule unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
+  it("preserves the valid schedule when live provider returns invalid JSON", async () => {
+    const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+      ? reply(schedule) : new Response("{invalid", { status: 200 }));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
+  it("rejects malformed HTTP 200 envelopes from both feeds", async () => {
+    const fetcher = mockFetch(async () => reply({ error: "upstream error" }));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({
+      schedule: null, live: null,
+      errors: ["Season schedule unavailable", "Live scoreboard unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
+  it("times out a stalled schedule without blocking a healthy live result", async () => {
+    const fetcher = mockFetch((url, init) => {
+      if (!url.includes("scheduleLeague")) return Promise.resolve(reply(live));
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) return reject(new Error("Missing request timeout"));
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    const result = await loadUnattendedNbaFeeds(fetcher, 50, now);
+    expect(result).toEqual({
+      schedule: null, live, errors: ["Season schedule unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+  it("rejects stale or implausibly future HTTP 200 live scoreboard dates without losing the season", async () => {
+    for (const day of ["2026-11-15", "2026-11-20"]) {
+      const wrongDay = { scoreboard: { ...live.scoreboard, gameDate: day } };
+      const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+        ? reply(schedule) : reply(wrongDay));
+      const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+      expect(result).toEqual({
+        schedule, live: null, errors: ["Live scoreboard unavailable"],
+      });
+      expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+    }
+  });
+
+  it("allows one-day UTC/Pacific scoreboard offsets but fails closed on an invalid clock", async () => {
+    for (const day of ["2026-11-16", "2026-11-17", "2026-11-18"]) {
+      const offsetLive = { scoreboard: { ...live.scoreboard, gameDate: day } };
+      const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+        ? reply(schedule) : reply(offsetLive));
+      expect((await loadUnattendedNbaFeeds(fetcher, 100, now)).live).toEqual(offsetLive);
+      expect((await loadUnattendedNbaFeeds(fetcher, 100, new Date("invalid"))).live).toBeNull();
+    }
+  });
+
+  it("rejects a partial season body mislabeled HTTP 200 by a proxy", async () => {
+    const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+      ? new Response(JSON.stringify(schedule), {
+        status: 200,
+        headers: { "content-type": "application/json", "content-range": "bytes 0-99/200" },
+      }) : reply(live));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({
+      schedule: null, live, errors: ["Season schedule unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
+  it("rejects a partial live scoreboard mislabeled HTTP 200 by a proxy", async () => {
+    const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+      ? reply(schedule) : new Response(JSON.stringify(live), {
+        status: 200,
+        headers: { "content-type": "application/json", "content-range": "bytes 0-99/200" },
+      }));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
+  it("rejects HTTP 206 partial season schedules even with a valid-looking body", async () => {
+    const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+      ? reply(schedule, 206) : reply(live));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({
+      schedule: null, live, errors: ["Season schedule unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
+  it("rejects HTTP 206 partial live scoreboards without discarding a healthy schedule", async () => {
+    const fetcher = mockFetch(async url => url.includes("scheduleLeague")
+      ? reply(schedule) : reply(live, 206));
+    const result = await loadUnattendedNbaFeeds(fetcher, 100, now);
+    expect(result).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(unattendedNbaHttpStatus(0, result.errors)).toBe(503);
+  });
+
+  it("rejects explicitly aged live HTTP 200 scoreboards while allowing cached season schedules", async () => {
+    const feed = async (liveAge: string | null, scheduleAge = "86400") => {
+      const fetcher = mockFetch(async url => {
+        const isSchedule = url.includes("scheduleLeague");
+        const headers: Record<string, string> = { "content-type": "application/json" };
+        const age = isSchedule ? scheduleAge : liveAge;
+        if (age !== null) headers["age"] = age;
+        return new Response(JSON.stringify(isSchedule ? schedule : live), { status: 200, headers });
+      });
+      return loadUnattendedNbaFeeds(fetcher, 100, now);
+    };
+    // CDN freshness headers can expose a stale same-day scoreboard that
+    // passes the usual gameDate envelope check.
+    expect(await feed("901")).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(await feed("not-a-number")).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(await feed("999999999999999999999999")).toEqual({
+      schedule, live: null, errors: ["Live scoreboard unavailable"],
+    });
+    expect(await feed("900")).toEqual({ schedule, live, errors: [] });
+    expect(await feed(null)).toEqual({ schedule, live, errors: [] });
+  });
+
+  it("rejects stale HTTP Date on live scoreboards even when CDN Age is zero", async () => {
+    const feed = async (liveDate: string | null) => {
+      const fetcher = mockFetch(async url => {
+        const isSchedule = url.includes("scheduleLeague");
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+          // A stale schedule is acceptable; only live observations need
+          // a recent HTTP Date when the server supplies that header.
+          ...(isSchedule ? { date: new Date(now.getTime() - 86400000).toUTCString() } : { age: "0" }),
+        };
+        if (!isSchedule && liveDate !== null) headers["date"] = liveDate;
+        return new Response(JSON.stringify(isSchedule ? schedule : live), {
+          status: 200, headers,
+        });
+      });
+      return loadUnattendedNbaFeeds(fetcher, 100, now);
+    };
+    for (const date of [
+      new Date(now.getTime() - 16 * 60000).toUTCString(),
+      new Date(now.getTime() + 16 * 60000).toUTCString(),
+      "not-a-valid-http-date",
+    ]) {
+      expect(await feed(date)).toEqual({
+        schedule, live: null, errors: ["Live scoreboard unavailable"],
+      });
+    }
+    expect(await feed(new Date(now.getTime() - 15 * 60000).toUTCString()))
+      .toEqual({ schedule, live, errors: [] });
+    expect(await feed(new Date(now.getTime() + 15 * 60000).toUTCString()))
+      .toEqual({ schedule, live, errors: [] });
+    expect(await feed(null)).toEqual({ schedule, live, errors: [] });
+  });
+
+  it("rejects old S3 Last-Modified timestamps for in-progress games despite fresh CDN headers", async () => {
+    const observed = new Date("2026-11-18T04:00:00Z");
+    const active = {
+      scoreboard: {
+        ...live.scoreboard,
+        games: [{ ...game, gameStatus: 2, gameStatusText: "Q3" }],
+      },
+    };
+    const feed = async (modified: string | null, inProgress = true) => {
+      const fetcher = mockFetch(async url => {
+        const isSchedule = url.includes("scheduleLeague");
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+          date: observed.toUTCString(),
+          age: "0",
+        };
+        // An old season object is expected; only live in-progress scores
+        // require a recently modified scoreboard object.
+        if (isSchedule) headers["last-modified"] =
+          new Date(observed.getTime() - 24 * 60 * 60000).toUTCString();
+        else if (modified !== null) headers["last-modified"] = modified;
+        return new Response(JSON.stringify(isSchedule ? schedule : inProgress ? active : live), {
+          status: 200, headers,
+        });
+      });
+      return loadUnattendedNbaFeeds(fetcher, 100, observed);
+    };
+    for (const modified of [
+      new Date(observed.getTime() - 16 * 60000).toUTCString(),
+      new Date(observed.getTime() + 16 * 60000).toUTCString(),
+      "invalid-last-modified",
+    ]) {
+      expect(await feed(modified)).toEqual({
+        schedule, live: null, errors: ["Live scoreboard unavailable"],
+      });
+    }
+    const acceptable = new Date(observed.getTime() - 15 * 60000).toUTCString();
+    expect(await feed(acceptable)).toEqual({ schedule, live: active, errors: [] });
+    expect(await feed(null)).toEqual({ schedule, live: active, errors: [] });
+    // A verified final remains valid even when the object is older: it is
+    // not claiming to be a new in-play score observation.
+    const old = new Date(observed.getTime() - 24 * 60 * 60000).toUTCString();
+    expect(await feed(old, false)).toEqual({ schedule, live, errors: [] });
+  });
+
+});

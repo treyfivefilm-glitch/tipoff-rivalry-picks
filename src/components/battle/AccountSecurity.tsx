@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
-import { CheckCircle2, KeyRound, ShieldAlert } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, KeyRound, ShieldAlert, Link2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { accountRecoveryStatus, verifyAccountMutation } from "@/lib/password-reset-guard";
+import { accountRecoverySnapshot, refreshLatestAccountRecovery, draftAfterAccountChange, draftAfterVerifiedAccountRefresh, emptyAccountSecurityDraft, type AccountRecoverySnapshot, type AccountSecurityDraft } from "@/lib/account-recovery-refresh";
+import { createLatestRequestGate } from "@/lib/latest-request-gate";
 
 /** Makes account recovery and the temporary nature of guest sessions visible.
  * Supabase keeps the SAME user ID (and hence room/picks) when an anonymous
@@ -9,37 +12,120 @@ import { supabase } from "@/integrations/supabase/client";
  */
 export function AccountSecurity() {
   const [guest, setGuest] = useState<boolean | null>(null);
+  const [accountId, setAccountId] = useState<string | null>(null);
   const [currentEmail, setCurrentEmail] = useState<string | null>(null);
   const [emailVerified, setEmailVerified] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [waiting, setWaiting] = useState(false);
-  const [verificationSent, setVerificationSent] = useState(false);
+  const [draft, setDraft] = useState<AccountSecurityDraft>(emptyAccountSecurityDraft);
+  const { email, password, verificationSent } = draft;
+  const [linkedGoogle, setLinkedGoogle] = useState(false);
+  const googleEnabled = import.meta.env["VITE_ENABLE_GOOGLE_OAUTH"] === "true";
   const [busy, setBusy] = useState(false);
+  const refreshGate = useRef(createLatestRequestGate());
+  const identityRef = useRef<string | null>(null);
+  const recoveryStatus = guest === null ? null : accountRecoveryStatus({
+    isAnonymous: guest,
+    email: currentEmail,
+    emailVerified,
+    googleLinked: linkedGoogle,
+  });
+
+  const publishAccount = (snapshot: AccountRecoverySnapshot) => {
+    if (snapshot.accountId) {
+      // A manual/initial getUser refresh can observe a different account
+      // even if the browser never delivered its auth event to this tab.
+      const previousAccountId = identityRef.current;
+      identityRef.current = snapshot.accountId;
+      setDraft(current => draftAfterVerifiedAccountRefresh(
+        current, previousAccountId, snapshot.accountId,
+      ));
+    }
+    setAccountId(snapshot.accountId);
+    setGuest(snapshot.guest);
+    setCurrentEmail(snapshot.currentEmail);
+    setEmailVerified(snapshot.emailVerified);
+    setLinkedGoogle(snapshot.linkedGoogle);
+  };
+  const readAccount = async () => {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    return data.user;
+  };
 
   useEffect(() => {
     let active = true;
-    const refresh = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!active) return;
-      setGuest(data.user?.is_anonymous ?? null);
-      setCurrentEmail(data.user?.email ?? null);
-      setEmailVerified(Boolean(data.user?.email_confirmed_at));
+    const publishIfActive = (snapshot: AccountRecoverySnapshot) => {
+      if (active) publishAccount(snapshot);
     };
-    void refresh();
-    const { data } = supabase.auth.onAuthStateChange(() => { void refresh(); });
-    return () => { active = false; data.subscription.unsubscribe(); };
+    const refresh = () => {
+      void refreshLatestAccountRecovery(refreshGate.current, readAccount, publishIfActive);
+    };
+    refresh();
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Auth changes can arrive from another tab. Never show the previous
+      // player's typed email/password or verification notice in this profile.
+      const nextAccountId = session?.user?.id ?? null;
+      const previousAccountId = identityRef.current;
+      identityRef.current = nextAccountId;
+      setDraft(current => draftAfterAccountChange(current, previousAccountId, nextAccountId));
+      publishIfActive(accountRecoverySnapshot(null));
+      refresh();
+    });
+    return () => {
+      active = false;
+      refreshGate.current.begin(); // invalidate any in-flight account lookup
+      data.subscription.unsubscribe();
+    };
   }, []);
+
+  async function linkGoogle() {
+    if (!googleEnabled || busy) return;
+    setBusy(true);
+    try {
+      await verifyAccountMutation(supabase.auth, accountId, "link-google");
+      // Link the identity to THIS account so all picks and rooms retain the
+      // same user ID. Requires Google OAuth + manual linking in Supabase Auth.
+      const { error } = await supabase.auth.linkIdentity({
+        provider: "google",
+        options: { redirectTo: window.location.origin + "/rooms" },
+      });
+      if (error) throw error;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to link Google");
+      setBusy(false);
+    }
+  }
+
+  async function refreshAccount() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const snapshot = await refreshLatestAccountRecovery(
+        refreshGate.current,
+        readAccount,
+        publishAccount,
+        error => toast.error(error instanceof Error ? error.message : "Cannot check account status"),
+      );
+      if (!snapshot) return; // obsolete response or failed lookup
+      if (!snapshot.accountId) {
+        toast.error("No active account. Sign in before changing recovery settings.");
+      } else {
+        toast.success(snapshot.guest ? "Guest account is not permanent yet." : "Account status updated.");
+      }
+    } finally { setBusy(false); }
+  }
 
   async function attachEmail() {
     if (!email.trim()) return;
     setBusy(true);
     try {
+      await verifyAccountMutation(supabase.auth, accountId, "attach-email");
       const { error } = await supabase.auth.updateUser({ email: email.trim() }, {
         emailRedirectTo: window.location.origin + "/rooms",
       });
       if (error) throw error;
-      setVerificationSent(true);
+      if (identityRef.current === accountId) {
+        setDraft(current => ({ ...current, verificationSent: true }));
+      }
       toast.success("If email delivery is configured, a verification message is on its way.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not begin account recovery");
@@ -50,9 +136,10 @@ export function AccountSecurity() {
     if (password.length < 8) { toast.error("Use a password of at least 8 characters."); return; }
     setBusy(true);
     try {
+      await verifyAccountMutation(supabase.auth, accountId, "set-password");
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
-      setPassword("");
+      setDraft(current => ({ ...current, password: "" }));
       toast.success("Account password saved.");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Password could not be saved");
@@ -65,6 +152,10 @@ export function AccountSecurity() {
         {guest ? <ShieldAlert className="h-5 w-5 text-[#ff882e]" /> : <KeyRound className="h-5 w-5 text-primary" />}
         <h2 className="font-display text-2xl tracking-wide">MY ACCOUNT</h2>
       </div>
+      <button type="button" onClick={() => void refreshAccount()} disabled={busy}
+        className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-border px-3 font-cond text-xs text-muted-foreground disabled:opacity-50">
+        <RefreshCw className="h-4 w-4" /> Refresh account status
+      </button>
       {guest === null ? <p className="text-sm text-muted-foreground">Checking account security…</p>
         : guest ? <>
           <p className="font-cond text-sm font-bold text-[#ffad69]">Temporary guest account</p>
@@ -74,7 +165,7 @@ export function AccountSecurity() {
           </p>
           <label className="block text-xs font-bold text-foreground" htmlFor="recovery-email">Email for permanent access</label>
           <input id="recovery-email" type="email" autoComplete="email" value={email}
-            onChange={e => setEmail(e.target.value)}
+            onChange={e => setDraft(current => ({ ...current, email: e.target.value, verificationSent: false }))}
             placeholder="you@example.com"
             className="h-12 w-full rounded-xl border border-input bg-background/70 px-3 outline-none focus:border-primary" />
           <button type="button" disabled={busy || !email.trim()} onClick={() => void attachEmail()}
@@ -85,19 +176,48 @@ export function AccountSecurity() {
             Check your inbox. Keep this browser signed in until verification is complete.
             Verification delivery depends on the configured email service.
           </p>}
+          {googleEnabled && (
+            <button type="button" disabled={busy} onClick={() => void linkGoogle()}
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-primary/60 bg-primary/10 font-cond font-bold text-primary disabled:opacity-50">
+              <Link2 className="h-4 w-4" /> Link Google to keep this account
+            </button>
+          )}
           <p className="text-xs text-muted-foreground">
-            Permanent accounts require email verification or an enabled Google identity.
-            Google sign-in is not configured yet.
+            A permanent account requires a verified email or a linked Google identity.
+            {googleEnabled ? " Linking Google preserves your room and pick history." : " Google linking is not configured yet."}
           </p>
         </> : <>
-          <p className="flex items-center gap-2 text-sm text-[#82dbac]">
-            <CheckCircle2 className="h-4 w-4" /> {emailVerified ? "Verified email account" : "Permanent sign-in configured"}
-          </p>
+          {recoveryStatus === "verified-email" || recoveryStatus === "linked-google" ? (
+            <p className="flex items-center gap-2 text-sm text-[#82dbac]">
+              <CheckCircle2 className="h-4 w-4" />
+              {recoveryStatus === "verified-email" ? "Verified email account" : "Google sign-in linked"}
+            </p>
+          ) : (
+            <div role="status" className="space-y-1 rounded-xl border border-[#ff882e]/40 bg-[#ff882e]/10 p-3">
+              <p className="flex items-center gap-2 text-sm font-semibold text-[#ffad69]">
+                <ShieldAlert className="h-4 w-4" /> Account recovery not verified
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {recoveryStatus === "unverified-email"
+                  ? "Your email is not verified yet. Check your verification email, keep this browser signed in, then refresh account status."
+                  : "No verified recovery method is attached. Keep this browser signed in to protect your rooms and wagers."}
+              </p>
+            </div>
+          )}
           <p className="break-all text-sm text-muted-foreground">{currentEmail ?? "Connected account"}</p>
+          {googleEnabled && !linkedGoogle && (
+            <button type="button" disabled={busy} onClick={() => void linkGoogle()}
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-primary/60 bg-primary/10 font-cond font-bold text-primary disabled:opacity-50">
+              <Link2 className="h-4 w-4" /> Connect Google sign-in
+            </button>
+          )}
+          {linkedGoogle && <p className="flex items-center gap-2 text-sm text-[#82dbac]">
+            <CheckCircle2 className="h-4 w-4" /> Google account linked
+          </p>}
           {emailVerified && <>
             <label className="block text-xs font-bold" htmlFor="update-password">Set or change password</label>
             <input id="update-password" type="password" autoComplete="new-password" minLength={8}
-              value={password} onChange={e => setPassword(e.target.value)}
+              value={password} onChange={e => setDraft(current => ({ ...current, password: e.target.value }))}
               placeholder="At least 8 characters"
               className="h-12 w-full rounded-xl border border-input bg-background/70 px-3 outline-none focus:border-primary" />
             <button type="button" disabled={busy || password.length < 8} onClick={() => void addPassword()}

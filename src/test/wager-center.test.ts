@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { latestWagers, wagerLane, type WagerVersion } from "@/lib/wagers";
+import { latestChallengeSubmission, latestWagers, paymentCentsWithinBalance, wagerCentsFromDollars, unrecordedPaymentCents, paymentFormRevision, wagerLane, wagerVersionStatusLabel, type WagerVersion } from "@/lib/wagers";
 import type { BoardGame } from "@/lib/rules";
 
 const future = new Date(Date.now() + 86400_000).toISOString();
@@ -42,10 +42,161 @@ describe("wagerLane", () => {
   });
 });
 
+describe("versioned wager history labels", () => {
+  it("distinguishes a withdrawn or voided wager from an offer expired at tipoff", () => {
+    expect(wagerVersionStatusLabel("withdrawn")).toBe("Withdrawn");
+    expect(wagerVersionStatusLabel("void")).toBe("Voided");
+    expect(wagerVersionStatusLabel("superseded")).toBe("Replaced by newer offer");
+    expect(wagerVersionStatusLabel("proposed")).toBe("Pending");
+  });
+
+  it("keeps accepted and declined statuses understandable on mobile", () => {
+    expect(wagerVersionStatusLabel("accepted")).toBe("Accepted");
+    expect(wagerVersionStatusLabel("declined")).toBe("Declined");
+    expect(wagerVersionStatusLabel("unexpected")).toBe("Unknown status");
+  });
+});
+
 describe("latestWagers", () => {
   it("keeps only the highest version per game", () => {
     const map = latestWagers([version({ version: 1 }), version({ version: 3, cents: 500 }), version({ version: 2 })]);
     expect(map.get("g1")?.version).toBe(3);
     expect(map.get("g1")?.cents).toBe(500);
+  });
+});
+
+describe("payment amount safety", () => {
+  it("allows exact full and partial payments including a one-cent remainder", () => {
+    expect(paymentCentsWithinBalance("3.49", 349)).toBe(349);
+    expect(paymentCentsWithinBalance("1.20", 349)).toBe(120);
+    expect(paymentCentsWithinBalance("0.01", 1)).toBe(1);
+    expect(paymentCentsWithinBalance("5", 500)).toBe(500);
+  });
+
+  it("rejects overpayment even by one cent", () => {
+    expect(paymentCentsWithinBalance("3.50", 349)).toBeNull();
+    expect(paymentCentsWithinBalance("0.02", 1)).toBeNull();
+  });
+
+  it("rejects zero, negative, malformed, exponent and extra-precision inputs", () => {
+    for (const amount of ["", " ", "0", "0.00", "-1", "1.001", "1e3", "Infinity", "1,000", "1."]) {
+      expect(paymentCentsWithinBalance(amount, 500)).toBeNull();
+    }
+  });
+
+  it("fails closed if the outstanding balance is invalid or already settled", () => {
+    expect(paymentCentsWithinBalance("1.00", 0)).toBeNull();
+    expect(paymentCentsWithinBalance("1.00", -100)).toBeNull();
+    expect(paymentCentsWithinBalance("1.00", Number.NaN)).toBeNull();
+  });
+});
+
+describe("pending payment reservation", () => {
+  const outgoing = (cents: number, status: "pending" | "confirmed" | "rejected" = "pending") => ({
+    payer_id: "me", recipient_id: "friend", cents, status,
+  });
+
+  it("disables another payment while any outgoing transfer awaits confirmation", () => {
+    expect(unrecordedPaymentCents(380, [outgoing(380)], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(380, [outgoing(100)], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(380, [outgoing(1)], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(380, [], "me", "friend")).toBe(380);
+  });
+
+  it("allows payment again after confirmation or rejection and ignores incoming transfers", () => {
+    const payments = [
+      outgoing(100, "confirmed"),
+      outgoing(100, "rejected"),
+      { payer_id: "friend", recipient_id: "me", cents: 100, status: "pending" as const },
+    ];
+    expect(unrecordedPaymentCents(380, payments, "me", "friend")).toBe(380);
+  });
+
+  it("matches the RPC's per-room rule even if a pending recipient is unexpected", () => {
+    expect(unrecordedPaymentCents(380, [
+      { payer_id: "me", recipient_id: "other", cents: 1, status: "pending" },
+    ], "me", "friend")).toBe(0);
+  });
+
+  it("fails closed for invalid balances or missing recipient", () => {
+    expect(unrecordedPaymentCents(-100, [], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(Number.NaN, [], "me", "friend")).toBe(0);
+    expect(unrecordedPaymentCents(100, [], "me", null)).toBe(0);
+    expect(unrecordedPaymentCents(100, [], "me", "me")).toBe(0);
+  });
+});
+
+describe("challenge resubmission history", () => {
+  const submission = (id: string, created_at: string, game_id = "g1", version = 2) =>
+    ({ id, created_at, game_id, version });
+
+  it("shows the newest submission after a disputed attempt regardless of API ordering", () => {
+    const disputed = submission("first", "2026-10-30T20:00:00Z");
+    const resubmitted = submission("second", "2026-10-30T20:05:00Z");
+    const otherGame = submission("unrelated", "2026-10-30T21:00:00Z", "g2");
+    const otherVersion = submission("old-version", "2026-10-30T22:00:00Z", "g1", 1);
+    for (const submissions of [
+      [disputed, resubmitted, otherGame, otherVersion],
+      [otherVersion, resubmitted, disputed, otherGame],
+    ]) {
+      expect(latestChallengeSubmission(submissions, "g1", 2)).toEqual(resubmitted);
+    }
+  });
+
+  it("returns no submission for an unmatched wager and handles equal timestamps consistently", () => {
+    const first = submission("a", "2026-10-30T20:00:00Z");
+    const second = submission("b", "2026-10-30T20:00:00Z");
+    expect(latestChallengeSubmission([first, second], "missing", 2)).toBeUndefined();
+    expect(latestChallengeSubmission([first, second], "g1", 2)).toEqual(second);
+    expect(latestChallengeSubmission([second, first], "g1", 2)).toEqual(second);
+  });
+});
+
+
+describe("wager amount exact-cent validation", () => {
+  it("accepts only exact cents within the $1 to $1,000 per-player range", () => {
+    expect(wagerCentsFromDollars("1")).toBe(100);
+    expect(wagerCentsFromDollars("1.01")).toBe(101);
+    expect(wagerCentsFromDollars("12.30")).toBe(1230);
+    expect(wagerCentsFromDollars("1000")).toBe(100000);
+  });
+
+  it("rejects fractional cents instead of silently rounding a different wager", () => {
+    for (const input of ["1.005", "1.999", "999.999", "0.999"]) {
+      expect(wagerCentsFromDollars(input)).toBeNull();
+    }
+  });
+
+  it("rejects malformed, exponent, nonfinite, below-minimum and above-maximum amounts", () => {
+    for (const input of ["", " ", "1.", "-1", "0.99", "1000.01", "1e2", "Infinity", "NaN", "1,000"]) {
+      expect(wagerCentsFromDollars(input)).toBeNull();
+    }
+  });
+});
+
+describe("payment form revision after settlement updates", () => {
+  const payment = (id: string, payer_id: string, status: "pending" | "confirmed" | "rejected") =>
+    ({ id, payer_id, status });
+
+  it("changes when a payment is disputed so an unchanged balance can be sent again", () => {
+    const pending = payment("p1", "me", "pending");
+    const rejected = payment("p1", "me", "rejected");
+    expect(paymentFormRevision([pending], "me")).not.toBe(paymentFormRevision([rejected], "me"));
+    // If the pending record was never observed due to a delayed room refresh,
+    // receiving the rejection must still remount the locked form.
+    expect(paymentFormRevision([], "me")).not.toBe(paymentFormRevision([rejected], "me"));
+  });
+
+  it("changes on confirmation or another outgoing payment but not incoming payments", () => {
+    const outgoing = payment("p1", "me", "confirmed");
+    const incoming = payment("p2", "friend", "pending");
+    expect(paymentFormRevision([], "me")).not.toBe(paymentFormRevision([outgoing], "me"));
+    expect(paymentFormRevision([outgoing, incoming], "me")).toBe(paymentFormRevision([outgoing], "me"));
+  });
+
+  it("is independent of payment ordering to avoid losing an unfinished form", () => {
+    const first = payment("p1", "me", "rejected");
+    const second = payment("p2", "me", "confirmed");
+    expect(paymentFormRevision([first, second], "me")).toBe(paymentFormRevision([second, first], "me"));
   });
 });

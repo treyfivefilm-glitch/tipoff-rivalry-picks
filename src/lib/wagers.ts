@@ -1,10 +1,44 @@
 import type { Database } from '@/integrations/supabase/types';
+import type { Payment } from './rules';
 import { h2hResult, isLocked, type BoardGame } from './rules';
 export type WagerVersion = Database['public']['Tables']['wager_versions']['Row'];
 export type ChallengeSubmission = Database['public']['Tables']['challenge_submissions']['Row'];
 export type WagerCategory = 'cash' | 'challenge' | 'both';
 export type DeadlineRule = 'none' | '24h' | '7d' | 'meeting';
 export const deadlineLabels: Record<string, string> = { none: 'No deadline', '24h': '24 hours after final', '7d': '7 days after final', meeting: 'Next meeting', date: 'Agreed date' };
+/** Friendly, precise labels for the immutable version history. A superseded
+ * counteroffer and a voided pick are not wagers that simply expired at tipoff.
+ */
+export function wagerVersionStatusLabel(status: WagerVersion["status"]): string {
+  switch (status) {
+    case "proposed": return "Pending";
+    case "accepted": return "Accepted";
+    case "declined": return "Declined";
+    case "withdrawn": return "Withdrawn";
+    case "superseded": return "Replaced by newer offer";
+    case "void": return "Voided";
+    default: return "Unknown status";
+  }
+}
+
+/** A disputed challenge may be resubmitted. Never rely on the order of
+ * a room's fetched submissions when deciding which attempt to display or
+ * confirm. A stable ID tie-break makes identical timestamps deterministic.
+ */
+export function latestChallengeSubmission<T extends Pick<ChallengeSubmission, 'id' | 'game_id' | 'version' | 'created_at'>>(
+  submissions: readonly T[], gameId: string, version: number,
+): T | undefined {
+  let latest: T | undefined;
+  for (const submission of submissions) {
+    if (submission.game_id !== gameId || submission.version !== version) continue;
+    if (!latest || submission.created_at > latest.created_at ||
+        (submission.created_at === latest.created_at && submission.id > latest.id)) {
+      latest = submission;
+    }
+  }
+  return latest;
+}
+
 export function latestWagers(versions: WagerVersion[]) {
   const map = new Map<string, WagerVersion>();
   for (const v of versions) if ((map.get(v.game_id)?.version ?? 0) < v.version) map.set(v.game_id, v);
@@ -16,3 +50,53 @@ export function wagerLane(v: WagerVersion, g: BoardGame | undefined): 'offers' |
   return 'ledger';
 }
 export function cashStake(category: string, cents: number): number { return category === 'challenge' ? 0 : cents; }
+/** Convert a payment entry to exact cents without rounding or overpaying.
+ * Payments are only recorded in TIPOFF; the app does not transfer money.
+ */
+export function paymentCentsWithinBalance(raw: string, outstandingCents: number): number | null {
+  if (!/^\d+(?:\.\d{1,2})?$/.test(raw) || !Number.isSafeInteger(outstandingCents) || outstandingCents < 1) {
+    return null;
+  }
+  const [dollars = "", fraction = ""] = raw.split(".");
+  const cents = Number(dollars) * 100 + Number(fraction.padEnd(2, "0"));
+  return Number.isSafeInteger(cents) && cents >= 1 && cents <= outstandingCents ? cents : null;
+}
+
+/** The existing record_payment RPC allows only one pending outgoing payment
+ * per room. Do not offer another payment form until the recipient responds,
+ * even if the first transfer was partial. Pending transfers do not settle
+ * the displayed ledger balance.
+ */
+export function unrecordedPaymentCents(
+  owedCents: number,
+  payments: Pick<Payment, 'payer_id' | 'recipient_id' | 'status' | 'cents'>[],
+  payerId: string,
+  recipientId: string | null,
+): number {
+  if (!Number.isSafeInteger(owedCents) || owedCents <= 0 || !payerId || !recipientId || payerId === recipientId) return 0;
+  if (payments.some((payment) => payment.status === 'pending' && payment.payer_id === payerId)) return 0;
+  return owedCents;
+}
+
+/** Wager amounts must be exact whole cents, not rounded from fractional cents.
+ * Match the server's $1–$1,000 per-player bounds before sending an offer.
+ */
+export function wagerCentsFromDollars(raw: string): number | null {
+  const cents = paymentCentsWithinBalance(raw, 100_000);
+  return cents !== null && cents >= 100 ? cents : null;
+}
+
+/** A submitted payment form must unlock if the server later reports a rejected
+ * payment, even when the outstanding dollar amount has not changed. This stable
+ * revision ignores unrelated incoming payments and API ordering.
+ */
+export function paymentFormRevision(
+  payments: readonly Pick<Payment, 'id' | 'payer_id' | 'status'>[],
+  payerId: string,
+): string {
+  return payments
+    .filter((payment) => payment.payer_id === payerId)
+    .map((payment) => `${payment.id}:${payment.status}`)
+    .sort()
+    .join('|');
+}

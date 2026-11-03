@@ -3,9 +3,16 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { describeAuthFailure, RESET_REQUEST_NOTICE, SIGNUP_PENDING_NOTICE, signupModeFromSearch, signupResponseStatus, hasActiveSignupSession, hasUsablePasswordSession, hasActivePasswordSession, type AuthFeedback } from "@/lib/auth-feedback";
+import { passwordResetCallbackUrl, safeAuthRedirect } from "@/lib/auth-redirect";
+import { CONFIRMATION_RESEND_NOTICE, resendSignupConfirmation } from "@/lib/signup-confirmation";
+import { hasGuestSession, ensureGuestSession, GUEST_SESSION_WARNING, GuestAccountSwitchBlockedError, runWithoutGuestAccountSwitch } from "@/lib/guest-session-guard";
 
 export const Route = createFileRoute("/auth")({
-  validateSearch: (s: Record<string, unknown>) => ({ redirect: typeof s["redirect"] === "string" && s["redirect"].startsWith("/") && !s["redirect"].startsWith("//") ? s["redirect"] : undefined }),
+  validateSearch: (s: Record<string, unknown>) => {
+    const mode = signupModeFromSearch(s["mode"]);
+    return { redirect: safeAuthRedirect(s["redirect"]), ...(mode ? { mode } : {}) };
+  },
   head: () => ({ meta: [{ title: "Sign in · NBA Pick Battle" }, { name: "description", content: "Sign in to your private NBA Pick Battle room." }, { property: "og:title", content: "Sign in · NBA Pick Battle" }, { property: "og:description", content: "Sign in to your private pick battle." }, { property: "og:type", content: "website" }, { name: "twitter:card", content: "summary" }] }),
   component: AuthPage,
 });
@@ -17,38 +24,131 @@ const guestEnabled = import.meta.env["VITE_ENABLE_GUEST_LOGIN"] === "true";
 const input = "h-12 w-full rounded-xl border border-input bg-background/60 px-4 outline-none focus:border-primary";
 
 function AuthPage() {
-  const { redirect } = Route.useSearch();
+  const { redirect, mode: initialMode } = Route.useSearch();
   const nav = useNavigate();
-  const [mode, setMode] = useState<"in" | "up">("in");
+  const [mode, setMode] = useState<"in" | "up">(initialMode ?? "in");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<AuthFeedback | null>(null);
+  const [notice, setNotice] = useState("");
+  const [guestProtected, setGuestProtected] = useState(false);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const done = () => nav({ href: redirect ?? "/rooms" });
 
   async function submit(e: { preventDefault: () => void }) {
-    e.preventDefault(); setBusy(true);
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true); setFeedback(null); setNotice(""); setGuestProtected(false); setAwaitingConfirmation(false);
     try {
-      if (mode === "in") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
-        if (error) throw error; done();
-      } else {
-        const { data, error } = await supabase.auth.signUp({ email, password: pw, options: { emailRedirectTo: window.location.origin + (redirect ?? "/rooms") } });
-        if (error) throw error;
-        if (data.session) done(); else toast.success("Check your email to confirm your account.");
+      // A different login could replace this browser's guest session and hide its wagers.
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (hasGuestSession(session)) {
+        setGuestProtected(true);
+        setFeedback({ message: "Keep your current guest account", nextStep: GUEST_SESSION_WARNING, canReset: false });
+        return;
       }
-    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed"); } finally { setBusy(false); }
+      if (mode === "in") {
+        const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pw });
+        if (error) throw error;
+        if (!hasUsablePasswordSession(data)) {
+          setFeedback({
+            message: "Sign-in did not establish an account session.",
+            nextStep: "Please retry. If this continues, TIPOFF's authentication backend needs attention; your account has not been confirmed as signed in.",
+            canReset: false,
+          });
+          return;
+        }
+        // Another tab may have switched the browser identity while login ran.
+        const { data: active, error: activeError } = await supabase.auth.getSession();
+        if (activeError) throw activeError;
+        if (!hasActivePasswordSession(data, active.session)) {
+          setFeedback({
+            message: "Sign-in session changed before it could be verified.",
+            nextStep: "Please retry sign-in and check that another tab has not switched accounts. No private room was opened.",
+            canReset: false,
+          });
+          return;
+        }
+        done();
+      } else {
+        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password: pw, options: { emailRedirectTo: window.location.origin + (redirect ?? "/rooms") } });
+        if (error) throw error;
+        const outcome = signupResponseStatus(data);
+        if (outcome === "signed-in") {
+          const { data: active, error: activeError } = await supabase.auth.getSession();
+          if (activeError) throw activeError;
+          if (!hasActiveSignupSession(data, active.session)) {
+            setFeedback({
+              message: "Account session could not be verified.",
+              nextStep: "Your account may have been created, but TIPOFF cannot safely open your rooms. Refresh and sign in again.",
+              canReset: false,
+            });
+            return;
+          }
+          done();
+        }
+        else if (outcome === "awaiting-confirmation") {
+          setAwaitingConfirmation(true);
+          setNotice(SIGNUP_PENDING_NOTICE);
+        }
+        else setFeedback({ message: "Account creation could not be confirmed.", nextStep: "No signed-in account or pending registration was returned. Try again later or report the problem to TIPOFF support.", canReset: false });
+      }
+    } catch (err) {
+      setFeedback(describeAuthFailure(err, mode === "in" ? "sign-in" : "sign-up"));
+    } finally { setBusy(false); }
   }
+
+  async function resendConfirmation() {
+    if (busy || !email.trim()) return;
+    setBusy(true); setFeedback(null); setNotice(""); setGuestProtected(false);
+    try {
+      await resendSignupConfirmation(supabase.auth, email, window.location.origin + (redirect ?? "/rooms"));
+      setNotice(CONFIRMATION_RESEND_NOTICE);
+    } catch (err) {
+      if (err instanceof GuestAccountSwitchBlockedError) {
+        setGuestProtected(true);
+        setAwaitingConfirmation(false);
+        setFeedback({ message: "Keep your current guest account", nextStep: GUEST_SESSION_WARNING, canReset: false });
+      } else {
+        setFeedback({ ...describeAuthFailure(err, "sign-up"), message: "Could not request another confirmation email." });
+      }
+    } finally { setBusy(false); }
+  }
+
   async function forgot() {
-    if (!email) { toast.error("Enter your email first"); return; }
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
-    if (error) toast.error(error.message); else toast.success("Reset link sent");
+    if (busy) return;
+    if (!email.trim()) {
+      setFeedback({ message: "Enter your email address first.", nextStep: "You do not need to enter a password to request a reset.", canReset: false });
+      return;
+    }
+    setBusy(true); setFeedback(null); setNotice(""); setGuestProtected(false);
+    try {
+      // Recovery links may replace a guest session when opened in this browser.
+      // Keep guest rooms and wagers intact; upgrade from Profile instead.
+      await runWithoutGuestAccountSwitch(supabase.auth, async () => {
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: passwordResetCallbackUrl(window.location.origin, redirect),
+        });
+        if (error) throw error;
+      });
+      setNotice(RESET_REQUEST_NOTICE);
+    } catch (err) {
+      if (err instanceof GuestAccountSwitchBlockedError) {
+        setGuestProtected(true);
+        setFeedback({ message: "Keep your current guest account", nextStep: GUEST_SESSION_WARNING, canReset: false });
+      } else {
+        setFeedback(describeAuthFailure(err, "reset"));
+      }
+    } finally { setBusy(false); }
   }
+
   async function guest() {
     if (busy || !guestEnabled) return;
     setBusy(true);
     try {
-      const { error } = await supabase.auth.signInAnonymously();
-      if (error) throw error;
+      await ensureGuestSession(supabase.auth);
       done();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Guest sign-in failed");
@@ -59,22 +159,26 @@ function AuthPage() {
 
   async function google() {
     if (busy || !googleEnabled) return;
-    setBusy(true);
+    setBusy(true); setFeedback(null); setGuestProtected(false);
     try {
-      // The standalone Supabase project must enable Google and allowlist this origin.
-      // No managed Lovable OAuth broker is involved.
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      // Sign-in switches identity; guests must link Google in Profile instead.
+      const { data, error } = await runWithoutGuestAccountSwitch(supabase.auth, () => supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: window.location.origin + (redirect ?? "/rooms"),
           skipBrowserRedirect: true,
         },
-      });
+      }));
       if (error) throw error;
       if (!data.url) throw new Error("Google sign-in is not configured yet. Use email instead.");
       window.location.assign(data.url);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Google sign-in failed");
+      if (error instanceof GuestAccountSwitchBlockedError) {
+        setGuestProtected(true);
+        setFeedback({ message: "Keep your current guest account", nextStep: GUEST_SESSION_WARNING, canReset: false });
+      } else {
+        toast.error(error instanceof Error ? error.message : "Google sign-in failed");
+      }
       setBusy(false);
     }
   }
@@ -84,10 +188,24 @@ function AuthPage() {
       <h1 className="font-display text-6xl leading-none text-primary">PICK BATTLE</h1>
       <p className="text-muted-foreground">{mode === "in" ? "Welcome back." : "Create your account."}</p>
       <form onSubmit={submit} className="space-y-3">
-        <input className={input} type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        <input className={input} type="password" required minLength={6} placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} />
-        <Button variant="gold" size="xl" className="w-full" disabled={busy}>{mode === "in" ? "Sign in" : "Sign up"}</Button>
+        <input className={input} type="email" autoComplete="email" aria-label="Email" required placeholder="Email" value={email} onChange={(e) => { setEmail(e.target.value); setAwaitingConfirmation(false); setFeedback(null); setNotice(""); }} />
+        <input className={input} type="password" autoComplete={mode === "in" ? "current-password" : "new-password"} aria-label="Password" required minLength={mode === "up" ? 8 : 1} placeholder={mode === "up" ? "Password (8+ characters)" : "Password"} value={pw} onChange={(e) => setPw(e.target.value)} />
+        <Button type="submit" variant="gold" size="xl" className="w-full" disabled={busy}>{busy ? "Please wait…" : mode === "in" ? "Sign in" : "Sign up"}</Button>
       </form>
+      {feedback && (
+        <div role="alert" className="space-y-2 rounded-xl border border-destructive/50 bg-destructive/10 p-3 text-sm">
+          <p className="font-semibold">{feedback.message}</p>
+          <p className="text-muted-foreground">{feedback.nextStep}</p>
+          {feedback.canReset && <button type="button" className="font-semibold text-primary underline" disabled={busy} onClick={forgot}>Request password reset</button>}
+          {guestProtected && <a href="/rooms#account-recovery" className="inline-block font-semibold text-primary underline">Protect this guest account</a>}
+        </div>
+      )}
+      {notice && <p role="status" className="rounded-xl border border-border bg-muted/50 p-3 text-sm">{notice}</p>}
+      {(awaitingConfirmation || feedback?.canResend) && !guestProtected && (
+        <button type="button" className="text-left text-sm font-semibold text-primary underline" disabled={busy || !email.trim()} onClick={resendConfirmation}>
+          Request another confirmation email
+        </button>
+      )}
       {guestEnabled && (
         <div className="space-y-2">
           <Button variant="glass" size="xl" className="w-full" onClick={guest} disabled={busy}>
@@ -100,8 +218,8 @@ function AuthPage() {
       )}
       {googleEnabled && <Button variant="glass" size="xl" onClick={google} disabled={busy}>Continue with Google</Button>}
       <div className="flex justify-between text-sm">
-        <button className="text-primary" onClick={() => setMode(mode === "in" ? "up" : "in")}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>
-        <button className="text-muted-foreground" onClick={forgot}>Forgot password</button>
+        <button type="button" className="text-primary" disabled={busy} onClick={() => { setMode(mode === "in" ? "up" : "in"); setFeedback(null); setNotice(""); setGuestProtected(false); setAwaitingConfirmation(false); }}>{mode === "in" ? "New here? Sign up" : "Have an account? Sign in"}</button>
+        <button type="button" className="text-muted-foreground" disabled={busy} onClick={forgot}>Forgot password</button>
       </div>
     </div>
   );

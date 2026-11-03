@@ -1,0 +1,119 @@
+// Isolated, testable NBA feed boundary for the disabled unattended worker.
+// Fetches are independent: one provider outage must not discard valid data
+// from the other, but degraded runs must remain visible to monitoring.
+import { isValidNbaScoreboard } from "./nba-feed-validation.ts";
+import { verifiedUnattendedNbaSchedule } from "./nba-unattended.ts";
+
+const BASE = "https://nba-prod-us-east-1-mediaops-stats.s3.amazonaws.com/NBA";
+const SCHEDULE = BASE + "/staticData/scheduleLeagueV2.json";
+const LIVE = BASE + "/liveData/scoreboard/todaysScoreboard_00.json";
+
+/** Shared fail-closed HTTP boundary for the signed-in sync and unattended worker.
+ * A successful status is not proof that a CDN returned a complete, fresh feed.
+ */
+export async function fetchOfficialNbaJson(
+  url: string, request: typeof fetch = fetch, timeoutMs = 11000, now: Date = new Date(),
+): Promise<unknown> {
+  const response = await request(url, {
+    signal: AbortSignal.timeout(timeoutMs),
+    // Never follow an unexpected CDN redirect to another feed host. A valid
+    // JSON shape alone does not prove the redirected source is authoritative.
+    redirect: "error",
+    // A live scoreboard with today's date may still contain hours-old
+    // cached scores. Ask the runtime and intermediary caches to revalidate
+    // instead of treating a stale HTTP 200 body as a fresh observation.
+    cache: "no-store",
+    headers: { accept: "application/json", "cache-control": "no-cache" },
+  });
+  // HTTP 206 can contain valid JSON while omitting games. A partial feed
+  // must not certify an otherwise empty day or settle an incomplete final.
+  // A proxy/CDN can send a partial JSON body with HTTP 200 and a
+  // Content-Range header. Such a body may omit games yet pass envelope
+  // validation, falsely certifying a day as empty or a final as complete.
+  // Fail closed for ranged provider responses, even with a valid JSON shape.
+  if (response.status !== 200 || response.headers.has("content-range")) {
+    throw new Error("NBA feed unavailable");
+  }
+  // The CDN may ignore no-store and return a same-day scoreboard cached for
+  // hours. Its gameDate would still pass date validation and could make old
+  // live/final scores look freshly checked. An explicit HTTP Age above fifteen
+  // minutes (or malformed Age) is evidence that this is not a fresh live feed.
+  // Season schedules are allowed to be cached much longer. A missing Age
+  // cannot prove freshness, so existing game-date/score guards still apply.
+  if (url === LIVE) {
+    const ageHeader = response.headers.get("age");
+    if (ageHeader !== null) {
+      const age = Number(ageHeader);
+      if (!/^\d+$/.test(ageHeader.trim()) || !Number.isSafeInteger(age) || age > 900) {
+        throw new Error("NBA live scoreboard is stale");
+      }
+    }
+    // An intermediary can reset Age to zero while forwarding an older
+    // response. A supplied HTTP Date far from the observation time is
+    // independent evidence that today's live scoreboard is not current.
+    // Missing Date is not proof of freshness; other feed guards still apply.
+    const dateHeader = response.headers.get("date");
+    if (dateHeader !== null) {
+      const observedAt = Date.parse(dateHeader);
+      const nowMs = now.getTime();
+      if (!Number.isFinite(observedAt) || !Number.isFinite(nowMs) ||
+          Math.abs(nowMs - observedAt) > 15 * 60 * 1000) {
+        throw new Error("NBA live scoreboard is stale");
+      }
+    }
+  }
+  const payload: unknown = await response.json();
+  if (url === LIVE && isValidNbaScoreboard(payload)) {
+    // A CDN can replace Date and Age with fresh response headers while
+    // forwarding an old S3 scoreboard object. During an in-progress game,
+    // Last-Modified (when supplied) is independent evidence of when the
+    // actual score data was updated. Never certify an old live snapshot as
+    // freshly checked; missing Last-Modified still uses the other guards.
+    const games = (payload as { scoreboard: { games: unknown[] } }).scoreboard.games;
+    const hasInProgressGame = games.some(game =>
+      game !== null && typeof game === "object" && !Array.isArray(game) &&
+      (game as { gameStatus?: unknown }).gameStatus === 2);
+    const lastModified = response.headers.get("last-modified");
+    if (hasInProgressGame && lastModified !== null) {
+      const modifiedAt = Date.parse(lastModified);
+      const nowMs = now.getTime();
+      if (!Number.isFinite(modifiedAt) || !Number.isFinite(nowMs) ||
+          Math.abs(nowMs - modifiedAt) > 15 * 60 * 1000) {
+        throw new Error("NBA live scoreboard is stale");
+      }
+    }
+  }
+  return payload;
+}
+
+/** A stale HTTP 200 "today" scoreboard must not be treated as a healthy
+ * live feed. NBA's scoreboard date can lead or lag UTC by one day around
+ * Pacific evening tipoffs; older/future dates indicate a provider outage.
+ */
+export function isTimelyNbaScoreboard(payload: unknown, now: Date): boolean {
+  if (!isValidNbaScoreboard(payload) || !Number.isFinite(now.getTime())) return false;
+  const day = (payload as { scoreboard: { gameDate: string } }).scoreboard.gameDate;
+  const utcToday = now.toISOString().slice(0, 10);
+  const dayMs = Date.parse(day + "T00:00:00Z");
+  const todayMs = Date.parse(utcToday + "T00:00:00Z");
+  return Math.abs(dayMs - todayMs) <= 86_400_000;
+}
+
+export async function loadUnattendedNbaFeeds(
+  request: typeof fetch = fetch,
+  timeoutMs = 11000,
+  now: Date = new Date(),
+): Promise<{ schedule: unknown | null; live: unknown | null; errors: string[] }> {
+  const [scheduleResult, liveResult] = await Promise.allSettled([
+    fetchOfficialNbaJson(SCHEDULE, request, timeoutMs),
+    fetchOfficialNbaJson(LIVE, request, timeoutMs, now),
+  ]);
+  const schedule = scheduleResult.status === "fulfilled" &&
+    verifiedUnattendedNbaSchedule(scheduleResult.value) ? scheduleResult.value : null;
+  const live = liveResult.status === "fulfilled" &&
+    isTimelyNbaScoreboard(liveResult.value, now) ? liveResult.value : null;
+  const errors: string[] = [];
+  if (!schedule) errors.push("Season schedule unavailable");
+  if (!live) errors.push("Live scoreboard unavailable");
+  return { schedule, live, errors };
+}
