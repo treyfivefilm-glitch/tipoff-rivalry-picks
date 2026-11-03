@@ -65,6 +65,19 @@ describe("unattended NBA backend HTTP boundary (no network or database)", () => 
     expect(calls[0]).toContain("limit=3000");
   });
 
+  it("rejects unexpected successful HTTP statuses for game-history SELECTs", async () => {
+    // A proxy must not certify a complete history snapshot with 201/202.
+    // Preserve 200 as the only accepted successful SELECT response.
+    for (const status of [201, 202, 203, 204, 205]) {
+      const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
+        new Response(status === 204 || status === 205 ? null : JSON.stringify([validStoredGame]), {
+          status, headers: { "content-range": "0-0/1" },
+        })));
+      await expect(backend.readExisting(["2026-11-17"]))
+        .rejects.toThrow("NBA sync database read failed (HTTP " + status + ")");
+    }
+  });
+
   it("rejects HTTP 206 partial game history even when its JSON array is valid", async () => {
     const backend = createNbaWorkerBackend(endpoint, key, mockFetch(async () =>
       reply([{ id: "nba:0022600012" }], 206)));
